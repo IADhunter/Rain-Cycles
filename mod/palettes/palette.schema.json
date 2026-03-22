@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/SkqRW/Rain_States/master/mod/palettes/palette.schema.json",
+  "title": "Rain States Palette Configuration",
+  "description": "Schema for Rain States palette files. Defines region/room-specific palette transitions over time. Files must be named RainStates*.json and placed in the mod's palettes/ folder.",
+  "type": "object",
+  "minProperties": 1,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Reference to this JSON Schema for validation and IDE support"
+    }
+  },
+  "patternProperties": {
+    "^[A-Z0-9_]+$": {
+      "type": "object",
+      "description": "Region or room code (e.g., 'UW', 'SU_A01', 'CUSTOM_REGION'). The palette and time arrays must have matching lengths.",
+      "required": ["palette", "time"],
+      "properties": {
+        "palette": {
+          "type": "array",
+          "description": "Array of palette indices to transition through. Must have the same length as 'time' array.",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "integer",
+            "description": "Palette index (e.g., 1000-1003 for standard palettes, custom indices for mod palettes)",
+            "minimum": 0,
+            "maximum": 9999
+          }
+        },
+        "time": {
+          "type": "array",
+          "description": "Normalized time values (0.0 to 1.0) indicating when each palette is used. Values should be strictly increasing. First value should be 0.0, last value should be 1.0.",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "UW": {
+        "palette": [1002, 1001, 1002],
+        "time": [0.0, 0.4, 1.0]
+      },
+      "SU": {
+        "palette": [1000, 1001, 1002, 1003],
+        "time": [0.0, 0.3, 0.7, 1.0]
+      },
+      "CC_A01": {
+        "palette": [1005, 1006],
+        "time": [0.0, 1.0]
+      },
+      "CUSTOM_REGION": {
+        "palette": [2000, 2001, 2002, 2003, 2004],
+        "time": [0.0, 0.25, 0.5, 0.75, 1.0]
+      }
+    }
+  ],
+  "definitions": {
+    "regionCode": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_]+$",
+      "description": "Region or room identifier. Vanilla regions: SU, HI, CC, GW, SH, DS, SB, UW, etc. Custom regions should use descriptive uppercase names."
+    },
+    "paletteEntry": {
+      "type": "object",
+      "required": ["palette", "time"],
+      "properties": {
+        "palette": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "integer" }
+        },
+        "time": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "number" }
+        }
+      }
+    }
+  }
+}
