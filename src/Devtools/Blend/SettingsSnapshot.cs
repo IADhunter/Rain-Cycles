@@ -64,12 +64,14 @@ public partial class SettingsSnapshot
     public string RawText = "";
 
     // ── Colores de tinte personalizados (campo RC_TINT del mod) ──────────
-    // Null = no declarado en este settings → CalcBackgroundColors usa fallback.
-    // Formato en archivo: RC_TINT: #RRGGBB #RRGGBB
-    //   primer hex  → TintMultiply   (tinte de sprites Background/edificios)
-    //   segundo hex → TintAtmosphere (tinte atmosférico de edificios lejanos)
-    public UnityEngine.Color? TintMultiply   = null;
-    public UnityEngine.Color? TintAtmosphere = null;
+    // Null = no declarado → fallback al valor hardcodeado o de paleta.
+    // Formato en archivo: RC_TINT: #RRGGBB #RRGGBB #RRGGBB
+    //   primer hex  → TintMultiply        (tinte de sprites Background/edificios)
+    //   segundo hex → TintAtmosphere      (shader global ShadPropAboveCloudsAtmosphereColor)
+    //   tercer hex  → TintCloudAtmosphere (AboveCloudsView.atmosphereColor — tiñe nubes)
+    public UnityEngine.Color? TintMultiply         = null;
+    public UnityEngine.Color? TintAtmosphere       = null;
+    public UnityEngine.Color? TintCloudAtmosphere  = null;
 }
 
 // ── Datos de un LightBeam capturado en el snapshot ───────────────────────

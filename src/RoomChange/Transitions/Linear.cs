@@ -11,12 +11,11 @@ public class Linear
     {
         if (Mathf.Abs(time - pretime) < epsilon)
         {
-            PDEBUG.Log("Division by zero in RateChanges.Linear");
+            Plugin.RSPlugin.log.LogWarning("[Linear] Division by zero in GetBlend.");
             return 0f;
         }
 
         float delta = (now - pretime) / (time - pretime);
-        //PDEBUG.Log($"Actual Time: {now}, nextPaletteTime: {time}, prevPaletteTime: {pretime}, paletteBlend: %{delta * 100}");
         return delta;
     }
 }

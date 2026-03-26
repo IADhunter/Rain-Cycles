@@ -29,11 +29,15 @@ public static class BlendClockUpdater
 
     // ── Init ──────────────────────────────────────────────────────────────
 
+    // Flag: deathRainHasHit del frame anterior para detectar el flanco
+    private static bool _lastDeathRainHasHit = false;
+
     public static void Init()
     {
         On.RainWorldGame.Update          += OnGameUpdate;
         On.RainWorldGame.ShutDownProcess += OnShutDown;
         On.RainWorldGame.Win             += OnWin;
+        On.RainCycle.Update              += OnRainCycleUpdate;
     }
 
     // ── Hooks ─────────────────────────────────────────────────────────────
@@ -97,15 +101,24 @@ public static class BlendClockUpdater
         // Cubre casos donde OnRegionChanged no pudo arrancar (ej: BlendSettings
         // aún no estaba en caché durante la transición de región). En condiciones
         // normales OnRegionChanged ya habrá arrancado el clock y este bloque no entra.
-        if (!BlendClock.IsRunning)
+        if (!BlendClock.IsRunning && !BlendClock.EditMode)
         {
             var settings = BlendSettingsLoader.Active;
-            if (settings != null && settings.Mode == BlendMode.Loop)
+            if (settings != null)
             {
-                int initialA = ResolveInitialStateFromCycle(settings);
-                BlendClock.Start(initialA);
-                Plugin.RSPlugin.log.LogInfo(
-                    $"[BlendClockUpdater] Clock started via fallback (region={BlendSettingsLoader.ActiveRegion}) A={BlendClock.StateA}");
+                bool shouldStart = settings.Mode == BlendMode.Loop
+                    || settings.Mode == BlendMode.Cycle
+                    // EndCycle NO arranca por fallback — solo por OnDeathRainHit
+                    || (settings.Mode == BlendMode.Custom &&
+                        CustomModeState.IsActive(BlendSettingsLoader.ActiveRegion, settings.CustomTriggerId));
+
+                if (shouldStart)
+                {
+                    int initialA = ResolveInitialStateFromCycle(settings);
+                    BlendClock.Start(initialA);
+                    Plugin.RSPlugin.log.LogInfo(
+                        $"[BlendClockUpdater] Clock started via fallback (region={BlendSettingsLoader.ActiveRegion}) mode={settings.Mode} A={BlendClock.StateA}");
+                }
             }
         }
 
@@ -125,9 +138,6 @@ public static class BlendClockUpdater
                     string pathB = ReadStateReadFiles.GetRainStateSettingsFile(roomName, BlendClock.StateB);
                     if (pathA != null && pathB != null && BlendClock.StateA != BlendClock.StateB)
                     {
-                        Plugin.RSPlugin.log.LogInfo(
-                            $"[BlendClockUpdater] Attaching to room '{roomName}' " +
-                            $"sub={BlendClock.SubPhaseIndex} T={BlendClock.SubPhaseLocalT:F2}");
                         SettingsBlendController.AttachWithExternalT(cam.room, pathA, pathB);
                         SettingsBlendController.SetExternalT(BlendClock.SubPhaseLocalT);
                     }
@@ -135,13 +145,11 @@ public static class BlendClockUpdater
             }
         }
 
-        // ── Idle: aplicar estado visual correcto si la cámara entra a [ROOMS] durante espera ──
-        // Sin esto, la sala muestra settings_N del disco (el del ciclo actual) en vez del
-        // estado donde el carril anterior terminó. StateA durante Idle es siempre el primer
-        // estado del carril que está por empezar = último estado del carril anterior.
+        // ── Idle/Done: aplicar estado visual correcto si la cámara entra a [ROOMS] ──
+        bool isIdleOrDone = BlendClock.CurrentPhase == BlendClock.Phase.Idle ||
+                            BlendClock.CurrentPhase == BlendClock.Phase.Done;
         if (BlendClock.IsRunning && !SettingsBlendController.IsActive &&
-            !SettingsBlendController.DetachedThisFrame &&
-            BlendClock.CurrentPhase == BlendClock.Phase.Idle)
+            !SettingsBlendController.DetachedThisFrame && isIdleOrDone)
         {
             var settings = BlendSettingsLoader.Active;
             var cam      = self.cameras?[0];
@@ -151,7 +159,10 @@ public static class BlendClockUpdater
                 if (roomName != null && settings.IncludesRoom(roomName) &&
                     roomName != _lastIdleRoom)
                 {
-                    string pathIdle = ReadStateReadFiles.GetRainStateSettingsFile(roomName, BlendClock.StateA);
+                    int stateForIdle = BlendClock.CurrentPhase == BlendClock.Phase.Done
+                        ? BlendClock.StateB
+                        : BlendClock.StateA;
+                    string pathIdle = ReadStateReadFiles.GetRainStateSettingsFile(roomName, stateForIdle);
                     if (pathIdle != null)
                     {
                         SettingsBlendController.ApplyIdleState(cam.room, pathIdle);
@@ -167,7 +178,23 @@ public static class BlendClockUpdater
         float prevT        = BlendClock.CurrentT;
         int   prevSubPhase = BlendClock.SubPhaseIndex;
         var   prevPhase    = BlendClock.CurrentPhase;
-        BlendClock.Tick(RW_DELTA);
+
+        // Leer rainCycle para pasarlo al clock — necesario para Cycle y EndCycle.
+        // Loop y Custom lo ignoran.
+        // Se lee desde game.world directamente en lugar de cam.room.world para evitar
+        // que salas sin lluvia (como H01) congelen el timer visualmente mientras el
+        // ciclo sigue corriendo de fondo. game.world.rainCycle siempre refleja el
+        // estado real del ciclo independientemente de la sala donde esté la cámara.
+        float rainTimer    = 0f;
+        int   rainCycleLen = 1;
+        var   gameWorld    = self.world;
+        if (gameWorld?.rainCycle != null)
+        {
+            rainTimer    = gameWorld.rainCycle.timer;
+            rainCycleLen = gameWorld.rainCycle.cycleLength;
+        }
+
+        BlendClock.Tick(RW_DELTA, rainTimer, rainCycleLen);
 
         bool tChanged        = !Mathf.Approximately(BlendClock.CurrentT, prevT);
         bool subPhaseChanged = BlendClock.SubPhaseIndex != prevSubPhase;
@@ -177,7 +204,10 @@ public static class BlendClockUpdater
         // re-attacharse con los nuevos StateA/B de la sub-fase actual.
         if (subPhaseChanged && BlendClock.CurrentPhase == BlendClock.Phase.Blending)
         {
-            _lastIdleRoom = null; // el blend toma el control, el idle ya no aplica
+            Plugin.RSPlugin.log.LogInfo(
+                $"[Updater] SubPhase changed → SubPhaseIndex={BlendClock.SubPhaseIndex} " +
+                $"StateA={BlendClock.StateA} StateB={BlendClock.StateB} camRoom={self.cameras?[0]?.room?.abstractRoom?.name ?? "null"}");
+            _lastIdleRoom = null;
             SettingsBlendController.AdvanceOriginToB();
             SettingsBlendController.Detach();
         }
@@ -185,8 +215,12 @@ public static class BlendClockUpdater
         // Cuando el carril completo termina (Done), limpiar para el siguiente carril.
         if (prevPhase == BlendClock.Phase.Blending && BlendClock.CurrentPhase == BlendClock.Phase.Done)
         {
+            Plugin.RSPlugin.log.LogInfo(
+                $"[Updater] Blending→Done StateA={BlendClock.StateA} StateB={BlendClock.StateB} " +
+                $"camRoom={self.cameras?[0]?.room?.abstractRoom?.name ?? "null"}");
             SettingsBlendController.AdvanceOriginToB();
             SettingsBlendController.Detach();
+            _lastIdleRoom = null;
         }
 
         // Al entrar en Idle desde Done, resetear para que el próximo attach de sala
@@ -207,13 +241,57 @@ public static class BlendClockUpdater
         SettingsBlendController.OverrideLightColorsPostOrig();
     }
 
+    // ── Hook RainCycle.Update — detectar fin de ciclo real ───────────────
+    // deathRainHasHit pasa a true exactamente cuando timer >= cycleLength
+    // y la región permite lluvia (AllowRainCounterToTick + flag2).
+    // Es la única señal confiable de fin de ciclo — funciona en zonas con
+    // lluvia real. En zonas sin lluvia (AllowRainCounterToTick = false)
+    // deathRainHasHit nunca se activa, que es el comportamiento correcto:
+    // EndCycle no tiene sentido en zonas donde el ciclo no corre.
+    private static void OnRainCycleUpdate(On.RainCycle.orig_Update orig, RainCycle self)
+    {
+        bool wasHit = self.deathRainHasHit;
+        orig(self);
+
+        // Detectar flanco ascendente: deathRainHasHit acaba de ponerse true
+        if (!wasHit && self.deathRainHasHit && !_lastDeathRainHasHit)
+        {
+            _lastDeathRainHasHit = true;
+            OnDeathRainHit(self);
+        }
+        else if (!self.deathRainHasHit)
+        {
+            _lastDeathRainHasHit = false;
+        }
+    }
+
+    /// <summary>
+    /// Se llama exactamente una vez cuando la lluvia mortal golpea (deathRainHasHit → true).
+    /// Si el modo activo es EndCycle, arranca el clock para que empiece el idle.
+    /// </summary>
+    private static void OnDeathRainHit(RainCycle cycle)
+    {
+        var settings = BlendSettingsLoader.Active;
+        if (settings == null || settings.Mode != BlendMode.EndCycle) return;
+        if (BlendClock.EditMode) return;
+
+        Plugin.RSPlugin.log.LogInfo(
+            $"[BlendClockUpdater] Death rain hit — triggering EndCycle blend.");
+
+        if (BlendClock.IsRunning) return; // ya está corriendo (no debería pasar)
+
+        int initialA = ResolveInitialStateFromCycle(settings);
+        BlendClock.Start(initialA);
+    }
+
     private static void OnShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
     {
         orig(self);
         BlendClock.Stop();
         BlendSettingsLoader.ClearCache();
-        _lastRegion   = null;
-        _lastIdleRoom = null;
+        _lastRegion          = null;
+        _lastIdleRoom        = null;
+        _lastDeathRainHasHit = false;
     }
 
     private static void OnWin(On.RainWorldGame.orig_Win orig, RainWorldGame self, bool malnourished, bool fromWarpPoint)
@@ -243,16 +321,29 @@ public static class BlendClockUpdater
         if (string.IsNullOrEmpty(newRegion)) return;
 
         var settings = BlendSettingsLoader.Active;
-        if (settings == null || settings.Mode != BlendMode.Loop) return;
+        if (settings == null) return;
+        if (BlendClock.EditMode) return;  // en Edit Mode el usuario controla los sliders
 
-        // Arrancar el clock en cuanto se conoce la región, sin esperar a que
-        // la cámara entre a una sala de [ROOMS]. Así el idle empieza a correr
-        // desde que el juego carga — el slugcat levantándose del refugio ya
-        // cuenta como tiempo transcurrido antes de llegar a la sala del blend.
+        // Custom: solo arrancar si el trigger está activo para esta región
+        if (settings.Mode == BlendMode.Custom)
+        {
+            if (!CustomModeState.IsActive(newRegion, settings.CustomTriggerId))
+            {
+                Plugin.RSPlugin.log.LogInfo(
+                    $"[BlendClockUpdater] Custom mode for '{newRegion}': trigger not active, sleeping.");
+                return;
+            }
+        }
+
+        // EndCycle: NO arrancar en region load — el clock lo dispara OnDeathRainHit
+        // cuando deathRainHasHit pasa a true. Arrancar aquí sería incorrecto porque
+        // el ciclo todavía no ha terminado.
+        if (settings.Mode == BlendMode.EndCycle) return;
+
         int initialA = ResolveInitialStateFromCycle(settings);
         BlendClock.Start(initialA);
         Plugin.RSPlugin.log.LogInfo(
-            $"[BlendClockUpdater] Clock started on region load '{newRegion}' A={BlendClock.StateA}");
+            $"[BlendClockUpdater] Clock started on region load '{newRegion}' mode={settings.Mode} A={BlendClock.StateA}");
     }
 
     /// <summary>
@@ -318,9 +409,6 @@ public static class BlendClockUpdater
                         SettingsBlendController.CurrentPathA != pathA ||
                         SettingsBlendController.CurrentPathB != pathB)
                     {
-                        Plugin.RSPlugin.log.LogInfo(
-                            $"[BlendClockUpdater] Attaching sub-phase {BlendClock.SubPhaseIndex}: " +
-                            $"{BlendClock.StateA}→{BlendClock.StateB} T={BlendClock.SubPhaseLocalT:F2}");
                         SettingsBlendController.AttachWithExternalT(cam.room, pathA, pathB);
                     }
                     SettingsBlendController.SetExternalT(BlendClock.SubPhaseLocalT);

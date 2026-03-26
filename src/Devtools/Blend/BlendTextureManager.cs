@@ -28,7 +28,7 @@ internal static class BlendTextureManager
         var rs = cam.room?.roomSettings;
         int   realPalette   = snapOrigin?.Palette    ?? rs?.Palette    ?? snapA.Palette;
         int   realFadePal   = snapOrigin != null
-                              ? (snapOrigin.FadePaletteID > 0 ? snapOrigin.FadePaletteID : realPalette)
+                              ? (snapOrigin._hasFadePalette ? snapOrigin.FadePaletteID : realPalette)
                               : (rs?.fadePalette != null ? rs.fadePalette.palette : realPalette);
         float realFadeBlend = (rs?.fadePalette != null && cam.currentCameraPosition < rs.fadePalette.fades.Length)
                               ? rs.fadePalette.fades[cam.currentCameraPosition]
@@ -36,20 +36,19 @@ internal static class BlendTextureManager
         int   realEffColorA = snapOrigin?.EffectColorA ?? rs?.EffectColorA ?? 0;
         int   realEffColorB = snapOrigin?.EffectColorB ?? rs?.EffectColorB ?? 0;
 
-        Plugin.RSPlugin.log.LogInfo(
-            $"[BlendTexMgr] Load: cam.room={cam.room?.abstractRoom?.name} applyFade={applyFade} " +
-            $"realPalette={realPalette} snapA.Palette={snapA.Palette} snapB.Palette={snapB.Palette}");
-
         // snapA: hornear paleta + fade con sus EffectColors
+        // Usar _hasFadePalette para detectar si el fade está declarado —
+        // FadePaletteID puede ser 0, que es una paleta válida en Rain World.
+        // La condición "> 0" trataba ID=0 como "no declarado", perdiendo el fade.
         cam.ChangeBothPalettes(snapA.Palette,
-            snapA.FadePaletteID > 0 ? snapA.FadePaletteID : snapA.Palette, 0f);
+            snapA._hasFadePalette ? snapA.FadePaletteID : snapA.Palette, 0f);
         cam.ApplyEffectColorsToAllPaletteTextures(snapA.EffectColorA, snapA.EffectColorB);
         TexA_s1  = Copy(cam.fadeTexA);
         TexB_s1  = Copy(cam.fadeTexB);
 
         // snapB: hornear paleta + fade con sus EffectColors
         cam.ChangeBothPalettes(snapB.Palette,
-            snapB.FadePaletteID > 0 ? snapB.FadePaletteID : snapB.Palette, 0f);
+            snapB._hasFadePalette ? snapB.FadePaletteID : snapB.Palette, 0f);
         cam.ApplyEffectColorsToAllPaletteTextures(snapB.EffectColorA, snapB.EffectColorB);
         TexA_s2  = Copy(cam.fadeTexA);
         TexB_s2  = Copy(cam.fadeTexB);

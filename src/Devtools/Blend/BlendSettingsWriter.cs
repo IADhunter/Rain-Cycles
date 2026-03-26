@@ -567,27 +567,37 @@ $@"# blend_settings.txt — Rain Cycles
 
 [CONFIG]
 mode: loop
-# camera_cooldown: 30
 
 [LOOP]
 idle_time: 60.0
 duration: 10.0
 
 # [CYCLE]
+# Dispara un blend cuando el ciclo de lluvia alcanza trigger_pct (0-1).
+# El blend dura 'duration' segundos y luego el sistema duerme hasta el próximo ciclo.
 # trigger_pct: 0.90
 # duration: 10.0
 
 # [ENDCYCLE]
-# trigger_pct: 0.95
+# Se activa cuando el ciclo de lluvia termina.
+# 'idle' = segundos de espera post-lluvia antes de iniciar el blend.
+# 'duration' = duración del blend en segundos.
+# target_state:
+#   1 = fin de lluvia normal — hace el blend y se queda en el estado destino.
+#   2 = puente a Loop — tras el blend, arranca Loop saltándose el primer idle.
+# idle: 10.0
 # duration: 25.0
 # target_state: 1
 
 # [CUSTOM]
+# El blend solo corre cuando otro mod activa el trigger vía la API:
+#   CustomModeState.Activate(""REGION"", ""MY_TRIGGER"")
+#   CustomModeState.Deactivate(""REGION"", ""MY_TRIGGER"")
+# El modo declarado en [CONFIG] define qué sistema corre cuando Custom está activo.
 # trigger_id: MY_TRIGGER
-# duration: 15.0
 
 # [SEQUENCES] se genera automáticamente al abrir DevTools.
-# El mod solo añade entradas vacías — los valores los pone el usuario.
+# El mod añade entradas vacías — editalas según tu secuencia de estados.
 
 [ROOMS]
 ";

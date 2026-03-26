@@ -33,9 +33,6 @@ public static class RoomEffectsApplier
                 break;
             }
         }
-
-        Plugin.RSPlugin.log.LogInfo(
-            $"[RoomEffectsApplier] LightIndex: {_lightIndex.Count} lights.");
     }
 
     public static void ClearLightIndex()
@@ -315,11 +312,13 @@ public static class RoomEffectsApplier
     ///   2. Fallback a skyColor/fogColor de currentPalette
     ///
     /// RC_TINT se declara en el settings file como:
-    ///   RC_TINT: #RRGGBB #RRGGBB
+    ///   RC_TINT: #RRGGBB #RRGGBB #RRGGBB
     /// El primer hex es MultiplyColor (tinte de edificios/sprites Background),
     /// el segundo es AtmosphereColor (tinte atmosférico de edificios lejanos).
-    /// Si solo se declara uno, el otro usa el fallback de paleta.
-    /// Si no se declara, ambos usan el fallback.
+    /// El tercer hex es TintCloudAtmosphere (AboveCloudsView.atmosphereColor),
+    /// aplicado directamente en OnAboveCloudsViewUpdate, no aquí.
+    /// Si solo se declara uno o dos, el resto usa el fallback de paleta.
+    /// Si no se declara ninguno, todos usan el fallback.
     /// Durante el blend, los colores se interpolan automáticamente por SettingsSnapshotLerp.
     /// </summary>
     internal static void CalcBackgroundColors(RoomCamera cam, out Color multiply, out Color atmosphere)
@@ -331,26 +330,47 @@ public static class RoomEffectsApplier
             return;
         }
 
-        // Prioridad 1: RC_TINT del snapshot activo
+        // Prioridad 1: RC_TINT del snapshot activo — control explícito del modder.
+        // Si está declarado, usarlo directamente sin depender de currentPalette.
         var snap = SettingsBlendController.ActiveSnapshot;
         if (snap != null)
         {
-            multiply   = snap.TintMultiply.HasValue   ? snap.TintMultiply.Value   : cam.currentPalette.skyColor;
-            atmosphere = snap.TintAtmosphere.HasValue ? snap.TintAtmosphere.Value : cam.currentPalette.fogColor;
+            bool hasMul = snap.TintMultiply.HasValue;
+            bool hasAtm = snap.TintAtmosphere.HasValue;
+
+            if (hasMul && hasAtm)
+            {
+                multiply   = snap.TintMultiply.Value;
+                atmosphere = snap.TintAtmosphere.Value;
+                return;
+            }
+
+            // Prioridad 2: leer sky/fog desde texturas de blend en memoria.
+            // Esto evita depender de cam.currentPalette que puede estar contaminada
+            // por la sala donde está la cámara (ej: PS1) mientras el blend corre en VR1.
+            // El pixel (1,7) en la fadeTex es skyColor; (2,7) es fogColor en RainWorld.
+            if (BlendTextureManager.Ready && BlendClock.IsRunning &&
+                BlendClock.CurrentPhase == BlendClock.Phase.Blending)
+            {
+                float t = SettingsBlendController.ForcedT;
+                float darkPal = 0f; // durante blend ignoramos darkPalette para fondo
+                Color skyFromTex = InterpolatedPalPixel(1, 7, t, darkPal, cam.paletteBlend);
+                Color fogFromTex = InterpolatedPalPixel(2, 7, t, darkPal, cam.paletteBlend);
+
+                multiply   = hasMul ? snap.TintMultiply.Value   : skyFromTex;
+                atmosphere = hasAtm ? snap.TintAtmosphere.Value : fogFromTex;
+                return;
+            }
+
+            // Fallback con snapshot pero sin texturas activas (Idle/Done)
+            multiply   = hasMul ? snap.TintMultiply.Value   : cam.currentPalette.skyColor;
+            atmosphere = hasAtm ? snap.TintAtmosphere.Value : cam.currentPalette.fogColor;
             return;
         }
 
-        // Fallback: paleta activa de la cámara
+        // Sin snapshot activo: usar currentPalette (sala no gestionada o clock parado)
         multiply   = cam.currentPalette.skyColor;
         atmosphere = cam.currentPalette.fogColor;
-    }
-
-    /// <summary>
-    /// Overload de compatibilidad — ignora t, usa snapshot activo o paleta.
-    /// </summary>
-    internal static void CalcBackgroundColors(float t, RoomCamera cam, out Color multiply, out Color atmosphere)
-    {
-        CalcBackgroundColors(cam, out multiply, out atmosphere);
     }
 
     internal static void ApplyScalarEffects(Room room, SettingsSnapshot lerped)

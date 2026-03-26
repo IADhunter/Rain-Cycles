@@ -153,3 +153,40 @@ public class ModeButton : Button
         }
     }
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// EDIT MODE BUTTON
+// Toggle global que suspende el clock y habilita los sliders para edición
+// manual libre, independientemente del modo configurado.
+// Verde = Edit Mode activo, blanco = modo automático normal.
+// ════════════════════════════════════════════════════════════════════════
+public class EditModeButton : Button
+{
+    private static readonly Color COLOR_ON  = new Color(0.2f, 0.7f, 0.3f);  // verde
+    private static readonly Color COLOR_OFF = new Color(1f,   1f,   1f);     // blanco
+
+    public EditModeButton(DevUI owner, string IDstring, DevUINode parentNode,
+                          Vector2 pos, float width)
+        : base(owner, IDstring, parentNode, pos, width, "Edit")
+    {
+        UpdateVisual();
+    }
+
+    public override void Clicked()
+    {
+        base.Clicked();
+        BlendClock.SetEditMode(!BlendClock.EditMode);
+        UpdateVisual();
+    }
+
+    public override void Update()
+    {
+        base.Update();
+        UpdateVisual();
+    }
+
+    private void UpdateVisual()
+    {
+        this.colorA = BlendClock.EditMode ? COLOR_ON : COLOR_OFF;
+    }
+}

@@ -69,7 +69,11 @@ public static class BlendSettingsLoader
         // Solo habitaciones reales con región asignada
         if (region == null) return;
 
-        string regionCode = ExtractRegionCode(name);
+        // Usar region.name en lugar del nombre de la sala para detectar la región.
+        // El nombre de la sala (ej: "SB_S01") puede pertenecer a una región vecina
+        // que el juego carga en memoria anticipadamente — eso no debe cambiar
+        // la región activa del jugador, que es siempre la del objeto Region cargado.
+        string regionCode = region.name?.ToUpperInvariant();
         if (string.IsNullOrEmpty(regionCode)) return;
 
         // Solo actualizamos si cambiamos de región
@@ -107,9 +111,6 @@ public static class BlendSettingsLoader
         if (settings != null)
             Plugin.RSPlugin.log.LogInfo(
                 $"[BlendSettingsLoader] Region activated: {regionCode} | mode={settings.Mode}");
-        else
-            Plugin.RSPlugin.log.LogInfo(
-                $"[BlendSettingsLoader] Region {regionCode} has no blend_settings.txt");
     }
 
     /// <summary>

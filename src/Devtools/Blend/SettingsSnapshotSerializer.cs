@@ -122,13 +122,10 @@ public partial class SettingsSnapshot
 
     private string BuildRcTintLine()
     {
-        string mul = TintMultiply.HasValue
-            ? ColorToHex(TintMultiply.Value)
-            : "#";
-        string atm = TintAtmosphere.HasValue
-            ? ColorToHex(TintAtmosphere.Value)
-            : "#";
-        return $"RC_TINT: {mul} {atm}";
+        string mul = TintMultiply.HasValue        ? ColorToHex(TintMultiply.Value)        : "#FFFFFF";
+        string atm = TintAtmosphere.HasValue      ? ColorToHex(TintAtmosphere.Value)      : "#FFFFFF";
+        string cld = TintCloudAtmosphere.HasValue ? ColorToHex(TintCloudAtmosphere.Value) : "#FFFFFF";
+        return $"RC_TINT: {mul} {atm} {cld}";
     }
 
     private static string ColorToHex(UnityEngine.Color c)

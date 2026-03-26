@@ -116,7 +116,7 @@ public static class PaletteInfo
             
             if (Palettes[room].BasePalette == null || Palettes[room].BasePalette.Count == 0)
             {
-                PDEBUG.Log($"Palette not found for {room}");
+                Plugin.RSPlugin.log.LogWarning($"[PaletteData] Palette not found for {room}");
                 return false;
             }
             return true;
@@ -129,14 +129,12 @@ public static class PaletteInfo
             
             if (Palettes[room].BasePalette == null || Palettes[room].BasePalette.Count == 0)
             {
-                PDEBUG.Log($"Palette not found for {room}");
+                Plugin.RSPlugin.log.LogWarning($"[PaletteData] Palette not found for {room}");
                 return false;
             }
             return true;
         }
 
-        // No configuration found
-        PDEBUG.Log($"NOT FOUND | No palettes found for region: {region.name}");
         return false;
     }
 
@@ -147,7 +145,7 @@ public static class PaletteInfo
     {
         if (!sequence.IsValid())
         {
-            PDEBUG.Log("Invalid palette sequence provided.");
+            Plugin.RSPlugin.log.LogWarning("[PaletteData] Invalid palette sequence provided.");
             return default;
         }
 
@@ -218,9 +216,8 @@ public static class PaletteInfo
         {
             if (cycleIndex < 0)
             {
-                //Yield Error?????
                 cycleIndex = 0;
-                PDEBUG.Log($"Invalid cycle index {cycleIndex} for key {key}.");
+                Plugin.RSPlugin.log.LogWarning($"[PaletteData] Invalid cycle index for key {key}.");
             }
 
             cycleIndex = cycleIndex % configs.Count;

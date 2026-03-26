@@ -86,8 +86,23 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
     {
         base.Update();
 
-        // En modo automático o bloqueado: solo lectura
-        if (BlendClock.IsRunning || _locked) return;
+        // Bloqueo de input según modo:
+        // - Edit Mode apagado + clock corriendo → solo lectura (clock tiene control)
+        // - Edit Mode apagado + modo auto (Cycle/EndCycle) → solo lectura aunque
+        //   el clock aún no haya arrancado (esperando trigger o deathRainHasHit)
+        // - Edit Mode encendido → siempre interactivo (clock está parado)
+        if (!BlendClock.EditMode)
+        {
+            if (BlendClock.IsRunning) return;
+
+            // Modos automáticos: el usuario nunca controla el slider directamente
+            var settings = BlendSettingsLoader.Active;
+            if (settings != null &&
+                (settings.Mode == BlendMode.Cycle || settings.Mode == BlendMode.EndCycle))
+                return;
+        }
+
+        if (_locked && !BlendClock.EditMode) return;
 
         Vector2 mPos = owner.mousePos;
         Vector2 aPos = absPos;

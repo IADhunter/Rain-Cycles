@@ -36,17 +36,7 @@ public class ReadStateReadFiles
             {
                 self.filePath = rainStatePath;
                 self.Load((SlugcatStats.Timeline)null);
-                RSPlugin.log.LogInfo($"[Rain States] Loaded rain state file for room {name} at cycle {cycle}: {rainStatePath}");
             }
-            else
-            {
-            RSPlugin.log.LogInfo($"[Rain States] No rain state file found for room {name} at cycle {cycle}. Using default settings.");
-            }
-        }
-        else
-        {
-            RSPlugin.log.LogInfo($"[Rain States] {room == null} | {room?.game == null} | {room?.game?.GetStorySession == null} | {room?.game?.GetStorySession?.saveState == null}");
-            RSPlugin.log.LogInfo($"[Rain States] No cycle number found for room. Skipping rain state file loading.");
         }
     }
 
@@ -74,10 +64,7 @@ public class ReadStateReadFiles
         }));
 
         if (File.Exists(text))
-        {
-            RSPlugin.log.LogInfo($"[Rain States] Found rain state file for {roomName} at cycle {cycle} (state {stateNumber}/{n}): {text}");
             return text;
-        }
 
         return null;
     }
@@ -126,11 +113,8 @@ public class ReadStateReadFiles
             }));
 
 
-        if(!File.Exists(filePath))
-        {
-            UnityEngine.Debug.Log($"[Rain States] Rain state settings file not found: {filePath}");
+        if (!File.Exists(filePath))
             return null;
-        }
 
         return filePath;
     }
@@ -157,10 +141,6 @@ public class ReadStateReadFiles
         // Copy the same setting file that the room is using
         room.roomSettings.filePath = filePath;
         room.roomSettings.Save();
-        
-
-
-        UnityEngine.Debug.Log($"[Rain States] Created new rain state file: {filePath}");
         return filePath;
     }
 }

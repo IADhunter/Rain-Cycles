@@ -9,7 +9,6 @@ public partial class PaletteDrive
 {
     private static RoomChange.PaletteData activeRegionPalette;
     private static float actualTime;
-    private static bool DEBUG = false;
 
     public static bool activateEffectFade = false;
 
@@ -41,10 +40,6 @@ public partial class PaletteDrive
         string roomKey = "";
         if (!PaletteInfo.IsRegionPaletteAvailable(self.room, ref roomKey))
         {
-            if (DEBUG)
-            {
-                PDEBUG.Log("Palette Config not available, using original method.");
-            }
             orig(self);
             return;
         }
@@ -77,10 +72,6 @@ public partial class PaletteDrive
             camera.ApplyFade();
         }
 
-        if (self.room.game.devToolsActive && DEBUG)
-        {
-            // debug
-        }
     }
 
     private static void ApplyBasePalette(RoomCamera camera, PaletteData data, float currentTime)
@@ -136,8 +127,6 @@ public partial class PaletteDrive
 
 public static class PaintRoom
 {
-    private static bool DEBUG = true;
-
     public static Color HexToColor(string hex)
     {
         if (hex.StartsWith("#"))
@@ -161,12 +150,12 @@ public static class PaintRoom
             }
             catch (Exception e)
             {
-                PDEBUG.Log("Failed to parse hex color '" + hex + "': " + e.Message);
+                Plugin.RSPlugin.log.LogWarning($"[PaintRoom] Failed to parse hex color '{hex}': {e.Message}");
                 return Color.white;
             }
         }
 
-        PDEBUG.Log("Invalid hex color format '" + hex + "'.");
+        Plugin.RSPlugin.log.LogWarning($"[PaintRoom] Invalid hex color format '{hex}'.");
         return Color.white;
     }
 

@@ -194,14 +194,15 @@ public partial class BlendSettings
         float f; int i;
         switch (key)
         {
-            case "trigger_pct":
-                if (TryParseFloat(val, out f)) s.EndCycleTriggerPct = Clamp01(f);
+            case "idle":
+                if (TryParseFloat(val, out f) && f >= 0f) s.EndCycleIdleTime = f;
                 break;
             case "duration":
                 if (TryParseFloat(val, out f) && f > 0f) s.EndCycleDuration = f;
                 break;
             case "target_state":
-                if (int.TryParse(val, out i) && i >= 1) s.EndCycleTargetState = i;
+                // 1 = fin de lluvia normal, 2 = puente a Loop
+                if (int.TryParse(val, out i) && i >= 1 && i <= 2) s.EndCycleTargetState = i;
                 break;
         }
     }
@@ -307,9 +308,12 @@ public partial class BlendSettings
 
         if (steps.Count > 0)
         {
-            // Insertar estado inicial en posición 0 si el autor lo omitió
-            if (steps[0] != initialState)
-                steps.Insert(0, initialState);
+            // REGLA DE ORO: el parser es un reflejo fiel del archivo.
+            // NO se inserta automáticamente el estado inicial si el autor no lo declaró.
+            // Si el autor escribe "1: 3," el mod guarda [3] — sin transición (single-element).
+            // Si escribe "1: 1, 3," el mod guarda [1, 3] — blend de 1 a 3.
+            // Si escribe "1: 1," el mod guarda [1] — sin transición (mismo destino declarado).
+            // El sistema interpreta la semántica en tiempo de ejecución, no aquí.
             s.Sequences[initialState] = steps;
         }
 
@@ -398,8 +402,8 @@ public partial class BlendSettings
             }
 
             if (seq.Count <= 1)
-                Plugin.RSPlugin.log.LogWarning(
-                    $"[BlendSettings] Sequence {initial} has only one step. No transition will occur.");
+                Plugin.RSPlugin.log.LogInfo(
+                    $"[BlendSettings] Sequence {initial} has only one step — no transition declared (by design). Clock will stay idle for this state.");
         }
 
         // Validar que los LoopLanes tengan su estado inicial en posición 0 de LaneA

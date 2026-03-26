@@ -37,6 +37,7 @@ public class RSPlugin : BaseUnityPlugin
         {
             IsInit = true;
             FilesSetting.RainStateFiles.Init();
+            FilesSetting.CustomModeState.Init();
             DevTools.Init();
             FilesSetting.SettingsBlendController.Init();
             FilesSetting.BlendSettingsLoader.Init();

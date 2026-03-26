@@ -20,6 +20,8 @@ public class RCPanel : Panel, IDevUISignals
     private const float REGION_ROW_Y  = 35f;   // Room ON/OFF
     private const float ACTIVE_FILE_Y = 18f;   // Etiqueta archivo activo
     private const float MODE_BTN_W    = 46f;   // Ancho botón de modo
+    private const float EDIT_MODE_Y   = 155f;  // Misma fila que botones de modo (encima)
+    private const float EDIT_BTN_W    = 46f;   // Ancho botón Edit Mode
 
     // Estado A = actualmente cargado en la habitación
     public static int buttonSelectedA = 1;
@@ -84,13 +86,18 @@ public class RCPanel : Panel, IDevUISignals
                 MODE_BTN_W, modes[i], modes[i] == currentMode));
         }
 
+        // Botón Edit Mode — encima del botón Room ON/OFF
+        // Posicionado justo encima de REGION_ROW_Y para separarlo visualmente
+        // de los botones de modo y dejarlo junto al control de sala al que conceptualmente pertenece.
+        subNodes.Add(new EditModeButton(owner, "RC_EditMode", this,
+            new Vector2(MARGIN, REGION_ROW_Y + 22f), size.x - MARGIN * 2));
+
         // Botón toggle: registra/quita esta sala en blend_settings.txt
         bool isRegistered = BlendSettingsWriter.IsRoomRegistered(owner.room?.abstractRoom?.name);
         subNodes.Add(new RoomToggleButton(owner, "RC_ToggleRoom", this,
             new Vector2(MARGIN, REGION_ROW_Y), size.x - MARGIN * 2, isRegistered));
 
         ReorganizeButtons();
-        UnityEngine.Debug.Log($"[Rain Cycles] Found {n} rain state files for room {owner.room?.abstractRoom?.name}");
     }
 
     public void Signal(DevUISignalType type, DevUINode sender, string message)
@@ -166,13 +173,11 @@ public class RCPanel : Panel, IDevUISignals
             owner.room.roomSettings.Save();
             owner.room.roomSettings.filePath = path;
             SettingsBlendController.ReappendRcTint(path, rcTintLine);
-            Plugin.RSPlugin.log.LogInfo($"[RC Swap] filePath forzado a: {owner.room.roomSettings.filePath}");
             UpdateActiveFileLabel(path);
 
             buttonSelectedA = newSelected;
             foreach (var node in subNodes) node.Refresh();
             parentNode?.Refresh();
-            UnityEngine.Debug.Log($"[Rain Cycles] Swap directo al estado {newSelected}");
             return;
         }
 
@@ -244,7 +249,6 @@ public class RCPanel : Panel, IDevUISignals
             }
 
             foreach (var node in subNodes) node.Refresh();
-            UnityEngine.Debug.Log($"[Rain Cycles] Destino blend: estado {newB}");
         }
     }
 
@@ -460,7 +464,15 @@ public class RCPanel : Panel, IDevUISignals
         string pathA = ReadStateReadFiles.GetRainStateSettingsFile(roomName, phase.from);
         string pathB = ReadStateReadFiles.GetRainStateSettingsFile(roomName, phase.to);
         if (pathA != null && pathB != null && phase.from != phase.to)
+        {
+            // Limpiar _pendingOrigin antes de cada attach manual para que
+            // ConsumePendingOrigin use pathA (el origen real de la fase),
+            // no un snapB de una fase anterior que quedó en el buffer.
+            // Sin esto, retroceder el slider contamina las texturas con el
+            // estado que quedó de la fase forward anterior.
+            SettingsBlendController.ClearPendingOrigin();
             SettingsBlendController.AttachWithExternalT(owner.room, pathA, pathB);
+        }
     }
 
     /// <summary>

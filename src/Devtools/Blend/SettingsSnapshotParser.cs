@@ -79,8 +79,9 @@ public partial class SettingsSnapshot
             if (line.StartsWith("RC_TINT: "))
             {
                 string[] hexes = line.Substring("RC_TINT: ".Length).Trim().Split(' ');
-                if (hexes.Length >= 1) snap.TintMultiply   = ParseHexColor(hexes[0]);
-                if (hexes.Length >= 2) snap.TintAtmosphere = ParseHexColor(hexes[1]);
+                if (hexes.Length >= 1) snap.TintMultiply        = ParseHexColor(hexes[0]);
+                if (hexes.Length >= 2) snap.TintAtmosphere      = ParseHexColor(hexes[1]);
+                if (hexes.Length >= 3) snap.TintCloudAtmosphere = ParseHexColor(hexes[2]);
             }
         }
         return snap;
@@ -139,8 +140,6 @@ public partial class SettingsSnapshot
             snap.FadePaletteID        = tmpl.FadePaletteID;
             snap.FadePaletteOpacities = tmpl.FadePaletteOpacities;
         }
-
-        Plugin.RSPlugin.log.LogInfo("[SettingsSnapshot] Applied template: " + templatePath);
     }
 
     // ── PlacedObjects ────────────────────────────────────────────────────

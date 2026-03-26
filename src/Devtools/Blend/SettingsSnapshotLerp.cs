@@ -37,6 +37,7 @@ public partial class SettingsSnapshot
         snap.AmbientSounds  = useB ? b.AmbientSounds  : a.AmbientSounds;
 
         snap.FadePaletteID = useB ? b.FadePaletteID : a.FadePaletteID;
+        snap._hasFadePalette = useB ? b._hasFadePalette : a._hasFadePalette;
         int opCount = Math.Max(a.FadePaletteOpacities.Length, b.FadePaletteOpacities.Length);
         snap.FadePaletteOpacities = new float[opCount];
         for (int i = 0; i < opCount; i++)
@@ -104,6 +105,12 @@ public partial class SettingsSnapshot
             var ca = a.TintAtmosphere ?? b.TintAtmosphere.Value;
             var cb = b.TintAtmosphere ?? a.TintAtmosphere.Value;
             snap.TintAtmosphere = Color.Lerp(ca, cb, t);
+        }
+        if (a.TintCloudAtmosphere.HasValue || b.TintCloudAtmosphere.HasValue)
+        {
+            var ca = a.TintCloudAtmosphere ?? b.TintCloudAtmosphere.Value;
+            var cb = b.TintCloudAtmosphere ?? a.TintCloudAtmosphere.Value;
+            snap.TintCloudAtmosphere = Color.Lerp(ca, cb, t);
         }
 
         return snap;

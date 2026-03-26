@@ -69,6 +69,7 @@ public static class SettingsBlendController
         On.PlacedObject.DayNightData.Apply     += OnDayNightDataApply;
         On.RoomCamera.DrawUpdate               += OnDrawUpdate;
         On.RoomSettings.Save                   += OnRoomSettingsSave;
+        On.RoomCamera.Update                   += OnRoomCameraUpdate;
     }
 
     public static void Attach(Room room, string pathA, string pathB)
@@ -126,18 +127,12 @@ public static class SettingsBlendController
         if (_room != null)
         {
             var cam = _room.game?.cameras?[0];
-            Plugin.RSPlugin.log.LogInfo(
-                $"[DetachAndRestore] room={_room.abstractRoom?.name}" +
-                $" snapOriginal.Palette={_snapOriginal?.Palette}" +
-                $" snapA.Palette={_snapA?.Palette} snapB.Palette={_snapB?.Palette}" +
-                $" lastT={_lastT:F2} active={_active}");
             if (cam != null)
             {
                 var orig = _snapOriginal;
                 var rs   = _room.roomSettings;
                 if (orig != null && rs != null)
                 {
-                    // Restaurar campos escalares de roomSettings que ApplyBlend contaminó
                     rs.Grime                 = orig.Grime;
                     rs.Clouds                = orig.Clouds;
                     rs.CeilingDrips          = orig.CeilingDrips;
@@ -146,25 +141,22 @@ public static class SettingsBlendController
                     rs.RandomItemSpearChance = orig.RandomItemSpearChance;
                     rs.WaterReflectionAlpha  = orig.WaterReflectionAlpha;
 
-                    // Restaurar shader global de Grime — persiste entre salas si no se limpia
                     Shader.SetGlobalFloat(RainWorld.ShadPropGrime, orig.Grime);
-
-                    // Los globals MultiplyColor y AtmosphereColor los retoma RoofTopView/
-                    // AboveCloudsView en su próximo Update. No necesitan restauración explícita
-                    // porque ya no usamos valores hardcodeados ni campos del snapshot — se
-                    // calculan dinámicamente desde currentPalette en cada tick.
-
-                    // Restaurar efectos escalares al estado original
-                    // ApplyScalarEffects los dejó en valores mezclados en roomSettings.effects
                     RoomEffectsApplier.ApplyScalarEffects(_room, orig);
                 }
 
-                // Restaurar fadeTexA/B directamente desde la copia original.
-                // ChangeBothPalettes(0,0,0f) no es suficiente — paleta 0 es válida
-                // y puede contaminar las texturas. Sobreescribir los píxeles directamente
-                // garantiza que la sala destino herede texturas limpias.
                 BlendTextureManager.RestoreOriginalTextures(cam);
                 cam.paletteBlend = 0f;
+
+                // Resetear globals de fondo a neutro inmediatamente.
+                // Sin esto, MultiplyColor y AtmosphereColor quedan con valores del
+                // blend de VR1 durante varios frames mientras AboveCloudsView no ha
+                // actualizado — esos frames PS1 muestra los colores de VR1.
+                // Color.white es el neutro: sin tinte de fondo, aspecto vanilla.
+                Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor,
+                    new UnityEngine.Vector4(1f, 1f, 1f, 1f));
+                Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor,
+                    new UnityEngine.Vector4(0.16078432f, 0.23137255f, 0.31764707f, 1f));
             }
         }
         Detach();
@@ -181,7 +173,6 @@ public static class SettingsBlendController
         _pendingOrigin = null;
         if (_active)
             DetachAndRestore();
-        Plugin.RSPlugin.log.LogInfo("[BlendController] ResetFull: blend cleared.");
     }
 
     /// <summary>
@@ -195,6 +186,10 @@ public static class SettingsBlendController
         if (room == null || path == null) return;
         var cam = room.game?.cameras?[0];
         if (cam == null) return;
+
+        Plugin.RSPlugin.log.LogInfo(
+            $"[ApplyIdleState] room={room.abstractRoom?.name} path={System.IO.Path.GetFileName(path)} " +
+            $"camRoom={(cam.room?.abstractRoom?.name ?? "null")} active={_active}");
 
         var snap = SettingsSnapshot.FromFileWithTemplate(path, room.abstractRoom.name);
         if (snap == null) return;
@@ -221,7 +216,7 @@ public static class SettingsBlendController
         cam.ApplyEffectColorsToAllPaletteTextures(snap.EffectColorA, snap.EffectColorB);
 
         // Fade palette — si está definida
-        if (snap.FadePaletteID > 0 && snap.FadePaletteOpacities.Length > 0)
+        if (snap._hasFadePalette && snap.FadePaletteOpacities.Length > 0)
         {
             int camIdx  = cam.currentCameraPosition;
             float opac  = camIdx < snap.FadePaletteOpacities.Length
@@ -249,9 +244,6 @@ public static class SettingsBlendController
         RoomEffectsApplier.ApplyLightSources(room, snap);
         RoomEffectsApplier.ApplyLightBeams(room, snap);
 
-        Plugin.RSPlugin.log.LogInfo(
-            $"[BlendController] ApplyIdleState room={room.abstractRoom?.name} " +
-            $"path={System.IO.Path.GetFileName(path)} Palette={snap.Palette}");
     }
 
     // ── Fix: color suave de LightSources con colorFromEnvironment ────────────
@@ -283,10 +275,13 @@ public static class SettingsBlendController
     /// </summary>
     public static void AttachWithExternalT(Room room, string pathA, string pathB)
     {
+        Plugin.RSPlugin.log.LogInfo(
+            $"[Attach] room={room?.abstractRoom?.name} A={System.IO.Path.GetFileName(pathA)} B={System.IO.Path.GetFileName(pathB)} " +
+            $"T={BlendClock.SubPhaseLocalT:F3} StateA={BlendClock.StateA} StateB={BlendClock.StateB}");
         _room      = room;
         _pathA     = pathA;
         _pathB     = pathB;
-        ConsumePendingOrigin(room);
+        ConsumePendingOrigin(room, pathA);
         _snapA        = SettingsSnapshot.FromFileWithTemplate(pathA, room.abstractRoom.name);
         _snapB        = SettingsSnapshot.FromFileWithTemplate(pathB, room.abstractRoom.name);
         _active       = true;
@@ -295,13 +290,6 @@ public static class SettingsBlendController
         _lastPaletteT = -1f;
         _lastLightT   = -1f;
 
-        Plugin.RSPlugin.log.LogInfo(
-            $"[BlendController] AttachWithExternalT room={room.abstractRoom?.name}" +
-            $" filePath={room.roomSettings.filePath}" +
-            $" snapOriginal.Palette={_snapOriginal?.Palette}" +
-            $" pathA={System.IO.Path.GetFileName(pathA)}" +
-            $" pathB={System.IO.Path.GetFileName(pathB)}" +
-            $" snapA.Palette={_snapA?.Palette} snapB.Palette={_snapB?.Palette}");
 
         var cam = room.game?.cameras?[0];
         if (cam != null)
@@ -336,45 +324,62 @@ public static class SettingsBlendController
         if (_snapB != null)
         {
             _pendingOrigin = _snapB;
-            Plugin.RSPlugin.log.LogInfo(
-                $"[BlendController] Origin will advance to snapB (Palette={_snapB.Palette})");
         }
     }
 
     /// <summary>
-    /// Consume el origen pendiente — llamar en AttachWithExternalT si existe.
+    /// Descarta el origen pendiente sin consumirlo.
+    /// Llamar desde RCPanel antes de cada ActivatePhase manual para que
+    /// ConsumePendingOrigin use el pathA de la fase actual como origen,
+    /// no un snapB residual de una fase forward anterior.
+    /// Sin esto, retroceder el slider contamina las texturas con el estado
+    /// que quedó del attach previo.
     /// </summary>
-    private static void ConsumePendingOrigin(Room room)
+    public static void ClearPendingOrigin()
+    {
+        _pendingOrigin = null;
+    }
+
+    /// <summary>
+    /// Consume el origen pendiente — llamar en AttachWithExternalT si existe.
+    /// <para>
+    /// <paramref name="originPath"/> es el path del estado A de la fase actual
+    /// (proporcionado por el caller). Se usa cuando el clock no corre (Edit Mode
+    /// o slider manual) para que el origen visual sea exactamente el settings_N
+    /// desde donde arranca la fase, evitando que BlendTextureManager hornee con
+    /// el settings del ciclo actual del disco, que puede ser distinto.
+    /// </para>
+    /// </summary>
+    private static void ConsumePendingOrigin(Room room, string originPath = null)
     {
         if (_pendingOrigin != null)
         {
             _snapOriginal  = _pendingOrigin;
             _pendingOrigin = null;
-            Plugin.RSPlugin.log.LogInfo(
-                $"[BlendController] Origin consumed (Palette={_snapOriginal.Palette})");
         }
         else if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending)
         {
             // El clock está corriendo — el origen visual real es el snapA de la sub-fase actual,
             // no el archivo de disco (que siempre es el settings del ciclo, e.g. settings_4).
-            // Cargar snapA desde el path que el clock indica.
             var settings = BlendSettingsLoader.Active;
             string roomName = room.abstractRoom?.name;
             if (settings != null && roomName != null)
             {
                 string pathA = ReadStateReadFiles.GetRainStateSettingsFile(roomName, BlendClock.StateA);
                 if (pathA != null)
-                {
                     _snapOriginal = SettingsSnapshot.FromFileWithTemplate(pathA, roomName);
-                    Plugin.RSPlugin.log.LogInfo(
-                        $"[BlendController] Origin from clock StateA={BlendClock.StateA} " +
-                        $"(Palette={_snapOriginal?.Palette})");
-                }
                 else
                     _snapOriginal = SettingsSnapshot.FromFile(room.roomSettings.filePath ?? "");
             }
             else
                 _snapOriginal = SettingsSnapshot.FromFile(room.roomSettings.filePath ?? "");
+        }
+        else if (originPath != null)
+        {
+            // Modo manual sin clock (Edit Mode / slider): el origen es el estado A
+            // de la fase, no el settings del ciclo actual en disco.
+            string roomName = room.abstractRoom?.name ?? "";
+            _snapOriginal = SettingsSnapshot.FromFileWithTemplate(originPath, roomName);
         }
         else if (_snapOriginal == null)
         {
@@ -416,46 +421,69 @@ public static class SettingsBlendController
         On.RoomCamera.orig_MoveCamera_Room_int orig, RoomCamera self,
         Room newRoom, int camPos)
     {
+        string prevRoom = self.room?.abstractRoom?.name ?? "null";
+        string nextRoom = newRoom?.abstractRoom?.name ?? "null";
+        Plugin.RSPlugin.log.LogInfo(
+            $"[MoveCamera] {prevRoom}→{nextRoom} _active={_active} _room={_room?.abstractRoom?.name ?? "null"} " +
+            $"Phase={BlendClock.CurrentPhase} IsRunning={BlendClock.IsRunning}");
+
         if (_active && _room != null && newRoom != _room)
         {
-            Plugin.RSPlugin.log.LogInfo(
-                $"[BlendController] Camera leaving blend room '{_room.abstractRoom?.name}' → Detach");
-            // DetachAndRestore llama Detach() al final, que pone _active=false.
-            // Esto ocurre ANTES de orig(), así OnChangeBothPalettes no interviene
-            // cuando el juego carga la paleta de la nueva sala.
             DetachAndRestore();
         }
 
-        // Limpiar _lastIdleRoom para que ApplyIdleState vuelva a correr
-        // al reingresar a la sala — aunque sea la misma de antes.
         BlendClockUpdater.ClearLastIdleRoom();
 
         orig(self, newRoom, camPos);
 
-        // Si la nueva sala está en [ROOMS], aplicar los globals de fondo.
-        // Si cam.room ya es newRoom (transición directa) → inmediato.
-        // Si cam.room aún apunta a la sala anterior (tubería) → diferido:
-        // guardar pending para que OnUpdateDayNightPalette lo consuma en cuanto
-        // cam.room coincida, evitando el flash de ChangeBothPalettes en sala incorrecta.
-        if (!_active && newRoom != null)
+        Plugin.RSPlugin.log.LogInfo(
+            $"[MoveCamera-postOrig] camRoom={self.room?.abstractRoom?.name ?? "null"} newRoom={nextRoom} same={(self.room == newRoom)}");
+
+        if (newRoom == null || !BlendClock.IsRunning) return;
+
+        var blendSettings = BlendSettingsLoader.Active;
+        if (blendSettings == null) return;
+
+        string newRoomName = newRoom.abstractRoom?.name;
+        if (newRoomName == null || !blendSettings.IncludesRoom(newRoomName)) return;
+
+        if (BlendClock.CurrentPhase == BlendClock.Phase.Blending)
         {
-            var settings = BlendSettingsLoader.Active;
-            if (settings != null)
+            string pathA = ReadStateReadFiles.GetRainStateSettingsFile(newRoomName, BlendClock.StateA);
+            string pathB = ReadStateReadFiles.GetRainStateSettingsFile(newRoomName, BlendClock.StateB);
+
+            if (pathA != null && pathB != null && BlendClock.StateA != BlendClock.StateB)
             {
-                string roomName = newRoom.abstractRoom?.name;
-                if (roomName != null && settings.IncludesRoom(roomName))
+                if (self.room == newRoom)
                 {
-                    string path = newRoom.roomSettings?.filePath;
-                    if (path != null)
-                    {
-                        if (self.room == newRoom)
-                            ApplyIdleState(newRoom, path);
-                        else
-                        {
-                            _pendingIdleRoom = newRoom;
-                            _pendingIdlePath = path;
-                        }
-                    }
+                    Plugin.RSPlugin.log.LogInfo(
+                        $"[MoveCamera] Attach inmediato room={newRoomName} T={BlendClock.SubPhaseLocalT:F3} {BlendClock.StateA}→{BlendClock.StateB}");
+                    AttachWithExternalT(newRoom, pathA, pathB);
+                    SetExternalT(BlendClock.SubPhaseLocalT);
+                }
+            }
+        }
+        else
+        {
+            int stateToShow = BlendClock.CurrentPhase == BlendClock.Phase.Done
+                ? BlendClock.StateB
+                : BlendClock.StateA;
+
+            string path = ReadStateReadFiles.GetRainStateSettingsFile(newRoomName, stateToShow);
+            if (path != null)
+            {
+                if (self.room == newRoom)
+                {
+                    Plugin.RSPlugin.log.LogInfo(
+                        $"[MoveCamera] ApplyIdleState inmediato room={newRoomName} state={stateToShow}");
+                    ApplyIdleState(newRoom, path);
+                }
+                else
+                {
+                    Plugin.RSPlugin.log.LogInfo(
+                        $"[MoveCamera] Pending idle room={newRoomName} state={stateToShow}");
+                    _pendingIdleRoom = newRoom;
+                    _pendingIdlePath = path;
                 }
             }
         }
@@ -510,8 +538,7 @@ public static class SettingsBlendController
             if (content.Contains("RC_TINT:")) return;
 
             string suffix = content.EndsWith("\n") ? "" : "\n";
-            System.IO.File.AppendAllText(filePath, suffix + "RC_TINT: #FFFFFF #FFFFFF\n", System.Text.Encoding.UTF8);
-            Plugin.RSPlugin.log.LogInfo($"[RC_TINT] Línea inyectada en: {System.IO.Path.GetFileName(filePath)}");
+            System.IO.File.AppendAllText(filePath, suffix + "RC_TINT: #ffffff #ffffff #ffffff\n", System.Text.Encoding.UTF8);
         }
         catch (System.Exception e)
         {
@@ -521,25 +548,13 @@ public static class SettingsBlendController
 
     /// <summary>
     /// Lee la línea RC_TINT del archivo ANTES de que Save() la borre.
-    /// Devuelve la línea completa, o "RC_TINT: # #" si no existe.
+    /// Devuelve la línea completa, o "RC_TINT: #ffffff #ffffff #ffffff" si no existe.
     /// </summary>
-    public static bool FileHasRcTint(string filePath)
-    {
-        try
-        {
-            if (!System.IO.File.Exists(filePath)) return false;
-            foreach (var line in System.IO.File.ReadAllLines(filePath, System.Text.Encoding.UTF8))
-                if (line.TrimEnd('\r').StartsWith("RC_TINT:")) return true;
-        }
-        catch { }
-        return false;
-    }
-
     public static string ExtractRcTintLine(string filePath)
     {
         try
         {
-            if (!System.IO.File.Exists(filePath)) return "RC_TINT: #FFFFFF #FFFFFF";
+            if (!System.IO.File.Exists(filePath)) return "RC_TINT: #ffffff #ffffff #ffffff";
             foreach (var line in System.IO.File.ReadAllLines(filePath, System.Text.Encoding.UTF8))
             {
                 if (line.TrimEnd('\r').StartsWith("RC_TINT:"))
@@ -550,7 +565,7 @@ public static class SettingsBlendController
         {
             Plugin.RSPlugin.log.LogWarning($"[RC_TINT] ExtractRcTintLine excepción: {e.Message}");
         }
-        return "RC_TINT: #FFFFFF #FFFFFF";
+        return "RC_TINT: #ffffff #ffffff #ffffff";
     }
 
     public static void ReappendRcTint(string filePath, string rcTintLine)
@@ -579,6 +594,18 @@ public static class SettingsBlendController
     // Si la sala está bajo blend, bloqueamos esto para que el mod controle
     // cuándo y cómo ocurre la transición de paleta.
 
+    private static void OnRoomCameraUpdate(On.RoomCamera.orig_Update orig, RoomCamera self)
+    {
+        orig(self);
+
+        if (self.room == null) return;
+        var settings = BlendSettingsLoader.Active;
+        if (settings == null) return;
+        string roomName = self.room.abstractRoom?.name;
+        if (roomName != null && settings.IncludesRoom(roomName))
+            self.effect_dayNight = 0f;
+    }
+
     private static void OnRoomSettingsSave(On.RoomSettings.orig_Save orig, RoomSettings self)
     {
         // Leer RC_TINT antes de que Save() lo borre, luego reinyectarlo.
@@ -606,6 +633,8 @@ public static class SettingsBlendController
 
         // Bloquear si la sala está en [ROOMS] — el mod gestiona esta sala
         // independientemente del estado del clock o del blend.
+        // DayNightData.Apply() solo setea duskPalette/nightPalette en rainCycle
+        // (valores de índice de paleta visual, no el timer) — seguro bloquearlo.
         if (BlendSettingsLoader.Active != null && room != null)
         {
             string roomName = room.abstractRoom?.name;
@@ -655,9 +684,6 @@ public static class SettingsBlendController
         string roomName = room.abstractRoom?.name;
         if (roomName == null || !settings.IncludesRoom(roomName)) return;
 
-        // Guardar referencia para que OverrideBackgroundGlobalsIfActive pueda
-        // leer atmosphereColor (el color azul atmosférico de los edificios lejanos)
-        // en lugar de usar fogColor de la paleta para ShadPropAboveCloudsAtmosphereColor.
         _aboveCloudsView = self;
 
         var cam = room.game?.cameras?[0];
@@ -681,12 +707,16 @@ public static class SettingsBlendController
         string roomName = self.room.abstractRoom?.name;
         if (roomName == null || !settings.IncludesRoom(roomName)) return;
 
-        // Congelar imágenes de cielo en estado "día".
-        self.daySky.alpha  = 1f;
-        self.duskSky.alpha = 0f;
+        self.daySky.alpha   = 1f;
+        self.duskSky.alpha  = 0f;
         self.nightSky.alpha = 0f;
 
-        // Mantener referencia actualizada — por si la instancia se recreó
+        var cloudSnap = _activeSnapshot;
+        var cloudAtm = (cloudSnap != null && cloudSnap.TintCloudAtmosphere.HasValue)
+            ? cloudSnap.TintCloudAtmosphere.Value
+            : new UnityEngine.Color(0.16078432f, 0.23137255f, 0.31764707f);
+        self.atmosphereColor = cloudAtm;
+
         _aboveCloudsView = self;
 
         OverrideBackgroundGlobalsIfActive(self.room);
@@ -735,11 +765,6 @@ public static class SettingsBlendController
         var cam = room.game?.cameras?[0];
         if (cam == null) return;
 
-        // skyColor  → multiply (tinte general de sprites Background)
-        // fogColor  → atmosphere (tinte atmosférico de edificios lejanos)
-        // Ambos vienen de blend_texture.png del mod si existe,
-        // con fallback a la paleta activa.
-        float tBlend = _externalT ? _forcedT : BlendSlider.BlendFactor;
         Color multiply, atmosphere;
         RoomEffectsApplier.CalcBackgroundColors(cam, out multiply, out atmosphere);
 
@@ -747,8 +772,7 @@ public static class SettingsBlendController
         if (settings != null && settings.DefaultBackgroundStates.Count > 0
             && BlendClock.IsRunning && _externalT)
         {
-            float t = _externalT ? _forcedT : BlendSlider.BlendFactor;
-
+            float t = _forcedT;
             bool defA = settings.IsDefaultBackground(BlendClock.StateA);
             bool defB = settings.IsDefaultBackground(BlendClock.StateB);
 
@@ -827,6 +851,8 @@ public static class SettingsBlendController
                 // en el primer frame donde cam.room ya es la sala correcta.
                 if (_pendingIdleRoom != null && _pendingIdleRoom == self.room && _pendingIdlePath != null)
                 {
+                    Plugin.RSPlugin.log.LogInfo(
+                        $"[PendingIdle consumed] room={self.room.abstractRoom?.name} path={_pendingIdlePath}");
                     ApplyIdleState(_pendingIdleRoom, _pendingIdlePath);
                     _pendingIdleRoom = null;
                     _pendingIdlePath = null;
@@ -850,14 +876,17 @@ public static class SettingsBlendController
         On.RoomCamera.orig_ChangeBothPalettes orig, RoomCamera self,
         int palA, int palB, float blend)
     {
-        orig(self, palA, palB, blend);
-        // Verificación estricta: solo intervenir si el blend está activo
-        // Y la cámara apunta exactamente a nuestra sala
-        if (!_active || _room == null || self.room != _room) return;
-        if (!BlendTextureManager.Ready) return;
+        // Si el blend está activo en esta sala exacta, el mod tiene control total
+        // de las paletas — orig() sobreescribiría las texturas que BlendTextureManager
+        // acaba de hornear. Bloqueamos orig() y reaplicamos el blend directamente.
+        if (_active && _room != null && self.room == _room && BlendTextureManager.Ready)
+        {
+            float t = _externalT ? _forcedT : BlendSlider.BlendFactor;
+            MixAndApply(self, t, SettingsSnapshot.Lerp(_snapA, _snapB, t));
+            return;
+        }
 
-        float t = _externalT ? _forcedT : BlendSlider.BlendFactor;
-        MixAndApply(self, t, SettingsSnapshot.Lerp(_snapA, _snapB, t));
+        orig(self, palA, palB, blend);
     }
 
     // ── Blend por frame ───────────────────────────────────────────────────

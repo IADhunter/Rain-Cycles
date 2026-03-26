@@ -42,17 +42,22 @@ public partial class BlendSettings
     public float CycleDuration = 10f;
 
     // ── [ENDCYCLE] ────────────────────────────────────────────────────────
-    /// <summary>Fracción del post-lluvia (0-1) en la que arranca el blend en modo EndCycle.</summary>
-    public float EndCycleTriggerPct = 0.95f;
+    /// <summary>
+    /// Segundos de espera post-lluvia antes de arrancar el blend (EndCycle).
+    /// El clock espera este tiempo desde que el ciclo termina antes de iniciar la mezcla.
+    /// </summary>
+    public float EndCycleIdleTime = 10f;
 
     /// <summary>Duración del blend en segundos (modo EndCycle).</summary>
     public float EndCycleDuration = 25f;
 
     /// <summary>
-    /// Estado destino al terminar el EndCycle (1-based).
-    /// -1 = no declarado (usa siguiente en secuencia).
+    /// Comportamiento al terminar EndCycle:
+    ///   1 = modo normal — hace el blend y se queda en el estado destino (fin de lluvia).
+    ///   2 = puente a Loop — tras el blend, arranca Loop saltándose el primer idle
+    ///       (entra directo a Blending desde el estado destino del EndCycle).
     /// </summary>
-    public int EndCycleTargetState = -1;
+    public int EndCycleTargetState = 1;
 
     // ── [CUSTOM] ──────────────────────────────────────────────────────────
     /// <summary>Identificador que otro mod envía para disparar el blend.</summary>
@@ -115,6 +120,19 @@ public partial class BlendSettings
     {
         List<int> seq;
         return Sequences.TryGetValue(initialState, out seq) ? seq : null;
+    }
+
+    /// <summary>
+    /// Busca la secuencia que contiene a <paramref name="state"/> como elemento,
+    /// independientemente de cuál sea la clave de la secuencia.
+    /// Útil cuando solo hay una secuencia declarada (ej: 1: 1,2,3) y el estado
+    /// actual no es el estado inicial de esa secuencia.
+    /// </summary>
+    public List<int> FindSequenceContaining(int state)
+    {
+        foreach (var seq in Sequences.Values)
+            if (seq.Contains(state)) return seq;
+        return null;
     }
 
     /// <summary>
@@ -182,9 +200,8 @@ public partial class BlendSettings
         {
             switch (Mode)
             {
-                case BlendMode.Cycle:    return CycleTriggerPct;
-                case BlendMode.EndCycle: return EndCycleTriggerPct;
-                default:                 return -1f;
+                case BlendMode.Cycle: return CycleTriggerPct;
+                default:              return -1f;
             }
         }
     }
