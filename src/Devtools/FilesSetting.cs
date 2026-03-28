@@ -119,6 +119,24 @@ public class ReadStateReadFiles
         return filePath;
     }
 
+    /// <summary>
+    /// Extrae el número de estado de un path de settings file.
+    /// Ejemplo: "uw_h01_settings_2.txt" → 2
+    /// Devuelve -1 si no se puede parsear.
+    /// </summary>
+    public static int GetStateFromPath(string path, string roomName)
+    {
+        if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(roomName)) return -1;
+        string fileName = Path.GetFileNameWithoutExtension(path);
+        // Formato esperado: roomname_settings_N (e.g. uw_h01_settings_2)
+        string prefix = roomName.ToLowerInvariant() + "_settings_";
+        int idx = fileName.ToLowerInvariant().LastIndexOf("_settings_");
+        if (idx < 0) return -1;
+        string numStr = fileName.Substring(idx + "_settings_".Length);
+        int n;
+        return int.TryParse(numStr, out n) ? n : -1;
+    }
+
     internal static string CreateNewRainStateFile(string name, int buttonCount, Room room)
     {
         string directoryPath = AssetManager.ResolveFilePath(string.Concat(new string[]

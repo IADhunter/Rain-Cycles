@@ -231,7 +231,7 @@ public static class CustomModeState
 
         int n = 2;
         if (settings._hasRoomsSection)
-            foreach (string room in settings.Rooms)
+            foreach (string room in settings.Rooms.Keys)
             {
                 int count = ReadStateReadFiles.CountRainStateFiles(room);
                 if (count > 0) { n = count; break; }

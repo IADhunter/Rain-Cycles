@@ -25,7 +25,12 @@ public static class SettingsBlendController
     private static string           _pathB        = null;
 
     // Bloquea re-attach en el mismo frame en que se hizo Detach.
-    private static bool _detachedThisFrame = false;
+    private static bool _detachedThisFrame    = false;
+
+    // Bloquea TryApplyIdle en el frame exacto de MoveCamera.
+    // Durante ese frame cam.room puede seguir apuntando a la sala anterior,
+    // haciendo camIsHere=True cuando ya está en tránsito hacia otra sala.
+    private static bool _moveCameraThisFrame  = false;
 
     // Archivos settings a los que ya se inyectó RC_TINT en esta sesión.
     // Evita releer y reescribir el archivo cada frame.
@@ -39,21 +44,38 @@ public static class SettingsBlendController
     // Se actualiza en OnAboveCloudsViewCtor y se limpia en OnMoveCamera al salir.
     private static AboveCloudsView _aboveCloudsView = null;
 
+    // ── Estado de cielo custom (RC_BKG) ──────────────────────────────────
+    // Escena activa con slots de cielo. Se setea en los ctors de RTV/ACV.
+    // Null cuando la sala activa no tiene sky declarado.
+    private static RoofTopView     _rtvScene = null;
+    private static AboveCloudsView _acvScene = null;
+
+    // Índices de estado asignados a cada slot en la escena activa.
+    // -1 = slot no asignado.
+    private static int _skySlotDay   = -1;  // daySky   → estado A actual
+    private static int _skySlotDusk  = -1;  // duskSky  → estado B (destino)
+    private static int _skySlotNight = -1;  // nightSky → próximo estado C
+
     // Snapshot activo actual — lerpeado durante blend, o del idle cuando el clock espera.
     // CalcBackgroundColors lo lee para obtener RC_TINT si está declarado.
     private static SettingsSnapshot _activeSnapshot = null;
 
-    public static bool              IsActive          => _active;
-    public static bool              DetachedThisFrame => _detachedThisFrame;
-    public static string            CurrentPathA      => _pathA;
-    public static string            CurrentPathB      => _pathB;
-    public static Room              ActiveRoom        => _room;
-    public static float             ForcedT           => _forcedT;
-    public static SettingsSnapshot  ActiveSnapshot    => _activeSnapshot;
+    public static bool              IsActive              => _active;
+    public static bool              DetachedThisFrame     => _detachedThisFrame;
+    public static bool              MoveCameraThisFrame   => _moveCameraThisFrame;
+    public static string            CurrentPathA          => _pathA;
+    public static string            CurrentPathB          => _pathB;
+    public static Room              ActiveRoom            => _room;
+    public static float             ForcedT               => _forcedT;
+    public static SettingsSnapshot  ActiveSnapshot        => _activeSnapshot;
     public static void SetActiveSnapshot(SettingsSnapshot snap) => _activeSnapshot = snap;
 
     /// <summary>Llamar al inicio de cada Update para limpiar el flag de frame.</summary>
-    public static void ClearFrameFlag() => _detachedThisFrame = false;
+    public static void ClearFrameFlag()
+    {
+        _detachedThisFrame   = false;
+        _moveCameraThisFrame = false;
+    }
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────
 
@@ -63,6 +85,7 @@ public static class SettingsBlendController
         On.RoomCamera.ChangeBothPalettes       += OnChangeBothPalettes;
         On.DevInterface.DevUI.Update           += OnDevUIUpdate;
         On.RoomCamera.MoveCamera_Room_int      += OnMoveCamera;
+        On.RoofTopView.ctor                    += OnRoofTopViewCtor;
         On.RoofTopView.Update                  += OnRoofTopViewUpdate;
         On.AboveCloudsView.Update              += OnAboveCloudsViewUpdate;
         On.AboveCloudsView.ctor                += OnAboveCloudsViewCtor;
@@ -70,6 +93,7 @@ public static class SettingsBlendController
         On.RoomCamera.DrawUpdate               += OnDrawUpdate;
         On.RoomSettings.Save                   += OnRoomSettingsSave;
         On.RoomCamera.Update                   += OnRoomCameraUpdate;
+        On.RoomCamera.ChangeRoom               += OnChangeRoom;
     }
 
     public static void Attach(Room room, string pathA, string pathB)
@@ -102,6 +126,18 @@ public static class SettingsBlendController
 
     public static void Detach()
     {
+        // Forzar paletteB = -1 en la cámara ANTES de destruir las texturas.
+        // MixPalettes sobreescribe los píxeles de fadeTexB sin actualizar cam.paletteB,
+        // por lo que el ID de paletteB puede no coincidir con los píxeles reales.
+        // ChangeBothPalettes solo recarga fadeTexB si palB != cam.paletteB (early return).
+        // Si paletteB coincide accidentalmente con la fade palette de la nueva sala,
+        // LoadPalette no corre y fadeTexB conserva los píxeles contaminados del blend.
+        // Resetear a -1 garantiza que el próximo ChangeBothPalettes siempre recargue.
+        if (_room != null)
+        {
+            var cam = _room.game?.cameras?[0];
+            if (cam != null) cam.paletteB = -1;
+        }
         _active            = false;
         _externalT         = false;
         _detachedThisFrame = true;
@@ -114,6 +150,9 @@ public static class SettingsBlendController
         _pendingIdlePath   = null;
         _aboveCloudsView   = null;
         _activeSnapshot    = null;
+        // _rtvScene / _acvScene / _skySlot* NO se limpian aquí:
+        // la escena de cielo sobrevive entre blends mientras la sala esté cargada.
+        // Se limpian en ResetFull() cuando el jugador cambia de sala/región.
         RoomEffectsApplier.ClearLightIndex();
         BlendTextureManager.Destroy();
     }
@@ -173,6 +212,9 @@ public static class SettingsBlendController
         _pendingOrigin = null;
         if (_active)
             DetachAndRestore();
+        // Limpiar escena sky — el jugador cambió de sala o región
+        _rtvScene = null; _acvScene = null;
+        _skySlotDay = _skySlotDusk = _skySlotNight = -1;
     }
 
     /// <summary>
@@ -181,69 +223,70 @@ public static class SettingsBlendController
     /// carril — en cambio muestra el estado correcto donde el carril anterior terminó.
     /// No activa el sistema de blend ni toca _snapOriginal/_pendingOrigin.
     /// </summary>
-    public static void ApplyIdleState(Room room, string path)
+    public static void ApplyIdleState(Room room, string path, bool allowCameraOps = false)
     {
         if (room == null || path == null) return;
         var cam = room.game?.cameras?[0];
         if (cam == null) return;
 
+        bool camIsHere = cam.room == room;
+
         Plugin.RSPlugin.log.LogInfo(
             $"[ApplyIdleState] room={room.abstractRoom?.name} path={System.IO.Path.GetFileName(path)} " +
-            $"camRoom={(cam.room?.abstractRoom?.name ?? "null")} active={_active}");
+            $"camRoom={(cam.room?.abstractRoom?.name ?? "null")} active={_active} " +
+            $"camIsHere={camIsHere} allowCamOps={allowCameraOps}");
 
         var snap = SettingsSnapshot.FromFileWithTemplate(path, room.abstractRoom.name);
         if (snap == null) return;
-        _activeSnapshot = snap; // expuesto para CalcBackgroundColors → RC_TINT
+        _activeSnapshot = snap;
 
-        // Paleta principal + effect colors horneados.
-        // ChangeMainPalette carga la textura base desde disco sin effect colors.
-        // Hay que hornearlos explícitamente antes de ApplyFade, igual que hace
-        // BlendTextureManager.Load al preparar los snapshots para el blend.
-        // Sin esto, el juego aplica los EffectColors del roomSettings (settings_4)
-        // causando un flash visible al entrar a la sala durante el Idle.
-        //
-        // También actualizamos roomSettings.EffectColorA/B para que cualquier hook
-        // nativo que llame ApplyEffectColorsToAllPaletteTextures (ej. UpdateDayNightPalette)
-        // use los colors correctos y no los de settings_4.
+        // Siempre: estado de sala (no depende de dónde está la cámara)
         var rs = room.roomSettings;
         if (rs != null)
         {
             rs.EffectColorA = snap.EffectColorA;
             rs.EffectColorB = snap.EffectColorB;
         }
+        RoomEffectsApplier.ApplyShaderGlobals(snap);
+        RoomEffectsApplier.ApplyScalarEffects(room, snap);
+        RoomEffectsApplier.BuildLightIndex(room);
+        RoomEffectsApplier.ApplyLightSources(room, snap);
+        RoomEffectsApplier.ApplyLightBeams(room, snap);
+
+        // Operaciones de cámara: SOLO cuando el caller garantiza que
+        // la cámara ya está en esta sala y no va a moverse este frame.
+        // Desde el updater en background: allowCameraOps=false (default).
+        // Desde OnMoveCamera tras verificar self.room==newRoom: allowCameraOps=true.
+        if (!allowCameraOps || !camIsHere) return;
 
         cam.ChangeMainPalette(snap.Palette);
         cam.ApplyEffectColorsToAllPaletteTextures(snap.EffectColorA, snap.EffectColorB);
 
-        // Fade palette — si está definida
         if (snap._hasFadePalette && snap.FadePaletteOpacities.Length > 0)
         {
-            int camIdx  = cam.currentCameraPosition;
-            float opac  = camIdx < snap.FadePaletteOpacities.Length
-                          ? snap.FadePaletteOpacities[camIdx] : 0f;
+            int camIdx = cam.currentCameraPosition;
+            float opac = camIdx < snap.FadePaletteOpacities.Length
+                         ? snap.FadePaletteOpacities[camIdx] : 0f;
             cam.ChangeFadePalette(snap.FadePaletteID, opac);
             cam.ApplyEffectColorsToAllPaletteTextures(snap.EffectColorA, snap.EffectColorB);
         }
         cam.ApplyFade();
 
-        // Aplicar globals de fondo desde la paleta recién cargada.
-        // ApplyFade → ApplyPalette actualiza cam.currentPalette, así que
-        // CalcBackgroundColors ya puede leer skyColor/fogColor correctamente.
-        // No hay lógica <def> aquí porque en Idle solo hay un estado activo
-        // (no hay blend A→B), y si ese estado tiene <def> simplemente no
-        // debería llamarse ApplyIdleState con tinte — el caller es responsable.
-        // Por simplicidad aplicamos siempre el color de la paleta activa.
+        // Solo escribir los shader globals de fondo si la cámara sigue en una
+        // sala gestionada. Si cam.room ya es PS1 (no gestionada), escribir los
+        // colores de VR1 contaminaría PS1. TryApplyIdle llama ApplyIdleState cada
+        // frame aunque el jugador esté en PS1, así que esta guardia es esencial.
+        if (cam.room != null && BlendSettingsLoader.Active != null)
         {
-            Color multiply, atmosphere;
-            RoomEffectsApplier.CalcBackgroundColors(cam, out multiply, out atmosphere);
-            Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, multiply);
-            Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, atmosphere);
+            string camRoomName = cam.room.abstractRoom?.name;
+            if (camRoomName != null && BlendSettingsLoader.Active.IncludesRoom(camRoomName))
+            {
+                Color multiply, atmosphere;
+                RoomEffectsApplier.CalcBackgroundColors(cam, out multiply, out atmosphere);
+                Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, multiply);
+                Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, atmosphere);
+            }
         }
-        RoomEffectsApplier.ApplyShaderGlobals(snap);
-        RoomEffectsApplier.ApplyScalarEffects(room, snap);
-        RoomEffectsApplier.ApplyLightSources(room, snap);
-        RoomEffectsApplier.ApplyLightBeams(room, snap);
-
     }
 
     // ── Fix: color suave de LightSources con colorFromEnvironment ────────────
@@ -259,8 +302,14 @@ public static class SettingsBlendController
         if (!BlendTextureManager.Ready) return;
 
         var cam = _room.game?.cameras?[0];
-        if (cam == null || cam.room != _room) return;
+        if (cam == null) return;
 
+        // IMPORTANTE: NO comprobar cam.room == _room aquí.
+        // Los light sources de la sala blend (_room) deben mantenerse actualizados
+        // aunque la cámara esté en otra sala (e.g. PS1 mientras VR1 blendea en segundo plano).
+        // Si se omite este override cuando cam.room != _room, las luces de VR1 quedan
+        // congeladas en el último color calculado, y al entrar a VR1 hay un frame
+        // de flash de color incorrecto porque el color no coincide con el T actual.
         if (_snapA == null || _snapB == null) return;
 
         var lerped = SettingsSnapshot.Lerp(_snapA, _snapB, _forcedT);
@@ -297,6 +346,14 @@ public static class SettingsBlendController
             BlendTextureManager.Load(cam, _snapA, _snapB, _snapOriginal, applyFade: false);
             RoomEffectsApplier.BuildLightIndex(room);
 
+            // Deducir stateA/stateB desde los paths para no depender de BlendClock.
+            // Funciona tanto en modo automático como en modo DevTools (slider manual).
+            string roomName = room.abstractRoom?.name;
+            int stateA = ReadStateReadFiles.GetStateFromPath(pathA, roomName);
+            int stateB = ReadStateReadFiles.GetStateFromPath(pathB, roomName);
+            if (stateA > 0 && stateB > 0)
+                SyncSkySlots(room, stateA, stateB);
+
             // Aplicar el blend inmediatamente al T actual del clock para que
             // al entrar a la sala el jugador vea el estado correcto sin esperar
             // al próximo SetExternalT.
@@ -305,7 +362,7 @@ public static class SettingsBlendController
             {
                 float immediateT = BlendClock.SubPhaseLocalT;
                 _lastT = -1f;
-                _lastPaletteT = -1f; // forzar ApplyBlend aunque T sea igual al anterior
+                _lastPaletteT = -1f;
                 ApplyBlend(immediateT);
             }
         }
@@ -427,14 +484,64 @@ public static class SettingsBlendController
             $"[MoveCamera] {prevRoom}→{nextRoom} _active={_active} _room={_room?.abstractRoom?.name ?? "null"} " +
             $"Phase={BlendClock.CurrentPhase} IsRunning={BlendClock.IsRunning}");
 
+        // Bloquear TryApplyIdle durante este frame: cam.room puede quedar
+        // apuntando a la sala anterior hasta el frame siguiente, causando
+        // camIsHere=True cuando ya está en tránsito hacia otra sala.
+        _moveCameraThisFrame = true;
+
         if (_active && _room != null && newRoom != _room)
         {
             DetachAndRestore();
         }
 
+        // Si la cámara sale de una sala gestionada ([ROOMS]) hacia una sala NO
+        // gestionada, resetear los shader globals a neutro ahora mismo.
+        // Sin esto, los valores de ShadPropMultiplyColor/AtmosphereColor que
+        // ApplyIdleState o ApplyBlend escribieron para VR1 quedan activos
+        // mientras el jugador está en PS1, causando contaminación múltiple.
+        // DetachAndRestore cubre el caso _active=True, pero en Phase.Idle/Done
+        // (_active=False) nadie limpiaba los globals.
+        string prevRoomForReset = self.room?.abstractRoom?.name;
+        bool prevWasManaged = prevRoomForReset != null
+            && BlendSettingsLoader.Active != null
+            && BlendSettingsLoader.Active.IncludesRoom(prevRoomForReset);
+        string nextRoomForReset = newRoom?.abstractRoom?.name;
+        bool nextIsManaged = nextRoomForReset != null
+            && BlendSettingsLoader.Active != null
+            && BlendSettingsLoader.Active.IncludesRoom(nextRoomForReset);
+
+        if (prevWasManaged && !nextIsManaged)
+        {
+            Plugin.RSPlugin.log.LogInfo(
+                $"[MoveCamera] Exiting managed room '{prevRoomForReset}' → unmanaged '{nextRoomForReset}'. paletteA={self.paletteA} paletteB={self.paletteB} paletteBlend={self.paletteBlend:F3}");
+            // Log fadeTexB pixel (1,15) = skyColor del fade palette actual
+            if (self.fadeTexA != null)
+            {
+                var pxA = self.fadeTexA.GetPixel(1, 15);
+                var pxB = self.fadeTexB != null ? self.fadeTexB.GetPixel(1, 15) : UnityEngine.Color.black;
+                Plugin.RSPlugin.log.LogInfo($"[MoveCamera] fadeTexA(1,15)={pxA} fadeTexB(1,15)={pxB}");
+            }
+            Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor,
+                new UnityEngine.Vector4(1f, 1f, 1f, 1f));
+            Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor,
+                new UnityEngine.Vector4(0.16078432f, 0.23137255f, 0.31764707f, 1f));
+            _activeSnapshot = null;
+        }
+
+        // Reset: la cámara va a otra sala, el estado idle debe re-aplicarse
+        // en la sala destino cuando cam.room ya esté actualizado (frame siguiente).
         BlendClockUpdater.ClearLastIdleRoom();
 
         orig(self, newRoom, camPos);
+
+        // Log post-orig para diagnóstico
+        if (prevWasManaged && !nextIsManaged && self.room != null)
+        {
+            var pxA2 = self.fadeTexA?.GetPixel(1, 15) ?? UnityEngine.Color.black;
+            var pxB2 = self.fadeTexB?.GetPixel(1, 15) ?? UnityEngine.Color.black;
+            Plugin.RSPlugin.log.LogInfo(
+                $"[MoveCamera-postOrig-palette] paletteA={self.paletteA} paletteB={self.paletteB} paletteBlend={self.paletteBlend:F3} fadeTexA={pxA2} fadeTexB={pxB2}");
+        }
 
         Plugin.RSPlugin.log.LogInfo(
             $"[MoveCamera-postOrig] camRoom={self.room?.abstractRoom?.name ?? "null"} newRoom={nextRoom} same={(self.room == newRoom)}");
@@ -446,6 +553,27 @@ public static class SettingsBlendController
 
         string newRoomName = newRoom.abstractRoom?.name;
         if (newRoomName == null || !blendSettings.IncludesRoom(newRoomName)) return;
+
+        // Consumir pending idle si la cámara llega a la sala que lo espera.
+        // Esto cubre el caso de tuberías donde same=False en el primer MoveCamera
+        // y el pending no puede aplicarse hasta que la cámara llega en el siguiente viaje.
+        // Se aplica ANTES del bloque Blending/Idle para que el estado visual quede
+        // correcto aunque en el mismo frame el clock avance a Blending.
+        if (_pendingIdleRoom != null &&
+            _pendingIdleRoom.abstractRoom?.name == newRoomName &&
+            _pendingIdlePath != null)
+        {
+            Plugin.RSPlugin.log.LogInfo(
+                $"[MoveCamera] Consuming pending idle for {newRoomName} (same={self.room == newRoom})");
+            // Aplicar si cam.room ya actualizó, de lo contrario diferir al OnUpdateDayNightPalette
+            if (self.room == newRoom)
+            {
+                ApplyIdleState(_pendingIdleRoom, _pendingIdlePath, allowCameraOps: true);
+                BlendClockUpdater.SetLastIdleRoom(newRoomName);
+            }
+            _pendingIdleRoom = null;
+            _pendingIdlePath = null;
+        }
 
         if (BlendClock.CurrentPhase == BlendClock.Phase.Blending)
         {
@@ -476,7 +604,8 @@ public static class SettingsBlendController
                 {
                     Plugin.RSPlugin.log.LogInfo(
                         $"[MoveCamera] ApplyIdleState inmediato room={newRoomName} state={stateToShow}");
-                    ApplyIdleState(newRoom, path);
+                    ApplyIdleState(newRoom, path, allowCameraOps: true);
+                    BlendClockUpdater.SetLastIdleRoom(newRoomName);
                 }
                 else
                 {
@@ -602,8 +731,26 @@ public static class SettingsBlendController
         var settings = BlendSettingsLoader.Active;
         if (settings == null) return;
         string roomName = self.room.abstractRoom?.name;
-        if (roomName != null && settings.IncludesRoom(roomName))
+        if (roomName == null) return;
+
+        if (settings.IncludesRoom(roomName))
             self.effect_dayNight = 0f;
+
+        // Consumir pending idle en el primer frame donde cam.room ya apunta
+        // a la sala pendiente. Cubre el caso de tuberías (same=False en OnMoveCamera)
+        // donde la paleta no pudo aplicarse hasta que la cámara actualizó.
+        if (_pendingIdleRoom != null &&
+            _pendingIdleRoom.abstractRoom?.name == roomName &&
+            _pendingIdlePath != null &&
+            !_moveCameraThisFrame)
+        {
+            Plugin.RSPlugin.log.LogInfo(
+                $"[OnRoomCameraUpdate] Consuming pending idle room={roomName}");
+            ApplyIdleState(_pendingIdleRoom, _pendingIdlePath, allowCameraOps: true);
+            BlendClockUpdater.SetLastIdleRoom(roomName);
+            _pendingIdleRoom = null;
+            _pendingIdlePath = null;
+        }
     }
 
     private static void OnRoomSettingsSave(On.RoomSettings.orig_Save orig, RoomSettings self)
@@ -645,12 +792,28 @@ public static class SettingsBlendController
         orig(self, room);
     }
 
-    // ── Bloqueo de RoofTopView / AboveCloudsView ──────────────────────────
-    // orig() corre siempre para físicas, nubes, humo, etc.
-    // Pero si la sala está en [ROOMS], bloqueamos los efectos visuales de
-    // transición DayNight: alphas de las imágenes de cielo y shader globals.
-    // Los alphas se restauran al estado "día" (daySky visible, resto ocultos).
-    // Los shader globals los sobreescribe OverrideBackgroundGlobalsIfActive.
+    // ── RoofTopView / AboveCloudsView — ctors, updates y helpers de sky ──
+
+    private static void OnRoofTopViewCtor(
+        On.RoofTopView.orig_ctor orig, RoofTopView self,
+        Room room, RoomSettings.RoomEffect effect)
+    {
+        orig(self, room, effect);
+
+        if (room == null) return;
+        var settings = BlendSettingsLoader.Active;
+        if (settings == null) return;
+        string roomName = room.abstractRoom?.name;
+        if (roomName == null || !settings.IncludesRoom(roomName)) return;
+        if (settings.GetSkyType(roomName) != SkyType.RTV) return;
+
+        // Actualizar siempre a la instancia más reciente.
+        // Rain World precarga salas adyacentes — puede haber múltiples instancias.
+        // La que importa es la última creada para una sala en [ROOMS].
+        _rtvScene = self;
+        _skySlotDay = _skySlotDusk = _skySlotNight = -1;  // resetear slots para la nueva instancia
+        AssignSkySlots(self, room, settings, SkyType.RTV);
+    }
 
     private static void OnRoofTopViewUpdate(
         On.RoofTopView.orig_Update orig, RoofTopView self, bool eu)
@@ -663,12 +826,17 @@ public static class SettingsBlendController
         string roomName = self.room.abstractRoom?.name;
         if (roomName == null || !settings.IncludesRoom(roomName)) return;
 
-        // Congelar imágenes de cielo en estado "día" — el mod las controlará
-        // cuando implemente su propio sistema de intercalado de cielo.
-        self.daySky.alpha  = 1f;
-        self.duskSky.alpha = 0f;
-        self.nightSky.alpha = 0f;
+        // Sin sky declarado para esta sala → comportamiento frozen estable
+        if (settings.GetSkyType(roomName) != SkyType.RTV)
+        {
+            self.daySky.alpha  = 1f;
+            self.duskSky.alpha = 0f;
+            self.nightSky.alpha = 0f;
+            OverrideBackgroundGlobalsIfActive(self.room);
+            return;
+        }
 
+        ApplySkyAlphas(self.daySky, self.duskSky, self.nightSky);
         OverrideBackgroundGlobalsIfActive(self.room);
     }
 
@@ -687,13 +855,19 @@ public static class SettingsBlendController
         _aboveCloudsView = self;
 
         var cam = room.game?.cameras?[0];
-        if (cam == null) return;
+        if (cam != null)
+        {
+            Color multiply, atmosphere;
+            RoomEffectsApplier.CalcBackgroundColors(cam, out multiply, out atmosphere);
+            Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, multiply);
+            Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, atmosphere);
+        }
 
-        // Restaurar los globals que el constructor pisó con valores hardcodeados.
-        Color multiply, atmosphere;
-        RoomEffectsApplier.CalcBackgroundColors(cam, out multiply, out atmosphere);
-        Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, multiply);
-        Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, atmosphere);
+        if (settings.GetSkyType(roomName) != SkyType.ACV) return;
+
+        _acvScene = self;
+        _skySlotDay = _skySlotDusk = _skySlotNight = -1;
+        AssignSkySlots(self, room, settings, SkyType.ACV);
     }
 
     private static void OnAboveCloudsViewUpdate(
@@ -707,19 +881,295 @@ public static class SettingsBlendController
         string roomName = self.room.abstractRoom?.name;
         if (roomName == null || !settings.IncludesRoom(roomName)) return;
 
-        self.daySky.alpha   = 1f;
-        self.duskSky.alpha  = 0f;
-        self.nightSky.alpha = 0f;
+        // Sin sky declarado → frozen estable
+        if (settings.GetSkyType(roomName) != SkyType.ACV)
+        {
+            self.daySky.alpha  = 1f;
+            self.duskSky.alpha = 0f;
+            self.nightSky.alpha = 0f;
+            _aboveCloudsView = self;
+            OverrideBackgroundGlobalsIfActive(self.room);
+            return;
+        }
+
+        ApplySkyAlphas(self.daySky, self.duskSky, self.nightSky);
 
         var cloudSnap = _activeSnapshot;
-        var cloudAtm = (cloudSnap != null && cloudSnap.TintCloudAtmosphere.HasValue)
+        self.atmosphereColor = (cloudSnap != null && cloudSnap.TintCloudAtmosphere.HasValue)
             ? cloudSnap.TintCloudAtmosphere.Value
             : new UnityEngine.Color(0.16078432f, 0.23137255f, 0.31764707f);
-        self.atmosphereColor = cloudAtm;
 
         _aboveCloudsView = self;
-
         OverrideBackgroundGlobalsIfActive(self.room);
+    }
+
+    // ── Sky helpers ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Asigna los nombres de archivo del mod a los slots daySky/duskSky/nightSky
+    /// según la secuencia declarada en blend_settings. Llama LoadGraphic por cada
+    /// imagen y registra el atlas en BlendSkyAtlasCache.
+    /// Corre en el ctor — antes de elementsAddedToRoom, sin crear objetos nuevos.
+    /// </summary>
+    private static void AssignSkySlots(BackgroundScene scene, Room room,
+        BlendSettings settings, SkyType sky)
+    {
+        // Resolver la secuencia de estados: A=activo, B=destino, C=siguiente
+        int stateA = BlendClock.IsRunning ? BlendClock.StateA : 1;
+        int stateB = BlendClock.IsRunning ? BlendClock.StateB : NextStateIn(settings, stateA);
+        int stateC = NextStateIn(settings, stateB);
+
+        _skySlotDay   = stateA;
+        _skySlotDusk  = stateB;
+        _skySlotNight = stateC;
+
+        string region = BlendSettingsLoader.ActiveRegion;
+
+        LoadAndAssignSlot(scene, sky, stateA, region, settings,
+            slot => {
+                if (scene is RoofTopView rtv) rtv.daySky.illustrationName = slot;
+                else if (scene is AboveCloudsView acv) acv.daySky.illustrationName = slot;
+            });
+
+        LoadAndAssignSlot(scene, sky, stateB, region, settings,
+            slot => {
+                if (scene is RoofTopView rtv) rtv.duskSky.illustrationName = slot;
+                else if (scene is AboveCloudsView acv) acv.duskSky.illustrationName = slot;
+            });
+
+        LoadAndAssignSlot(scene, sky, stateC, region, settings,
+            slot => {
+                if (scene is RoofTopView rtv) rtv.nightSky.illustrationName = slot;
+                else if (scene is AboveCloudsView acv) acv.nightSky.illustrationName = slot;
+            });
+
+        Plugin.RSPlugin.log.LogInfo(
+            $"[SkyBkg] Assigned slots: day={stateA} dusk={stateB} night={stateC} sky={sky}");
+    }
+
+    private static void LoadAndAssignSlot(BackgroundScene scene, SkyType sky,
+        int state, string region, BlendSettings settings,
+        System.Action<string> assign)
+    {
+        string file = settings.GetBkgFileForState(state, sky);
+        if (string.IsNullOrEmpty(file)) return;
+        string name = System.IO.Path.GetFileNameWithoutExtension(file);
+        // El atlas ya fue precargado en OnRegionChanged via BlendSkyAtlasCache.PreloadRegion.
+        // Solo registrar por si acaso y asignar el nombre al slot.
+        BlendSkyAtlasCache.Register(region, name);
+        assign(name);
+    }
+
+    /// <summary>
+    /// Aplica alphas a los tres slots según el T actual del blend.
+    /// El crossfade es unidireccional como en vanilla:
+    ///   duskSky (B) siempre alpha=1 — está debajo, siempre visible
+    ///   daySky  (A) baja de 1→0 revelando duskSky
+    ///   nightSky (C) siempre alpha=0 — esperando para el próximo ciclo
+    /// Esto evita el flash blanco que ocurre cuando ambos alphas suman <1.
+    /// </summary>
+    private static void ApplySkyAlphas(
+        BackgroundScene.Simple2DBackgroundIllustration day,
+        BackgroundScene.Simple2DBackgroundIllustration dusk,
+        BackgroundScene.Simple2DBackgroundIllustration night)
+    {
+        float t = (_active && _externalT) ? _forcedT : 0f;
+        day.alpha   = 1f - t;   // A se desvanece
+        dusk.alpha  = 1f;       // B siempre visible debajo
+        night.alpha = 0f;       // C oculto, listo
+    }
+
+    /// <summary>
+    /// Rota los slots al avanzar la sub-fase: B pasa a ser A, C pasa a ser B,
+    /// el nuevo C se calcula de la secuencia. Cambia illustrationName en el slot
+    /// correspondiente y recrea su FSprite via el patrón de SaintsJourneyIllustration.
+    /// </summary>
+    public static void RotateSkySlots()
+    {
+        // La sincronización real ocurre en AttachWithExternalT via SyncSkySlots.
+        // RotateSkySlots se mantiene para compatibilidad con BlendClockUpdater
+        // pero ya no necesita hacer nada — SyncSkySlots lo cubre en el re-attach.
+    }
+
+    /// <summary>
+    /// Cambia illustrationName del slot y recrea su FSprite si la cámara está disponible.
+    /// Patrón de SaintsJourneyIllustration: RemoveAllSpritesFromContainer + InitiateSprites.
+    /// </summary>
+    private static void RefreshSlotSprite(
+        BackgroundScene.Simple2DBackgroundIllustration slot,
+        string newName, RoomCamera cam)
+    {
+        if (slot.illustrationName == newName) return;
+        slot.illustrationName = newName;
+        if (cam == null) return;
+
+        foreach (var sLeaser in cam.spriteLeasers)
+        {
+            if (sLeaser.drawableObject == slot && sLeaser.sprites != null && sLeaser.sprites.Length > 0)
+            {
+                var oldSprite = sLeaser.sprites[0];
+                var container = oldSprite.container;
+                if (container == null) break;
+
+                // Encontrar la posición del sprite en el container para insertar el nuevo en el mismo lugar
+                int childIndex = -1;
+                for (int i = 0; i < container.GetChildCount(); i++)
+                {
+                    if (container.GetChildAt(i) == oldSprite) { childIndex = i; break; }
+                }
+
+                // Crear el nuevo sprite con la nueva textura
+                var newSprite = new FSprite(newName, true);
+                newSprite.x = oldSprite.x;
+                newSprite.y = oldSprite.y;
+                newSprite.shader = oldSprite.shader;
+                newSprite.alpha = oldSprite.alpha;
+
+                // Reemplazar en el array del sLeaser
+                oldSprite.RemoveFromContainer();
+                sLeaser.sprites[0] = newSprite;
+
+                // Insertar en la misma posición del container
+                if (childIndex >= 0 && childIndex < container.GetChildCount())
+                    container.AddChildAtIndex(newSprite, childIndex);
+                else
+                    container.AddChild(newSprite);
+
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sincroniza los tres slots de cielo (daySky/duskSky/nightSky) con el par
+    /// stateA/stateB del blend actual. Corre en cada AttachWithExternalT.
+    /// A diferencia de RotateSkySlots (que rota incrementalmente), este método
+    /// calcula directamente desde los estados actuales — siempre correcto.
+    /// </summary>
+    private static void SyncSkySlots(Room room, int stateA, int stateB)
+    {
+        var settings = BlendSettingsLoader.Active;
+        if (settings == null || room == null) return;
+        string roomName = room.abstractRoom?.name;
+        if (roomName == null) return;
+
+        SkyType sky = settings.GetSkyType(roomName);
+        if (sky == SkyType.None) return;
+
+        // Verificar que tenemos la escena correcta para esta sala
+        if (sky == SkyType.RTV && (_rtvScene == null || _rtvScene.room?.abstractRoom?.name != roomName)) return;
+        if (sky == SkyType.ACV && (_acvScene == null || _acvScene.room?.abstractRoom?.name != roomName)) return;
+
+        int stateC = NextStateIn(settings, stateB);
+
+        // Sin cambio — no hacer nada
+        if (_skySlotDay == stateA && _skySlotDusk == stateB && _skySlotNight == stateC) return;
+
+        string fileA = settings.GetBkgFileForState(stateA, sky);
+        string fileB = settings.GetBkgFileForState(stateB, sky);
+        string fileC = settings.GetBkgFileForState(stateC, sky);
+
+        var cam = room.game?.cameras?[0];
+
+        // Actualizar solo los slots que cambiaron — evita recrear sprites innecesariamente
+        RoofTopView    rtv = sky == SkyType.RTV ? _rtvScene : null;
+        AboveCloudsView acv = sky == SkyType.ACV ? _acvScene : null;
+
+        if (_skySlotDay != stateA)
+        {
+            if (!string.IsNullOrEmpty(fileA))
+            {
+                if (rtv != null) RefreshSlotSprite(rtv.daySky,  System.IO.Path.GetFileNameWithoutExtension(fileA), cam);
+                if (acv != null) RefreshSlotSprite(acv.daySky,  System.IO.Path.GetFileNameWithoutExtension(fileA), cam);
+            }
+            _skySlotDay = stateA;
+        }
+        if (_skySlotDusk != stateB)
+        {
+            if (!string.IsNullOrEmpty(fileB))
+            {
+                if (rtv != null) RefreshSlotSprite(rtv.duskSky, System.IO.Path.GetFileNameWithoutExtension(fileB), cam);
+                if (acv != null) RefreshSlotSprite(acv.duskSky, System.IO.Path.GetFileNameWithoutExtension(fileB), cam);
+            }
+            _skySlotDusk = stateB;
+        }
+        if (_skySlotNight != stateC)
+        {
+            if (!string.IsNullOrEmpty(fileC))
+            {
+                if (rtv != null) RefreshSlotSprite(rtv.nightSky, System.IO.Path.GetFileNameWithoutExtension(fileC), cam);
+                if (acv != null) RefreshSlotSprite(acv.nightSky, System.IO.Path.GetFileNameWithoutExtension(fileC), cam);
+            }
+            _skySlotNight = stateC;
+        }
+    }
+
+    /// <summary>
+    /// Aplica instantáneamente la imagen de cielo correspondiente a un estado.
+    /// Llamar desde RCPanel al hacer swap (cambio instantáneo de estado).
+    /// </summary>
+    public static void ApplySkyForState(int state, Room room)
+    {
+        if (room == null) return;
+        var settings = BlendSettingsLoader.Active;
+        if (settings == null) return;
+        string roomName = room.abstractRoom?.name;
+        if (roomName == null) return;
+
+        SkyType sky = settings.GetSkyType(roomName);
+        if (sky == SkyType.None) return;
+
+        string file = settings.GetBkgFileForState(state, sky);
+        if (string.IsNullOrEmpty(file)) return;
+        string name = System.IO.Path.GetFileNameWithoutExtension(file);
+
+        var cam = room.game?.cameras?[0];
+
+        if (sky == SkyType.RTV && _rtvScene != null)
+        {
+            RefreshSlotSprite(_rtvScene.daySky, name, cam);
+            // Resetear alpha a estado visible completo
+            _rtvScene.daySky.alpha  = 1f;
+            _rtvScene.duskSky.alpha = 1f;
+            _rtvScene.nightSky.alpha = 0f;
+        }
+        else if (sky == SkyType.ACV && _acvScene != null)
+        {
+            RefreshSlotSprite(_acvScene.daySky, name, cam);
+            _acvScene.daySky.alpha  = 1f;
+            _acvScene.duskSky.alpha = 1f;
+            _acvScene.nightSky.alpha = 0f;
+        }
+
+        // Actualizar slots lógicos
+        _skySlotDay  = state;
+        _skySlotDusk  = NextStateIn(settings, state);
+        _skySlotNight = NextStateIn(settings, _skySlotDusk);
+
+        Plugin.RSPlugin.log.LogInfo($"[SkyBkg] Swap to state {state} → '{name}'");
+    }
+
+    /// <summary>
+    /// Devuelve el estado siguiente a 'state' en la secuencia del blend settings.
+    /// Si no hay secuencia declarada, devuelve el mismo estado.
+    /// </summary>
+    private static int NextStateIn(BlendSettings settings, int state)
+    {
+        if (settings == null || state < 1) return state;
+        // Buscar en sequences el estado que sigue a 'state'
+        foreach (var kv in settings.Sequences)
+        {
+            var seq = kv.Value;
+            int idx = seq.IndexOf(state);
+            if (idx >= 0)
+                return seq[(idx + 1) % seq.Count];
+        }
+        // Fallback: state+1 cíclico dentro del rango de bkg declarados
+        int max = 0;
+        foreach (var alias in settings.StateBkgAlias.Keys)
+            if (alias > max) max = alias;
+        if (max < 1) return state;
+        return (state % max) + 1;
     }
 
     // RoomCamera.DrawUpdate setea backgroundGraphic.color cada frame usando
@@ -752,12 +1202,6 @@ public static class SettingsBlendController
     // directamente de la paleta activa de la cámara (cam.currentPalette).
     // skyColor  → multiply (tinte Background sprites)
     // fogColor  → atmosphere (niebla AboveClouds)
-    //
-    // Si el estado A o B tiene el tag <def> en su línea de sequence, ese lado
-    // del blend usa Color.white (sin tinte) en lugar del color de su paleta.
-    // Esto permite que ciertos settings mantengan el aspecto vanilla (gris neutro)
-    // mientras otros aplican el tinte de su paleta — la transición entre ambos
-    // se interpola suavemente según T.
     private static void OverrideBackgroundGlobalsIfActive(Room room)
     {
         if (!_active || _room == null || room != _room) return;
@@ -767,34 +1211,6 @@ public static class SettingsBlendController
 
         Color multiply, atmosphere;
         RoomEffectsApplier.CalcBackgroundColors(cam, out multiply, out atmosphere);
-
-        var settings = BlendSettingsLoader.Active;
-        if (settings != null && settings.DefaultBackgroundStates.Count > 0
-            && BlendClock.IsRunning && _externalT)
-        {
-            float t = _forcedT;
-            bool defA = settings.IsDefaultBackground(BlendClock.StateA);
-            bool defB = settings.IsDefaultBackground(BlendClock.StateB);
-
-            if (defA || defB)
-            {
-                if (defA && defB)
-                {
-                    multiply   = Color.white;
-                    atmosphere = Color.white;
-                }
-                else if (defA)
-                {
-                    multiply   = Color.Lerp(Color.white, multiply,   t);
-                    atmosphere = Color.Lerp(Color.white, atmosphere, t);
-                }
-                else
-                {
-                    multiply   = Color.Lerp(multiply,   Color.white, t);
-                    atmosphere = Color.Lerp(atmosphere, Color.white, t);
-                }
-            }
-        }
 
         Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, multiply);
         Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, atmosphere);
@@ -853,7 +1269,8 @@ public static class SettingsBlendController
                 {
                     Plugin.RSPlugin.log.LogInfo(
                         $"[PendingIdle consumed] room={self.room.abstractRoom?.name} path={_pendingIdlePath}");
-                    ApplyIdleState(_pendingIdleRoom, _pendingIdlePath);
+                    ApplyIdleState(_pendingIdleRoom, _pendingIdlePath, allowCameraOps: true);
+                    BlendClockUpdater.SetLastIdleRoom(self.room.abstractRoom?.name);
                     _pendingIdleRoom = null;
                     _pendingIdlePath = null;
                 }
@@ -870,6 +1287,49 @@ public static class SettingsBlendController
 
         // Sala no gestionada por el mod → comportamiento nativo.
         orig(self);
+
+        // Después del orig: los shader globals pueden tener valores de la sala
+        // gestionada anterior (VR1). Como orig() para salas sin DayNight no los
+        // actualiza, los recalculamos leyendo fadeTexA.
+        //
+        // POR QUÉ fadeTexA y no paletteTexture:
+        // ChangeRoom (línea 1821 del engine) llama ChangeMainPalette(PS1) que carga
+        // la paleta de PS1 en fadeTexA. paletteTexture solo se actualiza en ApplyFade(),
+        // que corre en línea 1751 de ApplyPositionChange — DESPUÉS de ChangeRoom (1736).
+        // Por tanto, cuando UpdateDayNightPalette corre desde dentro de ChangeRoom (1877),
+        // fadeTexA ya tiene PS1 pero paletteTexture todavía tiene VR1.
+        //
+        // fadeTexA tiene 16 filas. ApplyFade mezcla filas [8..15] con [0..7].
+        // skyColor está en (1, 15), fogColor en (2, 15) — la fila "superior" de la paleta.
+        if (BlendClock.IsRunning && self.room != null && self.fadeTexA != null)
+        {
+            Color multiply   = self.fadeTexA.GetPixel(1, 15);
+            Color atmosphere = self.fadeTexA.GetPixel(2, 15);
+            Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, multiply);
+            Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, atmosphere);
+        }
+    }
+
+    private static void OnChangeRoom(
+        On.RoomCamera.orig_ChangeRoom orig, RoomCamera self,
+        Room newRoom, int cameraPosition)
+    {
+        // Si la sala destino no es gestionada por el mod (ej. PS1), resetear
+        // paletteB a -1 ANTES del orig para garantizar que ChangeBothPalettes
+        // dentro de ChangeRoom siempre recargue fadeTexB desde disco.
+        // Sin esto, si paletteB coincide con la fade palette de newRoom,
+        // ChangeBothPalettes hace early-return y fadeTexB conserva los píxeles
+        // mezclados del blend de VR1 — contaminando la paleta de PS1.
+        if (BlendClock.IsRunning && newRoom != null && BlendSettingsLoader.Active != null)
+        {
+            string newRoomName = newRoom.abstractRoom?.name;
+            if (newRoomName != null && !BlendSettingsLoader.Active.IncludesRoom(newRoomName))
+            {
+                self.paletteB = -1;
+            }
+        }
+
+        orig(self, newRoom, cameraPosition);
     }
 
     private static void OnChangeBothPalettes(
@@ -879,7 +1339,15 @@ public static class SettingsBlendController
         // Si el blend está activo en esta sala exacta, el mod tiene control total
         // de las paletas — orig() sobreescribiría las texturas que BlendTextureManager
         // acaba de hornear. Bloqueamos orig() y reaplicamos el blend directamente.
-        if (_active && _room != null && self.room == _room && BlendTextureManager.Ready)
+        //
+        // EXCEPCIÓN: si estamos en el frame de transición de sala (_moveCameraThisFrame),
+        // esta llamada viene de ChangeRoom para la nueva sala (ej. PS1). Aunque self.room
+        // todavía apunta a VR1 (_room), la paleta solicitada es la de PS1. Dejar pasar
+        // el orig para que PS1 cargue correctamente su propia fade palette en fadeTexB.
+        // Sin esto, fadeTexB queda con la paleta del setting activo de VR1 y PS1
+        // hereda ese color — exactamente la contaminación múltiple confirmada.
+        if (_active && _room != null && self.room == _room && BlendTextureManager.Ready
+            && !_moveCameraThisFrame)
         {
             float t = _externalT ? _forcedT : BlendSlider.BlendFactor;
             MixAndApply(self, t, SettingsSnapshot.Lerp(_snapA, _snapB, t));

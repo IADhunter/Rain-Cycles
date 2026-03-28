@@ -330,9 +330,16 @@ public static class RoomEffectsApplier
             return;
         }
 
-        // Prioridad 1: RC_TINT del snapshot activo — control explícito del modder.
-        // Si está declarado, usarlo directamente sin depender de currentPalette.
-        var snap = SettingsBlendController.ActiveSnapshot;
+        // _activeSnapshot solo es válido para la cámara si esta está en una sala
+        // gestionada por el mod. Si la cámara está en PS1 y _activeSnapshot
+        // pertenece a VR1, usarlo contaminaría PS1 con colores de VR1.
+        SettingsSnapshot snap = null;
+        if (cam.room != null && BlendSettingsLoader.Active != null)
+        {
+            string roomName = cam.room.abstractRoom?.name;
+            if (roomName != null && BlendSettingsLoader.Active.IncludesRoom(roomName))
+                snap = SettingsBlendController.ActiveSnapshot;
+        }
         if (snap != null)
         {
             bool hasMul = snap.TintMultiply.HasValue;
@@ -346,10 +353,15 @@ public static class RoomEffectsApplier
             }
 
             // Prioridad 2: leer sky/fog desde texturas de blend en memoria.
-            // Esto evita depender de cam.currentPalette que puede estar contaminada
-            // por la sala donde está la cámara (ej: PS1) mientras el blend corre en VR1.
-            // El pixel (1,7) en la fadeTex es skyColor; (2,7) es fogColor en RainWorld.
-            if (BlendTextureManager.Ready && BlendClock.IsRunning &&
+            // CONDICIÓN CRÍTICA: solo usar InterpolatedPalPixel si la cámara activa
+            // está en la sala blend. Si la cámara está en otra sala (ej: PS1 mientras
+            // VR1 blendea en segundo plano), mezclar texturas de VR1 con cam.paletteBlend
+            // de PS1 produce colores incorrectos que contaminan los shader globals
+            // y se propagan a PS1 cuando el jugador entra.
+            var blendRoom = SettingsBlendController.ActiveRoom;
+            bool camIsInBlendRoom = blendRoom != null && cam.room == blendRoom;
+
+            if (camIsInBlendRoom && BlendTextureManager.Ready && BlendClock.IsRunning &&
                 BlendClock.CurrentPhase == BlendClock.Phase.Blending)
             {
                 float t = SettingsBlendController.ForcedT;

@@ -89,10 +89,28 @@ public partial class BlendSettings
 
     // ── [ROOMS] ───────────────────────────────────────────────────────────
     /// <summary>
-    /// Conjunto de nombres de habitación que participan del sistema automático.
-    /// Las habitaciones que no están en esta lista solo usan el slider manual.
+    /// Salas que participan del sistema automático, con su tipo de cielo opcional.
+    /// Formato en archivo: "UW_F01, acv" / "UW_H01, rtv" / "UW_B01" (sin cielo).
     /// </summary>
-    public HashSet<string> Rooms = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, SkyType> Rooms =
+        new Dictionary<string, SkyType>(System.StringComparer.OrdinalIgnoreCase);
+
+    // ── [BACKGROUNDS] ────────────────────────────────────────────────────
+    /// <summary>
+    /// Tabla alias → par de archivos (ACV, RTV) declarada en [BACKGROUNDS].
+    /// Formato: "bkg00: day.png, rtvday.png"
+    ///   AcvFile = primera imagen (AboveCloudsView)
+    ///   RtvFile = segunda imagen (RoofTopView) — null si no declarada
+    /// </summary>
+    public Dictionary<string, BkgEntry> BackgroundAliases =
+        new Dictionary<string, BkgEntry>(System.StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Imagen asignada a cada estado inicial, via sufijo =bkgXX en [SEQUENCES].
+    /// Ejemplo: { 1 → "bkg00", 2 → "bkg01", 3 → "bkg00" }
+    /// Ausente = sin imagen asignada para ese estado.
+    /// </summary>
+    public Dictionary<int, string> StateBkgAlias = new Dictionary<int, string>();
 
     // ── Flags de secciones presentes ────────────────────────────────────
     // Permiten saber si una sección fue declarada explícitamente en el archivo.
@@ -102,14 +120,7 @@ public partial class BlendSettings
     public bool _hasLoopSection;
     public bool _hasSequencesSection;
     public bool _hasRoomsSection;
-
-    /// <summary>
-    /// Conjunto de estados (números de settings) que tienen el tag &lt;def&gt;
-    /// en su línea de sequence. Cuando el estado activo o el destino del blend
-    /// tiene este flag, el sistema de tinte de fondo se desactiva para ese lado
-    /// y usa Color.white como si fuera el estado "sin tinte" (comportamiento vanilla).
-    /// </summary>
-    public HashSet<int> DefaultBackgroundStates = new HashSet<int>();
+    public bool _hasBackgroundsSection;
 
     // ── Helpers de consulta ──────────────────────────────────────────────
 
@@ -160,16 +171,31 @@ public partial class BlendSettings
     /// <summary>¿Esta habitación participa del sistema automático?</summary>
     public bool IncludesRoom(string roomName)
     {
-        return _hasRoomsSection && Rooms.Contains(roomName);
+        return _hasRoomsSection && Rooms.ContainsKey(roomName);
     }
 
     /// <summary>
-    /// ¿Este número de settings tiene el tag &lt;def&gt;?
-    /// Si true, el tinte de fondo se desactiva para ese estado (usa Color.white).
+    /// Tipo de cielo declarado para esta sala.
+    /// Devuelve None si la sala no está registrada o no tiene sufijo.
     /// </summary>
-    public bool IsDefaultBackground(int state)
+    public SkyType GetSkyType(string roomName)
     {
-        return DefaultBackgroundStates.Contains(state);
+        SkyType t;
+        return Rooms.TryGetValue(roomName, out t) ? t : SkyType.None;
+    }
+
+    /// <summary>
+    /// Dado un estado y el tipo de cielo de la sala, resuelve el nombre de archivo.
+    /// Devuelve null si el estado no tiene alias, el alias no está declarado,
+    /// o el tipo de cielo no tiene archivo asignado.
+    /// </summary>
+    public string GetBkgFileForState(int state, SkyType sky)
+    {
+        string alias;
+        if (!StateBkgAlias.TryGetValue(state, out alias)) return null;
+        BkgEntry entry;
+        if (!BackgroundAliases.TryGetValue(alias, out entry)) return null;
+        return sky == SkyType.RTV ? entry.RtvFile : entry.AcvFile;
     }
 
     /// <summary>
@@ -205,6 +231,26 @@ public partial class BlendSettings
             }
         }
     }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// SKY TYPE — tipo de escena de cielo de una sala
+// None = sin cielo gestionado por el mod
+// RTV  = RoofTopView  (salas con efecto RoofTopView)
+// ACV  = AboveCloudsView (salas con efecto AboveCloudsView)
+// ════════════════════════════════════════════════════════════════════════
+public enum SkyType { None, RTV, ACV }
+
+// ════════════════════════════════════════════════════════════════════════
+// BKG ENTRY — par de imágenes para un alias de background
+// AcvFile = imagen para AboveCloudsView (primera en la declaración)
+// RtvFile = imagen para RoofTopView (segunda, opcional — null si no declarada)
+// Ejemplo en archivo: "bkg00: day.png, rtvday.png"
+// ════════════════════════════════════════════════════════════════════════
+public struct BkgEntry
+{
+    public string AcvFile;  // imagen ACV (siempre presente si el alias existe)
+    public string RtvFile;  // imagen RTV (null si no declarada)
 }
 
 // ════════════════════════════════════════════════════════════════════════

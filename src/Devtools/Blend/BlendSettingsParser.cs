@@ -20,7 +20,7 @@ namespace FilesSetting;
 //   duration: 10.0
 //
 //   [ENDCYCLE]
-//   trigger_pct: 0.95
+//   idle: 10.0
 //   duration: 25.0
 //   target_state: 1
 //
@@ -32,9 +32,13 @@ namespace FilesSetting;
 //   idle_time: 45.0
 //   duration: 10.0
 //
+//   [BACKGROUNDS]
+//   bkg00: day.png
+//   bkg01: dusk.png
+//
 //   [SEQUENCES]
-//   1: 1, 2, 3, 4
-//   2: 2, 3, 4, 1
+//   1: 1, 2, 3, (A = 1,2,3 ~ B = 3,4,1) =bkg00
+//   2: 2, 3, 4, (A = 2,3,4 ~ B = 4,1,2) =bkg01
 //
 //   [ROOMS]
 //   SU_C01
@@ -88,11 +92,24 @@ public partial class BlendSettings
                 continue;
             }
 
-            // Sección [ROOMS]: cada línea es directamente un nombre de sala, sin ':'
+            // Sección [ROOMS]: cada línea es un nombre de sala con sufijo opcional
+            // Formato: "UW_F01, acv" | "UW_H01, rtv" | "UW_B01"
             if (currentSection == "ROOMS")
             {
                 if (!string.IsNullOrEmpty(line))
-                    s.Rooms.Add(line);
+                {
+                    string[] parts = line.Split(',');
+                    string roomName = parts[0].Trim();
+                    SkyType sky = SkyType.None;
+                    if (parts.Length > 1)
+                    {
+                        string tag = parts[1].Trim().ToLowerInvariant();
+                        if      (tag == "acv") sky = SkyType.ACV;
+                        else if (tag == "rtv") sky = SkyType.RTV;
+                    }
+                    if (!string.IsNullOrEmpty(roomName))
+                        s.Rooms[roomName] = sky;
+                }
                 continue;
             }
 
@@ -109,7 +126,7 @@ public partial class BlendSettings
 
         Plugin.RSPlugin.log.LogInfo(
             $"[BlendSettings] Loaded from {path} | mode={s.Mode} rooms={s.Rooms.Count} " +
-            $"sequences={s.Sequences.Count} defaultBg={s.DefaultBackgroundStates.Count}");
+            $"sequences={s.Sequences.Count} backgrounds={s.BackgroundAliases.Count}");
 
         return s;
     }
@@ -120,12 +137,13 @@ public partial class BlendSettings
     {
         switch (section)
         {
-            case "CYCLE":     s._hasCycleSection     = true; break;
-            case "ENDCYCLE":  s._hasEndCycleSection  = true; break;
-            case "CUSTOM":    s._hasCustomSection     = true; break;
-            case "LOOP":      s._hasLoopSection       = true; break;
-            case "SEQUENCES": s._hasSequencesSection  = true; break;
-            case "ROOMS":     s._hasRoomsSection      = true; break;
+            case "CYCLE":       s._hasCycleSection       = true; break;
+            case "ENDCYCLE":    s._hasEndCycleSection    = true; break;
+            case "CUSTOM":      s._hasCustomSection      = true; break;
+            case "LOOP":        s._hasLoopSection        = true; break;
+            case "SEQUENCES":   s._hasSequencesSection   = true; break;
+            case "ROOMS":       s._hasRoomsSection       = true; break;
+            case "BACKGROUNDS": s._hasBackgroundsSection = true; break;
         }
     }
 
@@ -135,22 +153,13 @@ public partial class BlendSettings
     {
         switch (section)
         {
-            case "CONFIG":    ParseConfig(s, key, val);    break;
-            case "CYCLE":     ParseCycle(s, key, val);     break;
-            case "ENDCYCLE":  ParseEndCycle(s, key, val);  break;
-            case "CUSTOM":    ParseCustom(s, key, val);    break;
-            case "LOOP":      ParseLoop(s, key, val);      break;
-            case "SEQUENCES": ParseSequence(s, key, val);  break;
-            case "ROOMS":
-                // En [ROOMS] la clave es el nombre de la habitación.
-                // val es lo que vino después del ':', pero como los nombres
-                // no tienen ':', la línea entera es el nombre.
-                // Reconstruimos el nombre completo en caso de que el separador
-                // sea parte del nombre (aunque en RW no debería ocurrir).
-                string roomName = (key + (string.IsNullOrEmpty(val) ? "" : ":" + val)).Trim();
-                if (!string.IsNullOrEmpty(roomName))
-                    s.Rooms.Add(roomName);
-                break;
+            case "CONFIG":      ParseConfig(s, key, val);     break;
+            case "CYCLE":       ParseCycle(s, key, val);      break;
+            case "ENDCYCLE":    ParseEndCycle(s, key, val);   break;
+            case "CUSTOM":      ParseCustom(s, key, val);     break;
+            case "LOOP":        ParseLoop(s, key, val);       break;
+            case "BACKGROUNDS": ParseBackground(s, key, val); break;
+            case "SEQUENCES":   ParseSequence(s, key, val);   break;
         }
     }
 
@@ -239,14 +248,37 @@ public partial class BlendSettings
         }
     }
 
+    // ── Sección [BACKGROUNDS] ───────────────────────────────────────────
+
+    private static void ParseBackground(BlendSettings s, string key, string val)
+    {
+        if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(val)) return;
+        if (!key.StartsWith("bkg"))
+        {
+            Plugin.RSPlugin.log.LogWarning(
+                $"[BlendSettings] [BACKGROUNDS] clave inesperada '{key}' — se esperaba bkgNN.");
+            return;
+        }
+
+        // Formato: "day.png" o "day.png, rtvday.png"
+        string[] parts = val.Split(',');
+        var entry = new BkgEntry
+        {
+            AcvFile = parts[0].Trim(),
+            RtvFile = parts.Length > 1 ? parts[1].Trim() : null
+        };
+
+        if (string.IsNullOrEmpty(entry.AcvFile)) return;
+        s.BackgroundAliases[key] = entry;
+    }
+
     // ── Sección [SEQUENCES] ─────────────────────────────────────────────
     // Formato completo:
-    //   1: 1, 2, 3, (A = 1,2,3 ~ B = 3,4,1)<def>
+    //   1: 1, 2, 3, (A = 1,2,3 ~ B = 3,4,1) =bkg00
     //
     // La parte antes del '(' son los estados base (Cycle/EndCycle/Custom).
     // El bloque '(A=...~B=...)' son los carriles Loop (opcional).
-    // El tag '<def>' al final indica que ese número de settings usa el
-    // comportamiento de fondo por defecto (sin tinte de paleta).
+    // El sufijo '=bkgXX' asigna una imagen de fondo a ese estado (opcional).
 
     private static void ParseSequence(BlendSettings s, string key, string val)
     {
@@ -257,28 +289,29 @@ public partial class BlendSettings
             return;
         }
 
-        // ── Detectar y consumir tags entre <> ───────────────────────────
-        // Formato: cualquier tag al final del val, ej: <def> o <> (vacío = sin efecto).
-        // Se consume antes de procesar el resto para no contaminar el parseo numérico.
-        bool isDefault = false;
+        // ── 1. Consumir tag <> (descartado, ya no tiene función) ────────
         int tagOpen = val.LastIndexOf('<');
         if (tagOpen >= 0)
         {
             int tagClose = val.IndexOf('>', tagOpen);
             if (tagClose > tagOpen)
-            {
-                string tagContent = val.Substring(tagOpen + 1, tagClose - tagOpen - 1).Trim().ToLowerInvariant();
-                if (tagContent == "def")
-                    isDefault = true;
-                // Consumir el tag completo del val independientemente de su contenido
                 val = val.Remove(tagOpen, tagClose - tagOpen + 1);
+        }
+
+        // ── 2. Consumir sufijo =bkgXX ───────────────────────────────────
+        // Puede ir pegado al ')' o con espacios: ") =bkg00" o ")=bkg00"
+        int eqIdx = val.LastIndexOf('=');
+        if (eqIdx >= 0)
+        {
+            string candidate = val.Substring(eqIdx + 1).Trim().ToLowerInvariant();
+            if (candidate.StartsWith("bkg"))
+            {
+                s.StateBkgAlias[initialState] = candidate;
+                val = val.Substring(0, eqIdx);
             }
         }
 
-        if (isDefault)
-            s.DefaultBackgroundStates.Add(initialState);
-
-        // ── Separar parte base del bloque de carriles ────────────────────
+        // ── 3. Separar parte base del bloque de carriles ─────────────────
         string basePart = val;
         string lanePart = null;
 
@@ -291,7 +324,7 @@ public partial class BlendSettings
                 lanePart = val.Substring(parenOpen + 1, parenClose - parenOpen - 1);
         }
 
-        // ── Parsear secuencia base (estados para Cycle/EndCycle/Custom) ──
+        // ── 4. Parsear secuencia base (estados para Cycle/EndCycle/Custom) ──
         var steps = new List<int>();
         foreach (string part in basePart.Split(','))
         {
@@ -317,7 +350,7 @@ public partial class BlendSettings
             s.Sequences[initialState] = steps;
         }
 
-        // ── Parsear carriles Loop (A=...~B=...) ──────────────────────────
+        // ── 5. Parsear carriles Loop (A=...~B=...) ───────────────────────
         if (lanePart != null)
         {
             var lane = ParseLoopLane(initialState, lanePart);

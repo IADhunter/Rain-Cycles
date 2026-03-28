@@ -126,7 +126,7 @@ public static class BlendSettingsWriter
                 int s2 = (i % n) + 1;
                 int s3 = ((i + 1) % n) + 1;  // anclaje
                 int s4 = ((i + 2) % n) + 1;
-                newLines.AppendLine($"{i}: {s1}, {s2}, {s3}, (A = {s1},{s2},{s3} ~ B = {s3},{s4},{s1})<>");
+                newLines.AppendLine($"{i}: {s1}, {s2}, {s3}, (A = {s1},{s2},{s3} ~ B = {s3},{s4},{s1})");
             }
             else
             {
@@ -134,7 +134,7 @@ public static class BlendSettingsWriter
                 int s1 = i;
                 int s2 = (i % n) + 1;
                 int s3 = ((i + 1) % n) + 1;
-                newLines.AppendLine($"{i}: {s1}, {s2}, {s3}<>");
+                newLines.AppendLine($"{i}: {s1}, {s2}, {s3}");
             }
         }
 
@@ -298,7 +298,7 @@ public static class BlendSettingsWriter
         // Consultar primero el BlendSettings cacheado (más rápido)
         var settings = BlendSettingsLoader.Active;
         if (settings != null && settings._hasRoomsSection)
-            return settings.Rooms.Contains(roomName);
+            return settings.Rooms.ContainsKey(roomName);
 
         // Fallback: leer el archivo directamente
         string regionCode = ExtractRegionCode(roomName);
@@ -314,6 +314,90 @@ public static class BlendSettingsWriter
         catch { return false; }
     }
 
+
+    /// <summary>
+    /// Cambia el tipo de cielo de roomName en la sección [ROOMS].
+    /// Si sky == None elimina el sufijo. Si la sala no está registrada, no hace nada.
+    /// </summary>
+    public static void SetSkyType(string roomName, SkyType sky)
+    {
+        string regionCode = ExtractRegionCode(roomName);
+        if (regionCode == null) return;
+
+        string path = BlendSettingsLoader.ResolvePath(regionCode);
+        if (path == null) return;
+
+        string raw;
+        try { raw = File.ReadAllText(path, Encoding.UTF8); }
+        catch (Exception ex)
+        {
+            Plugin.RSPlugin.log.LogError(
+                $"[BlendSettingsWriter] Cannot read {path}: {ex.Message}");
+            return;
+        }
+
+        string newContent = ApplySkyTypeToText(raw, roomName, sky);
+        if (newContent == raw) return;
+
+        try
+        {
+            File.WriteAllText(path, newContent, Encoding.UTF8);
+            BlendSettingsLoader.InvalidateCache(regionCode);
+            Plugin.RSPlugin.log.LogInfo(
+                $"[BlendSettingsWriter] SkyType for {roomName} → {sky} in {path}");
+        }
+        catch (Exception ex)
+        {
+            Plugin.RSPlugin.log.LogError(
+                $"[BlendSettingsWriter] Cannot write {path}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Devuelve el SkyType actual de roomName leyendo el BlendSettings cacheado.
+    /// </summary>
+    public static SkyType GetSkyType(string roomName)
+    {
+        var settings = BlendSettingsLoader.Active;
+        if (settings != null && settings._hasRoomsSection)
+            return settings.GetSkyType(roomName);
+        return SkyType.None;
+    }
+
+    /// <summary>
+    /// Reescribe la línea de roomName en [ROOMS] con el nuevo sufijo sky.
+    /// None → quita el sufijo. ACV → ", acv". RTV → ", rtv".
+    /// </summary>
+    private static string ApplySkyTypeToText(string fileText, string roomName, SkyType sky)
+    {
+        bool inRooms = false;
+        var result = new List<string>();
+
+        foreach (string rawLine in fileText.Split('\n'))
+        {
+            string line = rawLine.TrimEnd('\r').Trim();
+
+            if (line.StartsWith("[") && line.EndsWith("]"))
+                inRooms = line.ToUpperInvariant() == "[ROOMS]";
+
+            if (inRooms && !line.StartsWith("#") && !string.IsNullOrEmpty(line))
+            {
+                string lineName = line.Split(',')[0].Trim();
+                if (string.Equals(lineName, roomName, StringComparison.OrdinalIgnoreCase))
+                {
+                    string suffix = sky == SkyType.ACV ? ", acv"
+                                  : sky == SkyType.RTV ? ", rtv"
+                                  : "";
+                    result.Add(roomName + suffix);
+                    continue;
+                }
+            }
+
+            result.Add(rawLine.TrimEnd('\r'));
+        }
+
+        return string.Join("\n", result);
+    }
 
     /// <summary>
     /// Cambia el modo activo en blend_settings.txt de la región de roomName.
@@ -366,8 +450,10 @@ public static class BlendSettingsWriter
                 inRooms = line.ToUpperInvariant() == "[ROOMS]";
                 continue;
             }
-            if (!inRooms) continue;
-            if (string.Equals(line, roomName, StringComparison.OrdinalIgnoreCase))
+            if (!inRooms || line.StartsWith("#") || string.IsNullOrEmpty(line)) continue;
+            // El nombre de sala puede ir seguido de ", acv" o ", rtv"
+            string lineName = line.Split(',')[0].Trim();
+            if (string.Equals(lineName, roomName, StringComparison.OrdinalIgnoreCase))
                 return true;
         }
         return false;
@@ -433,8 +519,12 @@ public static class BlendSettingsWriter
             if (line.StartsWith("[") && line.EndsWith("]"))
                 inRooms = line.ToUpperInvariant() == "[ROOMS]";
 
-            if (inRooms && string.Equals(line, roomName, StringComparison.OrdinalIgnoreCase))
-                continue;  // saltar esta línea
+            if (inRooms && !line.StartsWith("#") && !string.IsNullOrEmpty(line))
+            {
+                string lineName = line.Split(',')[0].Trim();
+                if (string.Equals(lineName, roomName, StringComparison.OrdinalIgnoreCase))
+                    continue;  // saltar esta línea
+            }
 
             result.Add(rawLine.TrimEnd('\r'));
         }
@@ -596,8 +686,16 @@ duration: 10.0
 # El modo declarado en [CONFIG] define qué sistema corre cuando Custom está activo.
 # trigger_id: MY_TRIGGER
 
-# [SEQUENCES] se genera automáticamente al abrir DevTools.
-# El mod añade entradas vacías — editalas según tu secuencia de estados.
+[BACKGROUNDS]
+# Las imágenes se buscan en la carpeta 'illustrations' (vanilla o del mod).
+# Formato: bkgXX: imagen_acv.png, imagen_rtv.png
+#   Primera imagen → AboveCloudsView (ACV)
+#   Segunda imagen → RoofTopView (RTV) — opcional
+# Asigna una imagen a un estado con el sufijo =bkgXX en [SEQUENCES]:
+#   1: 1, 2, 3, (A = 1,2,3 ~ B = 3,4,1) =bkg00
+bkg00: day.png, rtvday.png
+bkg01: dusk.png, rtvdusk.png
+bkg02: night.png, rtvnight.png
 
 [ROOMS]
 ";
@@ -652,7 +750,7 @@ duration: 10.0
             var settings = BlendSettingsLoader.GetForRegion(upper);
             if (settings != null && settings._hasRoomsSection)
             {
-                foreach (string room in settings.Rooms)
+                foreach (string room in settings.Rooms.Keys)
                 {
                     string s = ReadStateReadFiles.GetRainStateSettingsFile(room, 1);
                     if (s != null) { anchor = s; break; }
