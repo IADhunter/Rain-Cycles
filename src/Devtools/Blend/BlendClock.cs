@@ -101,6 +101,7 @@ public static class BlendClock
     public static void Tick(float dt, float rainTimer = 0f, int rainCycleLen = 1)
     {
         if (!IsRunning) return;
+        if (EditMode) return;
         var s = BlendSettingsLoader.Active;
         if (s == null) return;
 

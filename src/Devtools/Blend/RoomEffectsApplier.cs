@@ -330,11 +330,15 @@ public static class RoomEffectsApplier
             return;
         }
 
-        // _activeSnapshot solo es válido para la cámara si esta está en una sala
-        // gestionada por el mod. Si la cámara está en PS1 y _activeSnapshot
-        // pertenece a VR1, usarlo contaminaría PS1 con colores de VR1.
+        // Durante el frame de MoveCamera, cam.room ya apunta a la sala nueva pero
+        // los sprites de la sala anterior siguen renderizándose. Si hay un snapshot
+        // activo, usarlo para preservar los colores correctos en ese último frame.
         SettingsSnapshot snap = null;
-        if (cam.room != null && BlendSettingsLoader.Active != null)
+        if (SettingsBlendController.MoveCameraThisFrame && SettingsBlendController.ActiveSnapshot != null)
+        {
+            snap = SettingsBlendController.ActiveSnapshot;
+        }
+        else if (cam.room != null && BlendSettingsLoader.Active != null)
         {
             string roomName = cam.room.abstractRoom?.name;
             if (roomName != null && BlendSettingsLoader.Active.IncludesRoom(roomName))
@@ -361,11 +365,10 @@ public static class RoomEffectsApplier
             var blendRoom = SettingsBlendController.ActiveRoom;
             bool camIsInBlendRoom = blendRoom != null && cam.room == blendRoom;
 
-            if (camIsInBlendRoom && BlendTextureManager.Ready && BlendClock.IsRunning &&
-                BlendClock.CurrentPhase == BlendClock.Phase.Blending)
+            if (camIsInBlendRoom && BlendTextureManager.Ready && BlendClock.IsRunning)
             {
                 float t = SettingsBlendController.ForcedT;
-                float darkPal = 0f; // durante blend ignoramos darkPalette para fondo
+                float darkPal = 0f;
                 Color skyFromTex = InterpolatedPalPixel(1, 7, t, darkPal, cam.paletteBlend);
                 Color fogFromTex = InterpolatedPalPixel(2, 7, t, darkPal, cam.paletteBlend);
 
@@ -374,7 +377,9 @@ public static class RoomEffectsApplier
                 return;
             }
 
-            // Fallback con snapshot pero sin texturas activas (Idle/Done)
+            // Fallback con snapshot pero sin texturas activas (Idle entre halvs)
+            // Usar el último T conocido para leer el color correcto desde currentPalette.
+            // Si el snapshot tiene tints explícitos, usarlos directamente.
             multiply   = hasMul ? snap.TintMultiply.Value   : cam.currentPalette.skyColor;
             atmosphere = hasAtm ? snap.TintAtmosphere.Value : cam.currentPalette.fogColor;
             return;

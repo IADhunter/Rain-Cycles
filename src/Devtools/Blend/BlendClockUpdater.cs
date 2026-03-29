@@ -170,7 +170,11 @@ public static class BlendClockUpdater
         string path = ReadStateReadFiles.GetRainStateSettingsFile(room, state);
         if (path != null && room != _lastIdleRoom)
         {
-            SettingsBlendController.ApplyIdleState(cam.room, path, allowCameraOps: false);
+            // allowCameraOps=true cuando la cámara ya está asentada en la sala gestionada.
+            // Necesario para actualizar currentPalette via ApplyFade durante el Idle
+            // entre halvs — sin esto CalcBackgroundColors lee skyColor incorrecto.
+            bool camSettled = !SettingsBlendController.MoveCameraThisFrame && cam.room?.abstractRoom?.name == room;
+            SettingsBlendController.ApplyIdleState(cam.room, path, allowCameraOps: camSettled);
             // NO setear _lastIdleRoom aquí — el pending consumer necesita correr
         }
     }
