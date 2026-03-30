@@ -25,38 +25,43 @@ public partial class SettingsSnapshot
         foreach (string rawLine in lines)
         {
             string line = rawLine.TrimEnd('\r');
+            int colon = line.IndexOf(": ");
 
-            if (line.StartsWith("PlacedObjects: ") && !poWritten)
+            // Solo necesitamos una llave
+            // Objecto una llave unica, y obtengo la subcadena hasta ": "
+            string key = colon >= 0? line.Substring(0, colon + 2) : "";
+            
+            if (!poWritten && key == "PlacedObjects: ")
             {
                 poWritten = true;
                 sb.AppendLine(BuildPlacedObjectsLine());
                 continue;
             }
-
-            if      (line.StartsWith("Palette: "))               sb.AppendLine("Palette: " + Palette);
-            else if (line.StartsWith("Grime: "))                 sb.AppendLine(SFL("Grime", Grime));
-            else if (line.StartsWith("Clouds: "))                sb.AppendLine(SFL("Clouds", Clouds));
-            else if (line.StartsWith("CeilingDrips: "))          sb.AppendLine(SFL("CeilingDrips", CeilingDrips));
-            else if (line.StartsWith("BkgDroneVolume: "))        sb.AppendLine(SFL("BkgDroneVolume", BkgDroneVolume));
-            else if (line.StartsWith("RandomItemDensity: "))     sb.AppendLine(SFL("RandomItemDensity", RandomItemDensity));
-            else if (line.StartsWith("RandomItemSpearChance: ")) sb.AppendLine(SFL("RandomItemSpearChance", RandomItemSpearChance));
-            else if (line.StartsWith("EffectColorA: "))          sb.AppendLine("EffectColorA: " + EffectColorA);
-            else if (line.StartsWith("EffectColorB: "))          sb.AppendLine("EffectColorB: " + EffectColorB);
-            else if (line.StartsWith("DangerType: "))            sb.AppendLine("DangerType: " + DangerType);
-            else if (line.StartsWith("Template: "))              sb.AppendLine("Template: " + Template);
-            else if (line.StartsWith("Effects: "))               sb.AppendLine("Effects: " + Effects);
-            else if (line.StartsWith("Triggers: "))              sb.AppendLine("Triggers: " + Triggers);
-            else if (line.StartsWith("AmbientSounds: "))         sb.AppendLine("AmbientSounds: " + AmbientSounds);
-            else if (line.StartsWith("FadePalette: "))           sb.AppendLine(BuildFadePaletteLine());
-            else if (line.StartsWith("RC_TINT: "))
+            
+            
+            
+            string replacement = key switch
             {
-                // Preservar/actualizar RC_TINT con los valores actuales del snapshot.
-                // Si TintMultiply/TintAtmosphere están seteados, escribir los hex.
-                // Si son null (no declarados), escribir la plantilla vacía para que
-                // el modder pueda editarla.
-                sb.AppendLine(BuildRcTintLine());
-            }
-            else                                                  sb.AppendLine(line);
+                "Palette: "               => "Palette: " + Palette,
+                "Grime: "                 => SFL("Grime", Grime),
+                "Clouds: "                => SFL("Clouds", Clouds),
+                "CeilingDrips: "          => SFL("CeilingDrips", CeilingDrips),
+                "BkgDroneVolume: "        => SFL("BkgDroneVolume", BkgDroneVolume),
+                "RandomItemDensity: "     => SFL("RandomItemDensity", RandomItemDensity),
+                "RandomItemSpearChance: " => SFL("RandomItemSpearChance", RandomItemSpearChance),
+                "EffectColorA: "          => "EffectColorA: " + EffectColorA,
+                "EffectColorB: "          => "EffectColorB: " + EffectColorB,
+                "DangerType: "            => "DangerType: " + DangerType,
+                "Template: "              => "Template: " + Template,
+                "Effects: "               => "Effects: " + Effects,
+                "Triggers: "              => "Triggers: " + Triggers,
+                "AmbientSounds: "         => "AmbientSounds: " + AmbientSounds,
+                "FadePalette: "           => BuildFadePaletteLine(),
+                "RC_TINT: "               => BuildRcTintLine(),
+                _                         => line, //wtf, porque esto es un default
+            };
+            
+            sb.AppendLine(replacement);
         }
 
         // Si RC_TINT no estaba en RawText (fue inyectado después de la carga),
