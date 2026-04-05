@@ -126,6 +126,12 @@ public static class BlendClockUpdater
         if (halfChanged || (prevPhase == BlendClock.Phase.Done && BlendClock.CurrentPhase == BlendClock.Phase.Idle))
             _lastIdleRoom = null;
 
+        // Idle→Blending: pre-calcular _lastAtmosphereColor con T=0 del blend entrante.
+        // DrawUpdate corre antes que TryAttach/ApplyBlend en el proximo frame, por lo que
+        // sin este prefetch mostraria el color del idle (T=0 state anterior) un frame.
+        if (prevPhase == BlendClock.Phase.Idle && BlendClock.CurrentPhase == BlendClock.Phase.Blending)
+            SettingsBlendController.PrefetchBlendAtmosphereColor(self);
+
         if ((tChanged || subChanged || phaseChanged || halfChanged) &&
             !SettingsBlendController.DetachedThisFrame)
             NotifyCameras(self);

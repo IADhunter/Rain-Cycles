@@ -74,6 +74,7 @@ public static class SettingsBlendController
     // (entre sub-fases, al salir de sala) para evitar caer al vanilla azul.
     private static UnityEngine.Color _lastAtmosphereColor = new UnityEngine.Color(0.16078432f, 0.23137255f, 0.31764707f);
 
+
     // Alphas de los slots de cielo guardados en el momento del Detach.
     // Se usan durante los frames de transición donde _active=false pero la sala
     // sigue renderizándose, para evitar saltos visuales en los sprites de cielo.
@@ -303,6 +304,24 @@ public static class SettingsBlendController
         if (snap == null) return;
         _activeSnapshot = snap;
 
+        // Mantener _lastAtmosphereColor sincronizado con el estado idle actual.
+        // OnAboveCloudsViewUpdate usa este valor como fallback cuando _activeSnapshot
+        // no tiene TintCloudAtmosphere o cuando los slots están desincronizados.
+        if (snap.TintCloudAtmosphere.HasValue)
+            _lastAtmosphereColor = snap.TintCloudAtmosphere.Value;
+
+        // Actualizar _lastGoodAtmosphere/_lastGoodMultiply directamente desde el snapshot,
+        // sin depender de camIsHere ni de que CalcBackgroundColors pueda correr.
+        // Esto garantiza que el Caso 0 de OnUpdateDayNightPalette tenga el valor correcto
+        // del idle incluso si ApplyIdleState se llama antes de que la camara llegue a la sala.
+        if (snap.TintAtmosphere.HasValue)
+        {
+            _lastGoodAtmosphere = snap.TintAtmosphere.Value;
+            _hasLastGoodGlobals = true;
+            if (snap.TintMultiply.HasValue)
+                _lastGoodMultiply = snap.TintMultiply.Value;
+        }
+
         // Siempre: estado de sala (no depende de dónde está la cámara)
         var rs = room.roomSettings;
         if (rs != null)
@@ -321,9 +340,7 @@ public static class SettingsBlendController
         if (idleState > 0 && idleState != _lastIdleSkyState)
         {
             _lastIdleSkyState = idleState;
-            Plugin.RSPlugin.log.LogInfo($"[ApplyIdleState] idleState={idleState} pendingSync={_pendingSkySync} slotDay={_skySlotDay}");
             ApplySkyForState(idleState, room);
-            Plugin.RSPlugin.log.LogInfo($"[ApplyIdleState-post] pendingSync={_pendingSkySync} slotDay={_skySlotDay}");
         }
 
         // Operaciones de cámara: SOLO cuando el caller garantiza que
@@ -361,6 +378,13 @@ public static class SettingsBlendController
                     RoomEffectsApplier.CalcBackgroundColors(cam, out multiply, out atmosphere);
                     Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, multiply);
                     Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, atmosphere);
+                    // Actualizar _lastGoodAtmosphere con el valor del idle correcto.
+                    // Sin esto _lastGoodAtmosphere queda con el valor del ultimo frame
+                    // del blend anterior y el Caso 0 de OnUpdateDayNightPalette lo
+                    // restaura en el frame de exited=True causando el parpadeo del 2do tint.
+                    _lastGoodMultiply   = multiply;
+                    _lastGoodAtmosphere = atmosphere;
+                    _hasLastGoodGlobals = true;
                 }
             }
         }
@@ -401,9 +425,6 @@ public static class SettingsBlendController
     /// </summary>
     public static void AttachWithExternalT(Room room, string pathA, string pathB)
     {
-        Plugin.RSPlugin.log.LogInfo(
-            $"[Attach] room={room?.abstractRoom?.name} A={System.IO.Path.GetFileName(pathA)} B={System.IO.Path.GetFileName(pathB)} " +
-            $"T={BlendClock.SubPhaseLocalT:F3} StateA={BlendClock.StateA} StateB={BlendClock.StateB}");
         _room      = room;
         _pathA     = pathA;
         _pathB     = pathB;
@@ -456,9 +477,36 @@ public static class SettingsBlendController
     public static void AdvanceOriginToB()
     {
         if (_snapB != null)
-        {
             _pendingOrigin = _snapB;
-        }
+        // No actualizar _lastAtmosphereColor aqui: _snapB es el estado intermedio
+        // (e.g. settings_2=#ffffff en la sub-fase 1→2→3), no el estado idle.
+        // PrefetchBlendAtmosphereColor y ApplyIdleState lo corrigen correctamente.
+    }
+
+    /// <summary>
+    /// Pre-actualiza _lastAtmosphereColor con T=0 del blend que va a empezar.
+    /// Llamar justo despues de que BlendClock.Tick() dispare Idle→Blending,
+    /// para que DrawUpdate del siguiente frame ya use el color correcto.
+    /// Sin esto DrawUpdate corre antes de TryAttach/ApplyBlend y pinta el
+    /// color del idle (T=0 del state anterior) durante un frame.
+    /// </summary>
+    public static void PrefetchBlendAtmosphereColor(RainWorldGame game)
+    {
+        var s   = BlendSettingsLoader.Active;
+        var cam = game.cameras?[0];
+        if (s == null || cam?.room == null) return;
+        string room = cam.room.abstractRoom?.name;
+        if (room == null || !s.IncludesRoom(room)) return;
+        string pA = ReadStateReadFiles.GetRainStateSettingsFile(room, BlendClock.StateA);
+        string pB = ReadStateReadFiles.GetRainStateSettingsFile(room, BlendClock.StateB);
+        if (pA == null || pB == null) return;
+        var snapA = SettingsSnapshot.FromFileWithTemplate(pA, room);
+        var snapB = SettingsSnapshot.FromFileWithTemplate(pB, room);
+        if (snapA == null || snapB == null) return;
+        // No actualizar _lastAtmosphereColor aqui: T=0 del blend nuevo es snapA
+        // (e.g. settings_2=#ffffff en la sub-fase 2→3), que contamina el valor
+        // del idle. _lastAtmosphereColor ya es correcto via ApplyIdleState.
+        // OnDrawUpdate calcula el lerp exacto con _snapA/_snapB cuando lo necesita.
     }
 
     /// <summary>
@@ -561,12 +609,6 @@ public static class SettingsBlendController
         On.RoomCamera.orig_MoveCamera_Room_int orig, RoomCamera self,
         Room newRoom, int camPos)
     {
-        string prevRoom = self.room?.abstractRoom?.name ?? "null";
-        string nextRoom = newRoom?.abstractRoom?.name ?? "null";
-        Plugin.RSPlugin.log.LogInfo(
-            $"[MoveCamera] {prevRoom}→{nextRoom} _active={_active} _room={_room?.abstractRoom?.name ?? "null"} " +
-            $"Phase={BlendClock.CurrentPhase} IsRunning={BlendClock.IsRunning}");
-
         // Bloquear TryApplyIdle durante este frame: cam.room puede quedar
         // apuntando a la sala anterior hasta el frame siguiente, causando
         // camIsHere=True cuando ya está en tránsito hacia otra sala.
@@ -583,15 +625,6 @@ public static class SettingsBlendController
 
         if (prevWasManaged && !nextIsManaged)
         {
-            Plugin.RSPlugin.log.LogInfo(
-                $"[MoveCamera] Exiting managed room '{prevRoomForReset}' → unmanaged '{nextRoomForReset}'. paletteA={self.paletteA} paletteB={self.paletteB} paletteBlend={self.paletteBlend:F3}");
-            if (self.fadeTexA != null)
-            {
-                var pxA = self.fadeTexA.GetPixel(1, 15);
-                var pxB = self.fadeTexB != null ? self.fadeTexB.GetPixel(1, 15) : UnityEngine.Color.black;
-                Plugin.RSPlugin.log.LogInfo($"[MoveCamera] fadeTexA(1,15)={pxA} fadeTexB(1,15)={pxB}");
-            }
-
             // Si el clock está en Idle y los slots no corresponden a StateA,
             // sincronizar el sky al estado correcto antes de que la cámara salga.
             // Sin esto, el último frame visible de la sala gestionada muestra el
@@ -600,7 +633,6 @@ public static class SettingsBlendController
                 && _skySlotDay != BlendClock.StateA && self.room != null)
             {
                 ApplySkyForState(BlendClock.StateA, self.room);
-                Plugin.RSPlugin.log.LogInfo($"[MoveCamera] SkyForState forced on exit: state={BlendClock.StateA}");
             }
         }
 
@@ -627,18 +659,6 @@ public static class SettingsBlendController
             _lastIdleSkyState = -1;
         }
 
-        // Log post-orig para diagnóstico
-        if (prevWasManaged && !nextIsManaged && self.room != null)
-        {
-            var pxA2 = self.fadeTexA?.GetPixel(1, 15) ?? UnityEngine.Color.black;
-            var pxB2 = self.fadeTexB?.GetPixel(1, 15) ?? UnityEngine.Color.black;
-            Plugin.RSPlugin.log.LogInfo(
-                $"[MoveCamera-postOrig-palette] paletteA={self.paletteA} paletteB={self.paletteB} paletteBlend={self.paletteBlend:F3} fadeTexA={pxA2} fadeTexB={pxB2}");
-        }
-
-        Plugin.RSPlugin.log.LogInfo(
-            $"[MoveCamera-postOrig] camRoom={self.room?.abstractRoom?.name ?? "null"} newRoom={nextRoom} same={(self.room == newRoom)}");
-
         if (newRoom == null || !BlendClock.IsRunning) return;
 
         var blendSettings = BlendSettingsLoader.Active;
@@ -656,8 +676,6 @@ public static class SettingsBlendController
             _pendingIdleRoom.abstractRoom?.name == newRoomName &&
             _pendingIdlePath != null)
         {
-            Plugin.RSPlugin.log.LogInfo(
-                $"[MoveCamera] Consuming pending idle for {newRoomName} (same={self.room == newRoom})");
             // Aplicar si cam.room ya actualizó, de lo contrario diferir al OnUpdateDayNightPalette
             if (self.room == newRoom)
             {
@@ -675,17 +693,11 @@ public static class SettingsBlendController
 
             if (pathA != null && pathB != null && BlendClock.StateA != BlendClock.StateB)
             {
-                // Forzar SyncSkySlots antes del attach cuando la escena ya existe pero
-                // los slots no coinciden con StateA. Esto cubre el caso donde el ctor
-                // no se recrea (Rain World reutiliza la escena) y el idle fue tan corto
-                // que AssignSkySlots no tuvo oportunidad de correr con el estado nuevo.
                 if (_skySlotDay != BlendClock.StateA)
                     SyncSkySlots(newRoom, BlendClock.StateA, BlendClock.StateB);
 
                 if (self.room == newRoom)
                 {
-                    Plugin.RSPlugin.log.LogInfo(
-                        $"[MoveCamera] Attach entry room={newRoomName} T={BlendClock.SubPhaseLocalT:F3} same=True");
                     float t = BlendClock.SubPhaseLocalT;
                     AttachWithExternalT(newRoom, pathA, pathB);
                     SetExternalT(t);
@@ -696,6 +708,17 @@ public static class SettingsBlendController
                     // same=False: self.room aún no actualizó. NotifyCameras hará el attach.
                     // Guardar el T pre-tick para que ApplySkyAlphas lo use este frame.
                     _entryFrameT = BlendClock.SubPhaseLocalT;
+                    // Pre-calcular _lastAtmosphereColor con los snapshots de la nueva sala.
+                    // Sin esto, el primer DrawUpdate tras la llegada usa el valor del idle
+                    // (T=0 del state anterior) porque ApplyBlend aún no corrió ese tick.
+                    var snapA2 = SettingsSnapshot.FromFileWithTemplate(pathA, newRoomName);
+                    var snapB2 = SettingsSnapshot.FromFileWithTemplate(pathB, newRoomName);
+                    if (snapA2 != null && snapB2 != null)
+                    {
+                        var lerped2 = SettingsSnapshot.Lerp(snapA2, snapB2, _entryFrameT);
+                        if (lerped2.TintCloudAtmosphere.HasValue)
+                            _lastAtmosphereColor = lerped2.TintCloudAtmosphere.Value;
+                    }
                 }
             }
         }
@@ -710,15 +733,11 @@ public static class SettingsBlendController
             {
                 if (self.room == newRoom)
                 {
-                    Plugin.RSPlugin.log.LogInfo(
-                        $"[MoveCamera] ApplyIdleState inmediato room={newRoomName} state={stateToShow}");
                     ApplyIdleState(newRoom, path, allowCameraOps: true);
                     BlendClockUpdater.SetLastIdleRoom(newRoomName);
                 }
                 else
                 {
-                    Plugin.RSPlugin.log.LogInfo(
-                        $"[MoveCamera] Pending idle room={newRoomName} state={stateToShow}");
                     _pendingIdleRoom = newRoom;
                     _pendingIdlePath = path;
                 }
@@ -852,8 +871,6 @@ public static class SettingsBlendController
             _pendingIdlePath != null &&
             !_moveCameraThisFrame)
         {
-            Plugin.RSPlugin.log.LogInfo(
-                $"[OnRoomCameraUpdate] Consuming pending idle room={roomName}");
             ApplyIdleState(_pendingIdleRoom, _pendingIdlePath, allowCameraOps: true);
             BlendClockUpdater.SetLastIdleRoom(roomName);
             _pendingIdleRoom = null;
@@ -924,9 +941,6 @@ public static class SettingsBlendController
 
         // Igual que ACV: forzar alphas correctos antes del primer Update.
         PreOrigForceSkyAlpha(self.daySky, self.duskSky, self.nightSky);
-        Plugin.RSPlugin.log.LogInfo(
-            $"[RTV-ctor] frame={Time.frameCount} slotDay={_skySlotDay} StateA={BlendClock.StateA} " +
-            $"Phase={BlendClock.CurrentPhase} dayAlpha={self.daySky?.alpha:F3} active={_active}");
     }
 
     private static void OnRoofTopViewUpdate(
@@ -1002,15 +1016,6 @@ public static class SettingsBlendController
         // Consumir sync pendiente igual que en ACV.
         if (_pendingSkySync && _pendingSkyStateA > 0)
         {
-            string dayPhysBefore = "?";
-            var rtvCam = self.room?.game?.cameras?[0];
-            if (rtvCam != null)
-                foreach (var sl in rtvCam.spriteLeasers)
-                    if (sl.drawableObject == self.daySky && sl.sprites?.Length > 0)
-                    { dayPhysBefore = sl.sprites[0]?.element?.name ?? "NULL"; break; }
-            Plugin.RSPlugin.log.LogInfo(
-                $"[SkySync-deferred] (RTV) Consuming stateA={_pendingSkyStateA} stateB={_pendingSkyStateB} " +
-                $"dayPhys_before={dayPhysBefore} slotDay={_skySlotDay}");
             SyncSkySlots(self.room, _pendingSkyStateA, _pendingSkyStateB);
             _pendingSkySync   = false;
             _pendingSkyStateA = -1;
@@ -1068,32 +1073,6 @@ public static class SettingsBlendController
 
         ApplySkyAlphas(self.daySky, self.duskSky, self.nightSky);
         OverrideBackgroundGlobalsIfActive(self.room);
-
-        // ── AUDIT LOG ─────────────────────────────────────────────────────
-        bool _auditTransitionRTV = _moveCameraThisFrame || _exitedManagedRoomLastFrame || _detachedThisFrame;
-        bool _auditBlendRTV = (_active && _externalT) || (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending);
-        if (_auditTransitionRTV || _auditBlendRTV)
-        {
-            string dayLogic = self.daySky?.illustrationName  ?? "NULL";
-            string duskLogic = self.duskSky?.illustrationName ?? "NULL";
-            string dayPhysical = "?"; string duskPhysical = "?";
-            var auditCam = self.room?.game?.cameras?[0];
-            if (auditCam != null)
-            {
-                foreach (var sl in auditCam.spriteLeasers)
-                {
-                    if (sl.drawableObject == self.daySky  && sl.sprites?.Length > 0) dayPhysical  = sl.sprites[0]?.element?.name ?? "NULL";
-                    if (sl.drawableObject == self.duskSky && sl.sprites?.Length > 0) duskPhysical = sl.sprites[0]?.element?.name ?? "NULL";
-                }
-            }
-            Plugin.RSPlugin.log.LogInfo(
-                $"[AUDIT-RTV] frame={Time.frameCount} " +
-                $"sub={BlendClock.SubPhaseIndex} T={BlendClock.SubPhaseLocalT:F3} StateA={BlendClock.StateA} " +
-                $"day:logic={dayLogic} physical={dayPhysical} alpha={self.daySky?.alpha:F3} " +
-                $"dusk:logic={duskLogic} physical={duskPhysical} alpha={self.duskSky?.alpha:F3} " +
-                $"_slotDay={_skySlotDay} active={_active} " +
-                $"move={_moveCameraThisFrame} exited={_exitedManagedRoomLastFrame} detached={_detachedThisFrame}");
-        }
     }
 
     private static void OnAboveCloudsViewCtor(
@@ -1132,9 +1111,6 @@ public static class SettingsBlendController
         // sprites en el primer frame, los renderice con el alpha correcto desde el
         // principio — evitando el flash de 1-2 frames con el sprite default (bkg01).
         PreOrigForceSkyAlpha(self.daySky, self.duskSky, self.nightSky);
-        Plugin.RSPlugin.log.LogInfo(
-            $"[ACV-ctor] frame={Time.frameCount} slotDay={_skySlotDay} StateA={BlendClock.StateA} " +
-            $"Phase={BlendClock.CurrentPhase} dayAlpha={self.daySky?.alpha:F3} active={_active} hasSaved={_hasSavedAlphas}");
     }
 
     private static void OnAboveCloudsViewUpdate(
@@ -1168,6 +1144,10 @@ public static class SettingsBlendController
                             _savedDayAlpha = self.daySky.alpha; _savedDuskAlpha = 1f; _savedNightAlpha = 0f;
                             _hasSavedAlphas = true;
                         }
+                        // Mantener atmosphereColor sincronizado aunque la cámara no esté en la sala.
+                        // Sin esto queda congelado en el último valor aplicado (puede ser T=0 de la
+                        // sub-fase) y el frame de exited=True muestra ese valor incorrecto.
+                        self.atmosphereColor = _lastAtmosphereColor;
                     }
                     else if (phase == BlendClock.Phase.Idle)
                     {
@@ -1182,6 +1162,10 @@ public static class SettingsBlendController
                             _savedDayAlpha = 1f; _savedDuskAlpha = 1f; _savedNightAlpha = 0f;
                             _hasSavedAlphas = true;
                         }
+                        // Mantener atmosphereColor sincronizado durante idle OFFCAM.
+                        // Sin esto queda congelado en el ultimo valor del blend y al
+                        // volver a la sala el frame de exited=True ve ese valor incorrecto.
+                        self.atmosphereColor = _lastAtmosphereColor;
                     }
                     else if (phase == BlendClock.Phase.Done)
                     {
@@ -1196,6 +1180,8 @@ public static class SettingsBlendController
                             _savedDayAlpha = 1f; _savedDuskAlpha = 1f; _savedNightAlpha = 0f;
                             _hasSavedAlphas = true;
                         }
+                        // Igual que Idle: mantener atmosphereColor correcto OFFCAM.
+                        self.atmosphereColor = _lastAtmosphereColor;
                     }
                 }
             }
@@ -1269,7 +1255,14 @@ public static class SettingsBlendController
                 ? cloudSnap.TintCloudAtmosphere.Value
                 : _lastAtmosphereColor;
 
-            if (cloudSnap != null && cloudSnap.TintCloudAtmosphere.HasValue)
+            // Solo actualizar _lastAtmosphereColor durante blend activo.
+            // Durante idle, _activeSnapshot es el ultimo lerped del blend anterior
+            // (puede ser T=0.5 = fucsia claro, o T=1.0 = blanco) y contamina el
+            // valor que el bloque OFFCAM usa como referencia al salir de la sala.
+            // _lastAtmosphereColor se mantiene correcto via ApplyIdleState y
+            // AdvanceOriginToB — no necesita actualizarse aqui durante idle.
+            if (cloudSnap != null && cloudSnap.TintCloudAtmosphere.HasValue
+                && _active && _externalT)
                 _lastAtmosphereColor = newAtm;
 
             self.atmosphereColor = newAtm;
@@ -1283,31 +1276,7 @@ public static class SettingsBlendController
         _aboveCloudsView = self;
         OverrideBackgroundGlobalsIfActive(self.room);
 
-        // ── AUDIT LOG ─────────────────────────────────────────────────────
-        bool _auditTransition = _moveCameraThisFrame || _exitedManagedRoomLastFrame || _detachedThisFrame;
-        bool _auditBlend = (_active && _externalT) || (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending);
-        if (_auditTransition || _auditBlend)
-        {
-            string dayLogic  = self.daySky?.illustrationName  ?? "NULL";
-            string duskLogic = self.duskSky?.illustrationName ?? "NULL";
-            string dayPhysical = "?"; string duskPhysical = "?";
-            var auditCam0 = self.room?.game?.cameras?[0];
-            if (auditCam0 != null)
-            {
-                foreach (var sl in auditCam0.spriteLeasers)
-                {
-                    if (sl.drawableObject == self.daySky  && sl.sprites?.Length > 0) dayPhysical  = sl.sprites[0]?.element?.name ?? "NULL";
-                    if (sl.drawableObject == self.duskSky && sl.sprites?.Length > 0) duskPhysical = sl.sprites[0]?.element?.name ?? "NULL";
-                }
-            }
-            Plugin.RSPlugin.log.LogInfo(
-                $"[AUDIT-ACV] frame={Time.frameCount} " +
-                $"sub={BlendClock.SubPhaseIndex} T={BlendClock.SubPhaseLocalT:F3} StateA={BlendClock.StateA} " +
-                $"day:logic={dayLogic} physical={dayPhysical} alpha={self.daySky?.alpha:F3} " +
-                $"dusk:logic={duskLogic} physical={duskPhysical} alpha={self.duskSky?.alpha:F3} " +
-                $"_slotDay={_skySlotDay} active={_active} " +
-                $"move={_moveCameraThisFrame} exited={_exitedManagedRoomLastFrame} detached={_detachedThisFrame}");
-        }
+
     }
 
     // ── Sky helpers ───────────────────────────────────────────────────────
@@ -1346,9 +1315,6 @@ public static class SettingsBlendController
                 if (scene is RoofTopView rtv) rtv.nightSky.illustrationName = slot;
                 else if (scene is AboveCloudsView acv) acv.nightSky.illustrationName = slot;
             });
-
-        Plugin.RSPlugin.log.LogInfo(
-            $"[SkyBkg] Assigned slots: day={stateA} dusk={stateB} night={stateC} sky={sky}");
     }
 
     private static void LoadAndAssignSlot(BackgroundScene scene, SkyType sky,
@@ -1632,8 +1598,6 @@ public static class SettingsBlendController
         // Sin cambio — no hacer nada
         if (_skySlotDay == stateA && _skySlotDusk == stateB && _skySlotNight == stateC) return;
 
-        Plugin.RSPlugin.log.LogInfo($"[SkySync] stateA={stateA} stateB={stateB} stateC={stateC} prevDay={_skySlotDay} prevDusk={_skySlotDusk}");
-
         string fileA = settings.GetBkgFileForState(stateA, sky);
         string fileB = settings.GetBkgFileForState(stateB, sky);
         string fileC = settings.GetBkgFileForState(stateC, sky);
@@ -1775,6 +1739,51 @@ public static class SettingsBlendController
     private static void OnDrawUpdate(
         On.RoomCamera.orig_DrawUpdate orig, RoomCamera self, float timeStacker, float timeSpeed)
     {
+        // DrawSprites de CloseCloud/DistantCloud lee atmosphereColor directamente
+        // de la instancia AboveCloudsView — no el shader global. En Rain World,
+        // GrafUpdate (DrawUpdate/DrawSprites) corre ANTES de RawUpdate (ACV.Update).
+        // Escribir atmosphereColor aqui, pre-orig, garantiza que DrawSprites vea
+        // el valor correcto del tick anterior — que es exactamente lo que corresponde.
+        // DrawSprites de CloseCloud/DistantCloud lee atmosphereColor directamente
+        // de la instancia AboveCloudsView — no el shader global — y DrawUpdate
+        // corre antes de GameUpdate. Escribir atmosphereColor aqui garantiza que
+        // DrawSprites vea el valor del tick anterior, que es el correcto.
+        //
+        // Guard: solo cuando la camara esta en la sala ACV, O cuando es el frame
+        // de llegada (exited=True = frame anterior tuvo MoveCamera hacia la sala).
+        // Sin el caso exited, ese frame de llegada pinta con el valor del idle.
+        // Sin el guard de camIsHere, sobreescribiria el fix OFFCAM del Bug B.
+        if (_acvScene != null && BlendClock.IsRunning)
+        {
+            var cam0 = _acvScene.room?.game?.cameras?[0];
+            bool acvCamIsHere = cam0 != null && cam0.room == _acvScene.room;
+            var phase = BlendClock.CurrentPhase;
+
+            // Durante Blending con camara presente: pre-escribir atmosphereColor
+            // para que DrawSprites vea el valor correcto (un tick adelantado).
+            if (acvCamIsHere && phase == BlendClock.Phase.Blending)
+                _acvScene.atmosphereColor = _lastAtmosphereColor;
+
+            // Durante exited=True (frame tras MoveCamera): la camara no esta en
+            // la sala pero DrawSprites sigue corriendo. ACV.Update no corregira
+            // atmosphereColor en ningun phase.
+            // Solo sobreescribir durante Blending — en Idle/Done skyColor de las nubes
+            // aun refleja la paleta del blend anterior, y escribir el color del idle
+            // nuevo crea un mismatch visible. El valor congelado del blend es coherente
+            // con skyColor en ese frame de transicion.
+            if (_exitedManagedRoomLastFrame && phase == BlendClock.Phase.Blending)
+            {
+                UnityEngine.Color targetAtm = _lastAtmosphereColor;
+                if (_snapA != null && _snapB != null)
+                {
+                    var lerped = SettingsSnapshot.Lerp(_snapA, _snapB, BlendClock.SubPhaseLocalT);
+                    if (lerped.TintCloudAtmosphere.HasValue)
+                        targetAtm = lerped.TintCloudAtmosphere.Value;
+                }
+                _acvScene.atmosphereColor = targetAtm;
+            }
+        }
+
         orig(self, timeStacker, timeSpeed);
 
         // Durante el frame de MoveCamera, el vanilla puede haber pisado los globals
@@ -1895,8 +1904,6 @@ public static class SettingsBlendController
                 // en el primer frame donde cam.room ya es la sala correcta.
                 if (_pendingIdleRoom != null && _pendingIdleRoom == self.room && _pendingIdlePath != null)
                 {
-                    Plugin.RSPlugin.log.LogInfo(
-                        $"[PendingIdle consumed] room={self.room.abstractRoom?.name} path={_pendingIdlePath}");
                     ApplyIdleState(_pendingIdleRoom, _pendingIdlePath, allowCameraOps: true);
                     BlendClockUpdater.SetLastIdleRoom(self.room.abstractRoom?.name);
                     _pendingIdleRoom = null;
@@ -1994,6 +2001,12 @@ public static class SettingsBlendController
 
                     // Forzar alpha correcto en los objetos
                     if (day != null) PreOrigForceSkyAlpha(day, dusk, ngt);
+
+                    // Forzar atmosphereColor correcto en ACV antes de orig.
+                    // Mismo patrón que el fix del BKG: orig() puede leer este valor
+                    // en el primer frame de llegada antes de que ACV.Update lo corrija.
+                    if (isAcv && acv != null)
+                        acv.atmosphereColor = _lastAtmosphereColor;
                 }
             }
         }
@@ -2061,7 +2074,14 @@ public static class SettingsBlendController
             BlendTextureManager.Load(cam, _snapA, _snapB, _snapOriginal);
 
         var lerped = SettingsSnapshot.Lerp(_snapA, _snapB, t);
-        _activeSnapshot = lerped; // expuesto para CalcBackgroundColors → RC_TINT
+        _activeSnapshot = lerped;
+
+        // Mantener _lastAtmosphereColor siempre actualizado al valor lerpeado actual.
+        // Garantiza que el fallback en OnAboveCloudsViewUpdate sea correcto incluso
+        // en los frames de transición donde _activeSnapshot puede no estar disponible
+        // aún (entre Detach y re-attach al cambiar de sub-fase).
+        if (lerped.TintCloudAtmosphere.HasValue)
+            _lastAtmosphereColor = lerped.TintCloudAtmosphere.Value;
         var rs = _room.roomSettings;
         rs.Grime                 = lerped.Grime;
         rs.Clouds                = lerped.Clouds;
