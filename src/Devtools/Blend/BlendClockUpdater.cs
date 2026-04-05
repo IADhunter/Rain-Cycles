@@ -37,7 +37,8 @@ public static class BlendClockUpdater
             {
                 string camRoom   = cam.room?.abstractRoom?.name;
                 string blendRoom = SettingsBlendController.ActiveRoom?.abstractRoom?.name;
-                if (blendRoom != null && camRoom != blendRoom)
+                if (blendRoom != null && camRoom != blendRoom &&
+                    !SettingsBlendController.MoveCameraThisFrame)
                 {
                     Plugin.RSPlugin.log.LogWarning(
                         $"[SafetyNet] Room change missed: '{blendRoom}'→'{camRoom}'. Recovering.");
