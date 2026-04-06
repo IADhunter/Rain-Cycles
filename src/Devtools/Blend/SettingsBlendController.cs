@@ -31,6 +31,11 @@ public static class SettingsBlendController
     // Durante ese frame cam.room puede seguir apuntando a la sala anterior,
     // haciendo camIsHere=True cuando ya está en tránsito hacia otra sala.
     private static bool _moveCameraThisFrame  = false;
+
+    // Indica que en este frame el clock avanzó de sub-fase o de Blending→Done.
+    // Usado por OnAboveCloudsViewUpdate para ignorar _activeSnapshot stale
+    // y usar _lastAtmosphereColor como fallback hasta el próximo attach.
+    private static bool _subChangedThisFrame  = false;
     // Flag que dura un frame extra tras salir de sala gestionada.
     // Permite que OnUpdateDayNightPalette preserve los globals correctos
     // en el primer frame donde cam.room ya apunta a la sala no gestionada.
@@ -54,11 +59,39 @@ public static class SettingsBlendController
     private static RoofTopView     _rtvScene = null;
     private static AboveCloudsView _acvScene = null;
 
-    // Índices de estado asignados a cada slot en la escena activa.
+    // Índices de estado asignados a cada slot, separados por tipo de escena.
+    // Antes eran tres variables globales compartidas — el ctor de la sala adyacente
+    // (precargada por Rain World) pisaba los slots de la sala activa, causando
+    // desincronización y frames negros en la segunda sala visitada.
+    // Ahora cada tipo de escena tiene su propio par independiente.
     // -1 = slot no asignado.
-    private static int _skySlotDay   = -1;  // daySky   → estado A actual
-    private static int _skySlotDusk  = -1;  // duskSky  → estado B (destino)
-    private static int _skySlotNight = -1;  // nightSky → próximo estado C
+    private static int _rtvSlotDay   = -1;  // RoofTopView:     daySky   → estado A
+    private static int _rtvSlotDusk  = -1;  //                  duskSky  → estado B
+    private static int _rtvSlotNight = -1;  //                  nightSky → estado C
+    private static int _acvSlotDay   = -1;  // AboveCloudsView: daySky   → estado A
+    private static int _acvSlotDusk  = -1;  //                  duskSky  → estado B
+    private static int _acvSlotNight = -1;  //                  nightSky → estado C
+
+    // Helpers de lectura/escritura por tipo — evitan repetir la selección en cada caller.
+    private static int  GetSlotDay  (SkyType t) => t == SkyType.RTV ? _rtvSlotDay   : _acvSlotDay;
+    private static int  GetSlotDusk (SkyType t) => t == SkyType.RTV ? _rtvSlotDusk  : _acvSlotDusk;
+    private static int  GetSlotNight(SkyType t) => t == SkyType.RTV ? _rtvSlotNight : _acvSlotNight;
+    private static void SetSlotDay  (SkyType t, int v) { if (t == SkyType.RTV) _rtvSlotDay   = v; else _acvSlotDay   = v; }
+    private static void SetSlotDusk (SkyType t, int v) { if (t == SkyType.RTV) _rtvSlotDusk  = v; else _acvSlotDusk  = v; }
+    private static void SetSlotNight(SkyType t, int v) { if (t == SkyType.RTV) _rtvSlotNight = v; else _acvSlotNight = v; }
+
+    // Slot del tipo activo en cam.room — usado por callers que no conocen el SkyType.
+    // Devuelve -1 si la sala activa no tiene sky o no está gestionada.
+    private static int ActiveSlotDay(RoomCamera cam)
+    {
+        if (cam?.room == null) return -1;
+        var s = BlendSettingsLoader.Active;
+        if (s == null) return -1;
+        string n = cam.room.abstractRoom?.name;
+        if (n == null) return -1;
+        var t = s.GetSkyType(n);
+        return t == SkyType.RTV ? _rtvSlotDay : t == SkyType.ACV ? _acvSlotDay : -1;
+    }
 
     // Último estado aplicado en ApplyIdleState — evita llamar ApplySkyForState cada frame
     private static int _lastIdleSkyState = -1;
@@ -98,17 +131,26 @@ public static class SettingsBlendController
     public static bool              IsActive              => _active;
     public static bool              DetachedThisFrame     => _detachedThisFrame;
     public static bool              MoveCameraThisFrame   => _moveCameraThisFrame;
+    public static void              NotifySubChanged()    => _subChangedThisFrame = true;
     public static string            CurrentPathA          => _pathA;
     public static string            CurrentPathB          => _pathB;
     public static Room              ActiveRoom            => _room;
     public static float             ForcedT               => _forcedT;
     public static SettingsSnapshot  ActiveSnapshot        => _activeSnapshot;
     public static void SetActiveSnapshot(SettingsSnapshot snap) => _activeSnapshot = snap;
+    /// <summary>
+    /// Limpia _activeSnapshot para forzar que ACV.Update use _lastAtmosphereColor
+    /// como fallback en el próximo frame, en vez del lerp stale de la sub-fase anterior.
+    /// Llamar después de SnapAtmosphereToCurrentStateB cuando subChanged o phaseChanged.
+    /// _activeSnapshot se restaurará en el próximo ApplyBlend via TryAttach/NotifyCameras.
+    /// </summary>
+    public static void ClearActiveSnapshot() => _activeSnapshot = null;
 
     /// <summary>Llamar al inicio de cada Update para limpiar el flag de frame.</summary>
     public static void ClearFrameFlag()
     {
         _detachedThisFrame   = false;
+        _subChangedThisFrame = false;
         _exitedManagedRoomLastFrame = _moveCameraThisFrame && _hasLastGoodGlobals;
         _moveCameraThisFrame = false;
         _entryFrameT         = -1f;
@@ -191,7 +233,7 @@ public static class SettingsBlendController
             _hasSavedAlphas  = true;
         }
         else if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending
-                 && _skySlotDay == BlendClock.StateA)
+                 && (_room != null ? ActiveSlotDay(_room.game?.cameras?[0]) : -1) == BlendClock.StateA)
         {
             // Clock en Blending pero _externalT ya fue limpiado (race entre Detach y tick).
             // Usar SubPhaseLocalT para calcular el alpha correcto.
@@ -275,7 +317,8 @@ public static class SettingsBlendController
         if (_active)
             DetachAndRestore();
         _rtvScene = null; _acvScene = null;
-        _skySlotDay = _skySlotDusk = _skySlotNight = -1;
+        _rtvSlotDay = _rtvSlotDusk = _rtvSlotNight = -1;
+        _acvSlotDay = _acvSlotDusk = _acvSlotNight = -1;
         _lastIdleSkyState = -1;
         _lastAtmosphereColor = new UnityEngine.Color(0.16078432f, 0.23137255f, 0.31764707f);
         _hasLastGoodGlobals = false;
@@ -510,6 +553,48 @@ public static class SettingsBlendController
     }
 
     /// <summary>
+    /// Fuerza atmosphereColor en la instancia ACV activa con _lastAtmosphereColor,
+    /// sin esperar al próximo orig(). Llamar desde BlendClockUpdater post-tick
+    /// cuando phaseChanged o subChanged.
+    /// </summary>
+    public static void FlushAtmosphereColorToACV()
+    {
+        var acv = _acvScene;
+        if (acv == null) return;
+        acv.atmosphereColor = _lastAtmosphereColor;
+    }
+
+    /// <summary>
+    /// Actualiza _lastAtmosphereColor con el TintCloudAtmosphere del estado B actual.
+    /// Llamar cuando el clock salta una sub-fase completa sin attach (ej. x50),
+    /// para que el fallback de OnAboveCloudsViewUpdate use el color correcto
+    /// del estado donde terminó la sub-fase, no el del idle anterior.
+    /// </summary>
+    public static void SnapAtmosphereToCurrentStateB()
+    {
+        var s = BlendSettingsLoader.Active;
+        if (s == null) return;
+
+        // Buscar la sala activa con ACV o RTV
+        var acv = _acvScene;
+        string roomName = acv?.room?.abstractRoom?.name;
+        if (roomName == null || !s.IncludesRoom(roomName)) return;
+
+        // StateB es el estado donde terminó la sub-fase que se saltó
+        string path = ReadStateReadFiles.GetRainStateSettingsFile(roomName, BlendClock.StateB);
+        if (path == null) return;
+
+        var snap = SettingsSnapshot.FromFileWithTemplate(path, roomName);
+        if (snap == null) return;
+
+        if (snap.TintCloudAtmosphere.HasValue)
+        {
+            _lastAtmosphereColor = snap.TintCloudAtmosphere.Value;
+            if (acv != null) acv.atmosphereColor = _lastAtmosphereColor;
+        }
+    }
+
+    /// <summary>
     /// Descarta el origen pendiente sin consumirlo.
     /// Llamar desde RCPanel antes de cada ActivatePhase manual para que
     /// ConsumePendingOrigin use el pathA de la fase actual como origen,
@@ -630,9 +715,11 @@ public static class SettingsBlendController
             // Sin esto, el último frame visible de la sala gestionada muestra el
             // sprite del blend anterior en vez del estado idle correcto.
             if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Idle
-                && _skySlotDay != BlendClock.StateA && self.room != null)
+                && self.room != null)
             {
-                ApplySkyForState(BlendClock.StateA, self.room);
+                var prevSkyType = BlendSettingsLoader.Active?.GetSkyType(self.room.abstractRoom?.name ?? "") ?? SkyType.None;
+                if (prevSkyType != SkyType.None && GetSlotDay(prevSkyType) != BlendClock.StateA)
+                    ApplySkyForState(BlendClock.StateA, self.room);
             }
         }
 
@@ -693,7 +780,8 @@ public static class SettingsBlendController
 
             if (pathA != null && pathB != null && BlendClock.StateA != BlendClock.StateB)
             {
-                if (_skySlotDay != BlendClock.StateA)
+                var newSkyType = blendSettings.GetSkyType(newRoomName);
+                if (newSkyType != SkyType.None && GetSlotDay(newSkyType) != BlendClock.StateA)
                     SyncSkySlots(newRoom, BlendClock.StateA, BlendClock.StateB);
 
                 if (self.room == newRoom)
@@ -935,12 +1023,13 @@ public static class SettingsBlendController
         // Actualizar siempre a la instancia más reciente.
         // Rain World precarga salas adyacentes — puede haber múltiples instancias.
         // La que importa es la última creada para una sala en [ROOMS].
+        // Slots separados por tipo: el ctor de RTV precargado no pisa los slots ACV.
         _rtvScene = self;
-        _skySlotDay = _skySlotDusk = _skySlotNight = -1;  // resetear slots para la nueva instancia
+        _rtvSlotDay = _rtvSlotDusk = _rtvSlotNight = -1;
         AssignSkySlots(self, room, settings, SkyType.RTV);
 
         // Igual que ACV: forzar alphas correctos antes del primer Update.
-        PreOrigForceSkyAlpha(self.daySky, self.duskSky, self.nightSky);
+        PreOrigForceSkyAlpha(self.daySky, self.duskSky, self.nightSky, SkyType.RTV);
     }
 
     private static void OnRoofTopViewUpdate(
@@ -966,9 +1055,9 @@ public static class SettingsBlendController
                     if (phase == BlendClock.Phase.Blending)
                     {
                         int sA = BlendClock.StateA, sB = BlendClock.StateB;
-                        if (_skySlotDay != sA || _skySlotDusk != sB)
+                        if (GetSlotDay(SkyType.RTV) != sA || GetSlotDusk(SkyType.RTV) != sB)
                             SyncSkySlots(self.room, sA, sB);
-                        if (_skySlotDay == sA && self.daySky != null)
+                        if (GetSlotDay(SkyType.RTV) == sA && self.daySky != null)
                         {
                             float tNow = BlendClock.SubPhaseLocalT;
                             self.daySky.alpha  = 1f - tNow;
@@ -981,7 +1070,7 @@ public static class SettingsBlendController
                     else if (phase == BlendClock.Phase.Idle)
                     {
                         int sA = BlendClock.StateA, sB = NextStateIn(rtSettings, sA);
-                        if (_skySlotDay != sA || _skySlotDusk != sB)
+                        if (GetSlotDay(SkyType.RTV) != sA || GetSlotDusk(SkyType.RTV) != sB)
                             SyncSkySlots(self.room, sA, sB);
                         if (self.daySky != null)
                         {
@@ -995,7 +1084,7 @@ public static class SettingsBlendController
                     else if (phase == BlendClock.Phase.Done)
                     {
                         int sB = BlendClock.StateB, sC = NextStateIn(rtSettings, sB);
-                        if (_skySlotDay != sB)
+                        if (GetSlotDay(SkyType.RTV) != sB)
                             SyncSkySlots(self.room, sB, sC);
                         if (self.daySky != null)
                         {
@@ -1024,7 +1113,7 @@ public static class SettingsBlendController
         // El audit confirmó que logic==physical siempre, pero alpha=1.00
         // cuando debería ser 1-T durante frames de transición. Forzar aquí
         // antes de orig garantiza que Futile renderiza con el valor correcto.
-        PreOrigForceSkyAlpha(self.daySky, self.duskSky, self.nightSky);
+        PreOrigForceSkyAlpha(self.daySky, self.duskSky, self.nightSky, SkyType.RTV);
 
         orig(self, eu);
 
@@ -1057,14 +1146,14 @@ public static class SettingsBlendController
         // Usamos illustrationName como indicador: si el sprite físico ya tiene el nombre
         // correcto, RefreshSlotSprite no hace nada (guard interno).
         var cam0 = self.room.game?.cameras?[0];
-        if (_skySlotDay > 0 && cam0 != null)
+        if (GetSlotDay(SkyType.RTV) > 0 && cam0 != null)
         {
             var s2 = BlendSettingsLoader.Active;
             if (s2 != null)
             {
-                string fA = s2.GetBkgFileForState(_skySlotDay,   SkyType.RTV);
-                string fB = s2.GetBkgFileForState(_skySlotDusk,  SkyType.RTV);
-                string fC = s2.GetBkgFileForState(_skySlotNight, SkyType.RTV);
+                string fA = s2.GetBkgFileForState(GetSlotDay  (SkyType.RTV), SkyType.RTV);
+                string fB = s2.GetBkgFileForState(GetSlotDusk (SkyType.RTV), SkyType.RTV);
+                string fC = s2.GetBkgFileForState(GetSlotNight(SkyType.RTV), SkyType.RTV);
                 if (!string.IsNullOrEmpty(fA)) RefreshSlotSprite(self.daySky,   System.IO.Path.GetFileNameWithoutExtension(fA), cam0);
                 if (!string.IsNullOrEmpty(fB)) RefreshSlotSprite(self.duskSky,  System.IO.Path.GetFileNameWithoutExtension(fB), cam0);
                 if (!string.IsNullOrEmpty(fC)) RefreshSlotSprite(self.nightSky, System.IO.Path.GetFileNameWithoutExtension(fC), cam0);
@@ -1100,8 +1189,9 @@ public static class SettingsBlendController
 
         if (settings.GetSkyType(roomName) != SkyType.ACV) return;
 
+        // Slots separados por tipo: el ctor de ACV precargado no pisa los slots RTV.
         _acvScene = self;
-        _skySlotDay = _skySlotDusk = _skySlotNight = -1;
+        _acvSlotDay = _acvSlotDusk = _acvSlotNight = -1;
         AssignSkySlots(self, room, settings, SkyType.ACV);
 
         // Forzar alphas correctos inmediatamente en el ctor.
@@ -1110,7 +1200,7 @@ public static class SettingsBlendController
         // Simple2DBackgroundIllustration aquí garantiza que cuando Futile cree los
         // sprites en el primer frame, los renderice con el alpha correcto desde el
         // principio — evitando el flash de 1-2 frames con el sprite default (bkg01).
-        PreOrigForceSkyAlpha(self.daySky, self.duskSky, self.nightSky);
+        PreOrigForceSkyAlpha(self.daySky, self.duskSky, self.nightSky, SkyType.ACV);
     }
 
     private static void OnAboveCloudsViewUpdate(
@@ -1133,9 +1223,9 @@ public static class SettingsBlendController
                     if (phase == BlendClock.Phase.Blending)
                     {
                         int sA = BlendClock.StateA, sB = BlendClock.StateB;
-                        if (_skySlotDay != sA || _skySlotDusk != sB)
+                        if (GetSlotDay(SkyType.ACV) != sA || GetSlotDusk(SkyType.ACV) != sB)
                             SyncSkySlots(self.room, sA, sB);
-                        if (_skySlotDay == sA && self.daySky != null)
+                        if (GetSlotDay(SkyType.ACV) == sA && self.daySky != null)
                         {
                             float tNow = BlendClock.SubPhaseLocalT;
                             self.daySky.alpha  = 1f - tNow;
@@ -1144,15 +1234,12 @@ public static class SettingsBlendController
                             _savedDayAlpha = self.daySky.alpha; _savedDuskAlpha = 1f; _savedNightAlpha = 0f;
                             _hasSavedAlphas = true;
                         }
-                        // Mantener atmosphereColor sincronizado aunque la cámara no esté en la sala.
-                        // Sin esto queda congelado en el último valor aplicado (puede ser T=0 de la
-                        // sub-fase) y el frame de exited=True muestra ese valor incorrecto.
                         self.atmosphereColor = _lastAtmosphereColor;
                     }
                     else if (phase == BlendClock.Phase.Idle)
                     {
                         int sA = BlendClock.StateA, sB = NextStateIn(acvSettings, sA);
-                        if (_skySlotDay != sA || _skySlotDusk != sB)
+                        if (GetSlotDay(SkyType.ACV) != sA || GetSlotDusk(SkyType.ACV) != sB)
                             SyncSkySlots(self.room, sA, sB);
                         if (self.daySky != null)
                         {
@@ -1162,15 +1249,12 @@ public static class SettingsBlendController
                             _savedDayAlpha = 1f; _savedDuskAlpha = 1f; _savedNightAlpha = 0f;
                             _hasSavedAlphas = true;
                         }
-                        // Mantener atmosphereColor sincronizado durante idle OFFCAM.
-                        // Sin esto queda congelado en el ultimo valor del blend y al
-                        // volver a la sala el frame de exited=True ve ese valor incorrecto.
                         self.atmosphereColor = _lastAtmosphereColor;
                     }
                     else if (phase == BlendClock.Phase.Done)
                     {
                         int sB = BlendClock.StateB, sC = NextStateIn(acvSettings, sB);
-                        if (_skySlotDay != sB)
+                        if (GetSlotDay(SkyType.ACV) != sB)
                             SyncSkySlots(self.room, sB, sC);
                         if (self.daySky != null)
                         {
@@ -1180,7 +1264,6 @@ public static class SettingsBlendController
                             _savedDayAlpha = 1f; _savedDuskAlpha = 1f; _savedNightAlpha = 0f;
                             _hasSavedAlphas = true;
                         }
-                        // Igual que Idle: mantener atmosphereColor correcto OFFCAM.
                         self.atmosphereColor = _lastAtmosphereColor;
                     }
                 }
@@ -1189,7 +1272,7 @@ public static class SettingsBlendController
             return;
         }
 
-        PreOrigForceSkyAlpha(self.daySky, self.duskSky, self.nightSky);
+        PreOrigForceSkyAlpha(self.daySky, self.duskSky, self.nightSky, SkyType.ACV);
 
         orig(self, eu);
 
@@ -1208,14 +1291,14 @@ public static class SettingsBlendController
 
         // Sincronizar sprites físicos — igual que RTV
         var cam0acv = self.room.game?.cameras?[0];
-        if (_skySlotDay > 0 && cam0acv != null)
+        if (GetSlotDay(SkyType.ACV) > 0 && cam0acv != null)
         {
             var s2 = BlendSettingsLoader.Active;
             if (s2 != null)
             {
-                string fA = s2.GetBkgFileForState(_skySlotDay,   SkyType.ACV);
-                string fB = s2.GetBkgFileForState(_skySlotDusk,  SkyType.ACV);
-                string fC = s2.GetBkgFileForState(_skySlotNight, SkyType.ACV);
+                string fA = s2.GetBkgFileForState(GetSlotDay  (SkyType.ACV), SkyType.ACV);
+                string fB = s2.GetBkgFileForState(GetSlotDusk (SkyType.ACV), SkyType.ACV);
+                string fC = s2.GetBkgFileForState(GetSlotNight(SkyType.ACV), SkyType.ACV);
                 if (!string.IsNullOrEmpty(fA)) RefreshSlotSprite(self.daySky,   System.IO.Path.GetFileNameWithoutExtension(fA), cam0acv);
                 if (!string.IsNullOrEmpty(fB)) RefreshSlotSprite(self.duskSky,  System.IO.Path.GetFileNameWithoutExtension(fB), cam0acv);
                 if (!string.IsNullOrEmpty(fC)) RefreshSlotSprite(self.nightSky, System.IO.Path.GetFileNameWithoutExtension(fC), cam0acv);
@@ -1244,9 +1327,11 @@ public static class SettingsBlendController
         // _activeSnapshot puede ser del ciclo anterior — no actualizar atmosphereColor
         // con ese valor incorrecto. Usar _lastAtmosphereColor hasta que SyncSkySlots
         // y el re-attach actualicen _activeSnapshot con el snapshot correcto.
+        // _subChangedThisFrame: el clock avanzó de sub-fase en este frame post-orig —
+        // _activeSnapshot es stale aunque los slots ya coincidan numéricamente.
         bool slotsInSync = !BlendClock.IsRunning ||
                            BlendClock.CurrentPhase != BlendClock.Phase.Blending ||
-                           _skySlotDay == BlendClock.StateA;
+                           (GetSlotDay(SkyType.ACV) == BlendClock.StateA && !_subChangedThisFrame);
 
         if (slotsInSync)
         {
@@ -1292,9 +1377,9 @@ public static class SettingsBlendController
         int stateB = BlendClock.IsRunning ? BlendClock.StateB : NextStateIn(settings, stateA);
         int stateC = NextStateIn(settings, stateB);
 
-        _skySlotDay   = stateA;
-        _skySlotDusk  = stateB;
-        _skySlotNight = stateC;
+        SetSlotDay  (sky, stateA);
+        SetSlotDusk (sky, stateB);
+        SetSlotNight(sky, stateC);
 
         string region = BlendSettingsLoader.ActiveRegion;
 
@@ -1348,7 +1433,8 @@ public static class SettingsBlendController
     private static void PreOrigForceSkyAlpha(
         BackgroundScene.Simple2DBackgroundIllustration day,
         BackgroundScene.Simple2DBackgroundIllustration dusk,
-        BackgroundScene.Simple2DBackgroundIllustration night)
+        BackgroundScene.Simple2DBackgroundIllustration night,
+        SkyType sky = SkyType.None)
     {
         if (day == null) return;
 
@@ -1367,9 +1453,9 @@ public static class SettingsBlendController
         }
         else if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending)
         {
-            if (_skySlotDay != BlendClock.StateA)
+            int slotDay = sky != SkyType.None ? GetSlotDay(sky) : -1;
+            if (slotDay != BlendClock.StateA)
             {
-                // Slots desincronizados — usar savedAlphas si disponibles
                 if (_hasSavedAlphas)
                 {
                     day.alpha   = _savedDayAlpha;
@@ -1378,6 +1464,9 @@ public static class SettingsBlendController
                 }
                 else
                 {
+                    Plugin.RSPlugin.log.LogDebug(
+                        $"[PreOrigForce] slots desinc Blending: slotDay={slotDay} sky={sky} " +
+                        $"StateA={BlendClock.StateA} day.name={day?.illustrationName}");
                     day.alpha   = 0f;
                     dusk.alpha  = 1f;
                     night.alpha = 0f;
@@ -1385,12 +1474,10 @@ public static class SettingsBlendController
             }
             else
             {
-                // Slots sincronizados — aplicar T correcto pre-tick
                 float t = BlendClock.SubPhaseLocalT;
                 day.alpha   = 1f - t;
                 dusk.alpha  = 1f;
                 night.alpha = 0f;
-                // Actualizar savedAlphas con el valor correcto de este frame
                 _savedDayAlpha   = day.alpha;
                 _savedDuskAlpha  = 1f;
                 _savedNightAlpha = 0f;
@@ -1399,23 +1486,33 @@ public static class SettingsBlendController
         }
         else if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Done)
         {
-            // Transición entre sub-fases — usar savedAlphas del último frame activo.
-            // GUARD: si los slots no coinciden con StateA, los savedAlphas pueden ser del
-            // ciclo anterior (e.g. _savedDayAlpha=1.0 porque _forcedT era 0 al terminar).
-            // En ese caso forzar daySky=0 para ocultar el sprite incorrecto hasta que
-            // SyncSkySlots sincronice los slots en el próximo AttachWithExternalT.
-            bool slotsMatchA = _skySlotDay == BlendClock.StateA;
-            if (_hasSavedAlphas && slotsMatchA)
+            int slotDay = sky != SkyType.None ? GetSlotDay(sky) : -1;
+            // En Phase.Done el blend terminó: los slots apuntan al estado B completado.
+            // Comparar contra StateB (no StateA) — el OFFCAM ya rotó los slots a B.
+            bool slotsMatchB = slotDay == BlendClock.StateB;
+            if (slotsMatchB)
             {
+                // Slots correctos para Done: mostrar estado B estático (daySky visible).
+                day.alpha   = 1f;
+                dusk.alpha  = 1f;
+                night.alpha = 0f;
+                _savedDayAlpha   = 1f;
+                _savedDuskAlpha  = 1f;
+                _savedNightAlpha = 0f;
+                _hasSavedAlphas  = true;
+            }
+            else if (_hasSavedAlphas)
+            {
+                // Slots aún no sincronizados a B — usar savedAlphas del último frame activo.
                 day.alpha   = _savedDayAlpha;
                 dusk.alpha  = _savedDuskAlpha;
                 night.alpha = _savedNightAlpha;
             }
             else
             {
-                // Slots desincronizados o sin alphas guardados:
-                // daySky tiene el sprite del ciclo anterior → ocultarlo.
-                // duskSky siempre tiene un sprite válido → dejarlo visible.
+                Plugin.RSPlugin.log.LogDebug(
+                    $"[PreOrigForce] slots desinc Done: slotDay={slotDay} sky={sky} " +
+                    $"StateB={BlendClock.StateB} day.name={day?.illustrationName}");
                 day.alpha   = 0f;
                 dusk.alpha  = 1f;
                 night.alpha = 0f;
@@ -1427,14 +1524,12 @@ public static class SettingsBlendController
             dusk.alpha  = _savedDuskAlpha;
             night.alpha = _savedNightAlpha;
         }
-        else if (_hasSavedAlphas && BlendClock.IsRunning
-                 && _skySlotDay > 0 && _skySlotDay != BlendClock.StateA)
+        else if (_hasSavedAlphas && BlendClock.IsRunning && sky != SkyType.None
+                 && GetSlotDay(sky) > 0 && GetSlotDay(sky) != BlendClock.StateA)
         {
-            // Entrada a sala durante Phase=Idle o Phase=Done con slots del ciclo anterior.
-            // El pending idle aún no actualizó los slots — los saved alphas son más fiables
-            // que dejar el alpha del sprite anterior visible con el sprite incorrecto.
-            // Ocultar daySky (sprite incorrecto) y mostrar duskSky hasta que SyncSkySlots
-            // o ApplyIdleState corrija los slots en el mismo frame o el siguiente.
+            Plugin.RSPlugin.log.LogDebug(
+                $"[PreOrigForce] slots desinc Idle: slotDay={GetSlotDay(sky)} sky={sky} " +
+                $"StateA={BlendClock.StateA} day.name={day?.illustrationName}");
             day.alpha   = 0f;
             dusk.alpha  = 1f;
             night.alpha = 0f;
@@ -1596,7 +1691,7 @@ public static class SettingsBlendController
         int stateC = NextStateIn(settings, stateB);
 
         // Sin cambio — no hacer nada
-        if (_skySlotDay == stateA && _skySlotDusk == stateB && _skySlotNight == stateC) return;
+        if (GetSlotDay(sky) == stateA && GetSlotDusk(sky) == stateB && GetSlotNight(sky) == stateC) return;
 
         string fileA = settings.GetBkgFileForState(stateA, sky);
         string fileB = settings.GetBkgFileForState(stateB, sky);
@@ -1604,11 +1699,10 @@ public static class SettingsBlendController
 
         var cam = room.game?.cameras?[0];
 
-        // Actualizar solo los slots que cambiaron — evita recrear sprites innecesariamente
         RoofTopView    rtv = sky == SkyType.RTV ? _rtvScene : null;
         AboveCloudsView acv = sky == SkyType.ACV ? _acvScene : null;
 
-        if (_skySlotDay != stateA)
+        if (GetSlotDay(sky) != stateA)
         {
             bool refreshed = true;
             if (!string.IsNullOrEmpty(fileA))
@@ -1616,23 +1710,15 @@ public static class SettingsBlendController
                 if (rtv != null) refreshed &= RefreshSlotSprite(rtv.daySky, System.IO.Path.GetFileNameWithoutExtension(fileA), cam);
                 if (acv != null) refreshed &= RefreshSlotSprite(acv.daySky, System.IO.Path.GetFileNameWithoutExtension(fileA), cam);
             }
-            // Alpha inicial = 1 - T actual de la sub-fase.
-            // Preferir _entryFrameT si está disponible — fue capturado antes del tick
-            // del clock, así que refleja el T real del frame de entrada.
-            // SubPhaseLocalT puede ya haber avanzado si SyncSkySlots corre post-tick.
             float dayAlpha = 1f - (_entryFrameT >= 0f ? _entryFrameT : BlendClock.SubPhaseLocalT);
             if (rtv != null) rtv.daySky.alpha = dayAlpha;
             if (acv != null) acv.daySky.alpha = dayAlpha;
-            _skySlotDay = stateA;
-            // Si la cámara no estaba en la sala, los FSprites no se recrearon.
-            // Marcar sync pendiente para consumir en el próximo Update con camIsHere=true.
+            SetSlotDay(sky, stateA);
             if (!refreshed) { _pendingSkySync = true; _pendingSkyStateA = stateA; _pendingSkyStateB = stateB; }
         }
-        if (_skySlotDusk != stateB)
+        if (GetSlotDusk(sky) != stateB)
         {
             bool refreshed = true;
-            // Actualizar duskSky en el mismo frame que daySky arranca en alpha=1.
-            // daySky tapa a duskSky completamente, así que el cambio no es visible.
             if (!string.IsNullOrEmpty(fileB))
             {
                 if (rtv != null) refreshed &= RefreshSlotSprite(rtv.duskSky, System.IO.Path.GetFileNameWithoutExtension(fileB), cam);
@@ -1640,10 +1726,10 @@ public static class SettingsBlendController
             }
             if (rtv != null) rtv.duskSky.alpha = 1f;
             if (acv != null) acv.duskSky.alpha = 1f;
-            _skySlotDusk = stateB;
+            SetSlotDusk(sky, stateB);
             if (!refreshed) { _pendingSkySync = true; _pendingSkyStateA = stateA; _pendingSkyStateB = stateB; }
         }
-        if (_skySlotNight != stateC)
+        if (GetSlotNight(sky) != stateC)
         {
             bool refreshed = true;
             if (!string.IsNullOrEmpty(fileC))
@@ -1651,7 +1737,7 @@ public static class SettingsBlendController
                 if (rtv != null) refreshed &= RefreshSlotSprite(rtv.nightSky, System.IO.Path.GetFileNameWithoutExtension(fileC), cam);
                 if (acv != null) refreshed &= RefreshSlotSprite(acv.nightSky, System.IO.Path.GetFileNameWithoutExtension(fileC), cam);
             }
-            _skySlotNight = stateC;
+            SetSlotNight(sky, stateC);
             if (!refreshed) { _pendingSkySync = true; _pendingSkyStateA = stateA; _pendingSkyStateB = stateB; }
         }
     }
@@ -1702,13 +1788,10 @@ public static class SettingsBlendController
             if (!r1 || !r2) { _pendingSkySync = true; _pendingSkyStateA = state; _pendingSkyStateB = stateB; }
         }
 
-        _skySlotDay   = state;
-        _skySlotDusk  = stateB;
-        _skySlotNight = stateC;
+        SetSlotDay  (sky, state);
+        SetSlotDusk (sky, stateB);
+        SetSlotNight(sky, stateC);
     }
-
-    /// <summary>
-    /// Devuelve el estado siguiente a 'state' en la secuencia del blend settings.
     /// Si no hay secuencia declarada, devuelve el mismo estado.
     /// </summary>
     private static int NextStateIn(BlendSettings settings, int state)
@@ -1966,11 +2049,13 @@ public static class SettingsBlendController
 
         // ── Forzar illustrationName y alpha ANTES de orig ──────────────────
         // orig() llama NewObjectInRoom → InitiateSprites para cada drawableObject.
-        // InitiateSprites de Simple2DBackgroundIllustration lee illustrationName
-        // para crear el FSprite, y DrawSprites leerá this.alpha cada frame.
-        // Si los slots están desactualizados (la cámara estuvo en otra sala),
-        // el primer frame mostrará el sprite/alpha incorrecto.
-        // Forzar aquí garantiza que InitiateSprites use los valores correctos.
+        // IMPORTANTE (confirmado con dnSpy): daySky/duskSky/nightSky NO están en
+        // room.drawableObjects en el momento de ChangeRoom. BackgroundScene los agrega
+        // en su primer Update() (flag elementsAddedToRoom). Por tanto InitiateSprites
+        // de los sky slots NO corre dentro del orig() — corre un frame después.
+        // Este bloque pre-orig sincroniza illustrationName y alpha en los objetos
+        // lógicos, y el bloque post-orig fuerza un _pendingSkySync para el frame
+        // en que BackgroundScene.Update agrega los elementos y corre InitiateSprites.
         if (BlendClock.IsRunning && newRoom != null && BlendSettingsLoader.Active != null)
         {
             string newRoomName = newRoom.abstractRoom?.name;
@@ -1987,24 +2072,23 @@ public static class SettingsBlendController
                     var day  = isAcv ? acv.daySky   : rtv.daySky;
                     var dusk = isAcv ? acv.duskSky  : rtv.duskSky;
                     var ngt  = isAcv ? acv.nightSky : rtv.nightSky;
+                    var thisSky = isAcv ? SkyType.ACV : SkyType.RTV;
 
                     // Sincronizar illustrationName con el estado actual del clock
                     var phase = BlendClock.CurrentPhase;
-                    if (phase == BlendClock.Phase.Blending && _skySlotDay != BlendClock.StateA)
+                    if (phase == BlendClock.Phase.Blending && GetSlotDay(thisSky) != BlendClock.StateA)
                         SyncSkySlots(newRoom, BlendClock.StateA, BlendClock.StateB);
-                    else if (phase == BlendClock.Phase.Done && _skySlotDay != BlendClock.StateB)
+                    else if (phase == BlendClock.Phase.Done && GetSlotDay(thisSky) != BlendClock.StateB)
                         SyncSkySlots(newRoom, BlendClock.StateB,
                             NextStateIn(BlendSettingsLoader.Active, BlendClock.StateB));
-                    else if (phase == BlendClock.Phase.Idle && _skySlotDay != BlendClock.StateA)
+                    else if (phase == BlendClock.Phase.Idle && GetSlotDay(thisSky) != BlendClock.StateA)
                         SyncSkySlots(newRoom, BlendClock.StateA,
                             NextStateIn(BlendSettingsLoader.Active, BlendClock.StateA));
 
                     // Forzar alpha correcto en los objetos
-                    if (day != null) PreOrigForceSkyAlpha(day, dusk, ngt);
+                    if (day != null) PreOrigForceSkyAlpha(day, dusk, ngt, thisSky);
 
                     // Forzar atmosphereColor correcto en ACV antes de orig.
-                    // Mismo patrón que el fix del BKG: orig() puede leer este valor
-                    // en el primer frame de llegada antes de que ACV.Update lo corrija.
                     if (isAcv && acv != null)
                         acv.atmosphereColor = _lastAtmosphereColor;
                 }
@@ -2012,6 +2096,81 @@ public static class SettingsBlendController
         }
 
         orig(self, newRoom, cameraPosition);
+
+        // ── POST-ORIG: cubrir el frame muerto antes de BackgroundScene.Update ──
+        // daySky/duskSky/nightSky son agregados a room.drawableObjects por
+        // BackgroundScene.Update() en el primer frame tras el cambio de sala
+        // (flag elementsAddedToRoom). Ese es el frame donde InitiateSprites
+        // realmente corre y lee illustrationName. Entre el orig() y ese Update(),
+        // el clock puede avanzar (Done→Idle, Idle→Blending) rotando StateA/StateB,
+        // dejando illustrationName obsoleto para el frame en que se crea el FSprite.
+        // Forzar _pendingSkySync garantiza que RoofTopViewUpdate/AboveCloudsViewUpdate
+        // re-sincronizarán illustrationName y alpha en ese primer Update con camIsHere=true,
+        // justo antes de que InitiateSprites use esos valores.
+        if (BlendClock.IsRunning && newRoom != null && BlendSettingsLoader.Active != null)
+        {
+            string newRoomName = newRoom.abstractRoom?.name;
+            if (newRoomName != null && BlendSettingsLoader.Active.IncludesRoom(newRoomName))
+            {
+                var skyType = BlendSettingsLoader.Active.GetSkyType(newRoomName);
+                bool hasSky = skyType == SkyType.ACV || skyType == SkyType.RTV;
+                if (hasSky)
+                {
+                    // Calcular los estados correctos para el momento actual del clock.
+                    // Pueden haber cambiado respecto al bloque pre-orig si el tick avanzó.
+                    var phase = BlendClock.CurrentPhase;
+                    int syncA, syncB;
+                    if (phase == BlendClock.Phase.Blending)
+                    {
+                        syncA = BlendClock.StateA;
+                        syncB = BlendClock.StateB;
+                    }
+                    else if (phase == BlendClock.Phase.Done)
+                    {
+                        syncA = BlendClock.StateB;
+                        syncB = NextStateIn(BlendSettingsLoader.Active, BlendClock.StateB);
+                    }
+                    else // Idle
+                    {
+                        syncA = BlendClock.StateA;
+                        syncB = NextStateIn(BlendSettingsLoader.Active, BlendClock.StateA);
+                    }
+                    // Marcar sync pendiente. Se consume en el primer Update con
+                    // camIsHere=true, que coincide con el frame donde BackgroundScene
+                    // agrega sus elementos y corre InitiateSprites.
+                    _pendingSkySync   = true;
+                    _pendingSkyStateA = syncA;
+                    _pendingSkyStateB = syncB;
+
+                    // Capa adicional (DeepSeek review): forzar illustrationName y alpha
+                    // inmediatamente en los objetos lógicos, sin esperar al pending.
+                    // Cubre el caso donde camIsHere=false cuando BackgroundScene.Update
+                    // agrega sus elementos, haciendo que _pendingSkySync llegue tarde.
+                    // El bloque OFFCAM de RTV/ACV Update ya cubría ese caso, pero
+                    // esta escritura directa elimina cualquier dependencia de orden.
+                    var acvPost = _acvScene;
+                    var rtvPost = _rtvScene;
+                    bool isAcvPost = skyType == SkyType.ACV && acvPost != null
+                        && acvPost.room?.abstractRoom?.name == newRoomName;
+                    bool isRtvPost = skyType == SkyType.RTV && rtvPost != null
+                        && rtvPost.room?.abstractRoom?.name == newRoomName;
+
+                    if (isAcvPost || isRtvPost)
+                    {
+                        // SyncSkySlots actualiza illustrationName en los tres slots.
+                        SyncSkySlots(newRoom, syncA, syncB);
+                        // PreOrigForceSkyAlpha escribe alpha correcto según phase actual.
+                        var dayPost  = isAcvPost ? acvPost.daySky   : rtvPost.daySky;
+                        var duskPost = isAcvPost ? acvPost.duskSky  : rtvPost.duskSky;
+                        var ngtPost  = isAcvPost ? acvPost.nightSky : rtvPost.nightSky;
+                        if (dayPost != null) PreOrigForceSkyAlpha(dayPost, duskPost, ngtPost, skyType);
+                    }
+
+                    Plugin.RSPlugin.log.LogDebug(
+                        $"[OnChangeRoom] PendingSkySync post-orig: phase={phase} A={syncA} B={syncB}");
+                }
+            }
+        }
     }
 
     private static void OnApplyFade(On.RoomCamera.orig_ApplyFade orig, RoomCamera self)
