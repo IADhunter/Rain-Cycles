@@ -2,51 +2,31 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 
-namespace FilesSetting;
+namespace RainCycles.Settings;
 
-// ════════════════════════════════════════════════════════════════════════
 // LOADER — carga y caché de BlendSettings por región
-//
-// Responsabilidades:
-//   1. Hook en RoomCamera.MoveCamera_int (o equivalente de entrada a sala)
-//      para detectar la región activa y cargar su blend_settings.txt.
-//   2. Caché en memoria por región (se limpia al salir del juego).
-//   3. API estática para que BlendClock y otros sistemas consulten
-//      el BlendSettings activo sin tener que buscar el archivo.
-//
-// Ruta del archivo (nivel región):
-//   World/{REGION}-Rooms/RainCycles/blend_settings.txt
-//
-// Ejemplo para región SU:
-//   World/SU-Rooms/RainCycles/blend_settings.txt
-// ════════════════════════════════════════════════════════════════════════
 
 public static class BlendSettingsLoader
 {
-    // ── Caché por región (clave = código de región en mayúsculas, ej: "SU") ──
+    // ── Caché por región (clave = código de región en mayúsculas, ej: "SU")
     private static readonly Dictionary<string, BlendSettings> _cache
         = new Dictionary<string, BlendSettings>();
 
-    // ── Región y settings actualmente activos ────────────────────────────
+    // ── Región y settings actualmente activos
     private static string       _activeRegion   = null;
     private static BlendSettings _activeSettings = null;
 
-    /// <summary>
-    /// BlendSettings de la región que el jugador tiene activa ahora mismo.
-    /// Null si la región no tiene blend_settings.txt o aún no se cargó.
-    /// </summary>
+    // BlendSettings de la región que el jugador tiene activa ahora mismo. Null si la región no tiene blend_settings.txt o aún no se cargó.
     public static BlendSettings Active => _activeSettings;
 
-    /// <summary>Código de la región activa (ej: "SU"). Null si ninguna.</summary>
+// Código de la región activa (ej: "SU"). Null si ninguna.
     public static string ActiveRegion => _activeRegion;
 
-    // ── Init ─────────────────────────────────────────────────────────────
+    // ── Init
 
     public static void Init()
     {
         // Hook al construir RoomSettings — ya existe en FilesSetting y se llama
-        // por cada sala. Lo aprovechamos para detectar la región activa sin
-        // añadir otro hook de entrada costoso.
         On.RoomSettings.ctor_Room_string_Region_bool_bool_Timeline_RainWorldGame
             += OnRoomSettingsCtor;
 
@@ -54,7 +34,7 @@ public static class BlendSettingsLoader
         On.RainWorldGame.ShutDownProcess += OnShutDown;
     }
 
-    // ── Hooks ─────────────────────────────────────────────────────────────
+    // ── Hooks
 
     private static void OnRoomSettingsCtor(
         On.RoomSettings.orig_ctor_Room_string_Region_bool_bool_Timeline_RainWorldGame orig,
@@ -69,7 +49,8 @@ public static class BlendSettingsLoader
         // Solo habitaciones reales con región asignada
         if (region == null) return;
 
-        string regionCode = ExtractRegionCode(name);
+        // Usar region.name en lugar del nombre de la sala para detectar la región.
+        string regionCode = region.name?.ToUpperInvariant();
         if (string.IsNullOrEmpty(regionCode)) return;
 
         // Solo actualizamos si cambiamos de región
@@ -84,12 +65,9 @@ public static class BlendSettingsLoader
         ClearCache();
     }
 
-    // ── Carga y caché ────────────────────────────────────────────────────
+    // ── Carga y caché
 
-    /// <summary>
-    /// Carga (o recupera del caché) el BlendSettings para una región.
-    /// Actualiza _activeRegion y _activeSettings.
-    /// </summary>
+    // Carga (o recupera del caché) el BlendSettings para una región. Actualiza _activeRegion y _activeSettings.
     public static void LoadRegion(string regionCode)
     {
         regionCode = regionCode.ToUpperInvariant();
@@ -105,17 +83,11 @@ public static class BlendSettingsLoader
         _activeSettings = settings;
 
         if (settings != null)
-            Plugin.RSPlugin.log.LogInfo(
+            RSPlugin.log.LogInfo(
                 $"[BlendSettingsLoader] Region activated: {regionCode} | mode={settings.Mode}");
-        else
-            Plugin.RSPlugin.log.LogInfo(
-                $"[BlendSettingsLoader] Region {regionCode} has no blend_settings.txt");
     }
 
-    /// <summary>
-    /// Obtiene el BlendSettings para una región específica.
-    /// Carga desde disco si no está en caché. Puede devolver null.
-    /// </summary>
+    // Obtiene el BlendSettings para una región específica. Carga desde disco si no está en caché. Puede devolver null.
     public static BlendSettings GetForRegion(string regionCode)
     {
         regionCode = regionCode.ToUpperInvariant();
@@ -128,10 +100,7 @@ public static class BlendSettingsLoader
         return s;
     }
 
-    /// <summary>
-    /// Invalida la entrada de caché para una región (fuerza recarga en disco).
-    /// Útil cuando el usuario edita el archivo desde el panel DevTools.
-    /// </summary>
+    // Invalida la entrada de caché para una región (fuerza recarga en disco). Útil cuando el usuario edita el archivo desde el panel DevTools.
     public static void InvalidateCache(string regionCode)
     {
         regionCode = regionCode.ToUpperInvariant();
@@ -145,7 +114,7 @@ public static class BlendSettingsLoader
         }
     }
 
-    /// <summary>Vacía toda la caché.</summary>
+// Vacía toda la caché.
     public static void ClearCache()
     {
         _cache.Clear();
@@ -153,7 +122,7 @@ public static class BlendSettingsLoader
         _activeSettings = null;
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────
+    // ── Helpers
 
     private static BlendSettings LoadFromDisk(string regionCode)
     {
@@ -163,10 +132,7 @@ public static class BlendSettingsLoader
         return BlendSettings.FromFile(path);
     }
 
-    /// <summary>
-    /// Devuelve la ruta resuelta de blend_settings.txt para una región,
-    /// o null si el archivo no existe.
-    /// </summary>
+    // Devuelve la ruta resuelta de blend_settings.txt para una región, o null si el archivo no existe.
     public static string ResolvePath(string regionCode)
     {
         string candidate = AssetManager.ResolveFilePath(
@@ -178,10 +144,7 @@ public static class BlendSettingsLoader
         return File.Exists(candidate) ? candidate : null;
     }
 
-    /// <summary>
-    /// Extrae el código de región de un nombre de habitación (ej: "SU_C01" → "SU").
-    /// Devuelve null si el nombre no tiene el formato esperado.
-    /// </summary>
+    // Extrae el código de región de un nombre de habitación (ej: "SU_C01" → "SU"). Devuelve null si el nombre no tiene el formato esperado.
     private static string ExtractRegionCode(string roomName)
     {
         if (string.IsNullOrEmpty(roomName)) return null;

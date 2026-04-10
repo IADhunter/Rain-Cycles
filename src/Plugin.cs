@@ -1,8 +1,12 @@
-﻿using System;
+using System;
 using System.Security;
 using System.Security.Permissions;
 using BepInEx;
 using BepInEx.Logging;
+using RainCycles.Core;
+using RainCycles.Settings;
+using RainCycles.Clock;
+using FilesSetting;
 
 
 #pragma warning disable CS0618
@@ -10,14 +14,14 @@ using BepInEx.Logging;
 [module: UnverifiableCode]
 [assembly: SecurityPermission(SecurityAction.RequestMinimum, SkipVerification = true)]
 
-namespace Plugin;
+namespace RainCycles;
 
 [BepInPlugin(ID, NAME, VER)]
-public class RSPlugin : BaseUnityPlugin 
+public class RSPlugin : BaseUnityPlugin
 {
-    public const string ID = "skeq.raincycles";
+    public const string ID   = "skeq.raincycles";
     public const string NAME = "Rain Cycles";
-    public const string VER = "0.4";
+    public const string VER  = "0.4";
 
     public static ManualLogSource log;
 
@@ -36,11 +40,12 @@ public class RSPlugin : BaseUnityPlugin
         try
         {
             IsInit = true;
-            FilesSetting.RainStateFiles.Init();
-            DevTools.Init();
-            FilesSetting.SettingsBlendController.Init();
-            FilesSetting.BlendSettingsLoader.Init();
-            FilesSetting.BlendClockUpdater.Init();
+            RCDEVTools.Init();
+            StateFileResolver.Init();
+            CustomModeState.Init();
+            SettingsBlendController.Init();
+            BlendSettingsLoader.Init();
+            BlendClockUpdater.Init();
             Logger.LogInfo($"[{NAME}] {VER} loaded successfully!");
         }
         catch (Exception ex)

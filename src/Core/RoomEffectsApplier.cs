@@ -1,15 +1,14 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace FilesSetting;
+namespace RainCycles.Core;
 
 public static class RoomEffectsApplier
 {
     // Mapea cada LightSource en room.updateList a su índice en placedObjects.
-    // Construido en BuildLightIndex, usado por ApplyLightSources para intensidades.
     private static readonly Dictionary<LightSource, int> _lightIndex = new Dictionary<LightSource, int>();
 
-    // ── Ciclo de vida ─────────────────────────────────────────────────────
+    // ────────────────────
 
     public static void BuildLightIndex(Room room)
     {
@@ -33,9 +32,6 @@ public static class RoomEffectsApplier
                 break;
             }
         }
-
-        Plugin.RSPlugin.log.LogInfo(
-            $"[RoomEffectsApplier] LightIndex: {_lightIndex.Count} lights.");
     }
 
     public static void ClearLightIndex()
@@ -43,7 +39,7 @@ public static class RoomEffectsApplier
         _lightIndex.Clear();
     }
 
-    // ── API pública (swap directo) ────────────────────────────────────────
+    // ────────────────────
 
     public static void ApplyDecalsFromSnapshot(Room room, string path)
     {
@@ -64,18 +60,13 @@ public static class RoomEffectsApplier
         ApplyLightSources(room, snap);
     }
 
-    // ── API interna (blend por frame) ─────────────────────────────────────
+    // ────────────────────
 
     internal static void ApplyDecalOpacities(Room room, SettingsSnapshot lerped)
     {
         if (lerped.DecalOpacities.Count == 0) return;
 
         // Los índices en DecalOpacities son posiciones dentro de PlacedObjectLines
-        // (el N-ésimo objeto del archivo de settings). El juego instancia los CustomDecal
-        // en el mismo orden, así que el N-ésimo CustomDecal en updateList corresponde
-        // al N-ésimo CustomDecal en PlacedObjectLines.
-        // IndexOf(decal.placedObject) daría el índice global en placedObjects, que no
-        // coincide con el índice en PlacedObjectLines — por eso no funciona.
         var decalSnapIndices = new System.Collections.Generic.List<int>();
         for (int i = 0; i < lerped.PlacedObjectLines.Count; i++)
             if (lerped.PlacedObjectLines[i].StartsWith("CustomDecal><"))
@@ -101,7 +92,7 @@ public static class RoomEffectsApplier
                             float op = ops[j];
                             if (op < 0f || op > 1f)
                             {
-                                Plugin.RSPlugin.log.LogWarning(
+                                RSPlugin.log.LogWarning(
                                     $"[RoomEffectsApplier] CustomDecal snapIdx={snapIdx} vertex[{j}] " +
                                     $"opacity={op:F4} out of [0,1] — clamping. " +
                                     $"Check ExtractDecalOpacities token indices (t[12,14,16,18]).");
@@ -118,7 +109,6 @@ public static class RoomEffectsApplier
     }
 
     // Replica RoomCamera.DarkPalette (propiedad privada).
-    // Controla qué tanto se mezcla hacia la paleta oscura (fila y+8 del fadeTex).
     private static float GetDarkPalette(RoomCamera cam)
     {
         var room = cam.room;
@@ -133,40 +123,54 @@ public static class RoomEffectsApplier
     }
 
     // Calcula el pixel de paletteTexture en (x, y) interpolando directamente
-    // entre los fadeTexA/B de los dos snapshots, replicando la lógica de ApplyFade:
-    //   paletteTexture[x,y] = Lerp(
-    //       Lerp(fadeTexA[x,y+8], fadeTexA[x,y], darkPalette),
-    //       Lerp(fadeTexB[x,y+8], fadeTexB[x,y], darkPalette),
-    //       paletteBlend)
-    // donde fadeTexA/B se interpolan entre los snapshots A y B según t.
-    // ghostMode/rotMode/mushroomMode se ignoran — afectan render visual pero no
-    // el color ambiente que las luces leen (esas modificaciones son post-fade).
     private static Color InterpolatedPalPixel(int x, int y, float t, float darkPalette, float paletteBlend)
     {
-        var tA1 = BlendTextureManager.TexA_s1;
-        var tA2 = BlendTextureManager.TexA_s2;
-        var tB1 = BlendTextureManager.TexB_s1;
-        var tB2 = BlendTextureManager.TexB_s2;
+        const int W = 32; // ancho de fadeTexA/B
+
+        var pA1 = BlendTextureManager.PxA_s1;
+        var pA2 = BlendTextureManager.PxA_s2;
+        var pB1 = BlendTextureManager.PxB_s1;
+        var pB2 = BlendTextureManager.PxB_s2;
 
         // fadeTexA interpolado entre los dos snapshots
-        Color fadeA_lit  = Color.Lerp(tA1.GetPixel(x, y + 8), tA2.GetPixel(x, y + 8), t);
-        Color fadeA_dark = Color.Lerp(tA1.GetPixel(x, y),     tA2.GetPixel(x, y),     t);
+        Color32 a1_lit  = pA1[( y + 8) * W + x];
+        Color32 a2_lit  = pA2[( y + 8) * W + x];
+        Color32 a1_dark = pA1[  y       * W + x];
+        Color32 a2_dark = pA2[  y       * W + x];
+
+        Color fadeA_lit  = new Color(
+            (a1_lit.r  + (a2_lit.r  - a1_lit.r)  * t) / 255f,
+            (a1_lit.g  + (a2_lit.g  - a1_lit.g)  * t) / 255f,
+            (a1_lit.b  + (a2_lit.b  - a1_lit.b)  * t) / 255f);
+        Color fadeA_dark = new Color(
+            (a1_dark.r + (a2_dark.r - a1_dark.r) * t) / 255f,
+            (a1_dark.g + (a2_dark.g - a1_dark.g) * t) / 255f,
+            (a1_dark.b + (a2_dark.b - a1_dark.b) * t) / 255f);
         Color fadeA = Color.Lerp(fadeA_lit, fadeA_dark, darkPalette);
 
-        if (tB1 == null || tB2 == null || paletteBlend <= 0f)
+        if (pB1 == null || pB2 == null || paletteBlend <= 0f)
             return fadeA;
 
         // fadeTexB interpolado entre los dos snapshots
-        Color fadeB_lit  = Color.Lerp(tB1.GetPixel(x, y + 8), tB2.GetPixel(x, y + 8), t);
-        Color fadeB_dark = Color.Lerp(tB1.GetPixel(x, y),     tB2.GetPixel(x, y),     t);
+        Color32 b1_lit  = pB1[( y + 8) * W + x];
+        Color32 b2_lit  = pB2[( y + 8) * W + x];
+        Color32 b1_dark = pB1[  y       * W + x];
+        Color32 b2_dark = pB2[  y       * W + x];
+
+        Color fadeB_lit  = new Color(
+            (b1_lit.r  + (b2_lit.r  - b1_lit.r)  * t) / 255f,
+            (b1_lit.g  + (b2_lit.g  - b1_lit.g)  * t) / 255f,
+            (b1_lit.b  + (b2_lit.b  - b1_lit.b)  * t) / 255f);
+        Color fadeB_dark = new Color(
+            (b1_dark.r + (b2_dark.r - b1_dark.r) * t) / 255f,
+            (b1_dark.g + (b2_dark.g - b1_dark.g) * t) / 255f,
+            (b1_dark.b + (b2_dark.b - b1_dark.b) * t) / 255f);
         Color fadeB = Color.Lerp(fadeB_lit, fadeB_dark, darkPalette);
 
         return Color.Lerp(fadeA, fadeB, paletteBlend);
     }
 
     // Replica PixelColorAtCoordinate usando paleta interpolada en memoria.
-    // Lee levelTexture para obtener el índice, luego consulta InterpolatedPalPixel
-    // en lugar de paletteTexture física (que se actualiza en bloques).
     private static Color PixelColorInterpolated(RoomCamera cam, Vector2 pos, float t)
     {
         Vector2 vector = pos - cam.CamPos(cam.currentCameraPosition);
@@ -217,12 +221,9 @@ public static class RoomEffectsApplier
             if (lerped.LightIntensities.TryGetValue(snapIdx, out targetAlpha))
             {
                 // Alpha debe estar en [0, 1]. Valores > 1 indican que el parser
-                // extrajo el campo incorrecto (radio, posición, etc.) en lugar
-                // de la intensidad real. Clampeamos como red de seguridad y
-                // logueamos una vez por luz para facilitar diagnóstico.
                 if (targetAlpha < 0f || targetAlpha > 1f)
                 {
-                    Plugin.RSPlugin.log.LogWarning(
+                    RSPlugin.log.LogWarning(
                         $"[RoomEffectsApplier] LightSource snapIdx={snapIdx} alpha={targetAlpha:F4} " +
                         $"out of [0,1] — clamping. Check ExtractLightIntensity token index.");
                     targetAlpha = Mathf.Clamp01(targetAlpha);
@@ -231,8 +232,6 @@ public static class RoomEffectsApplier
             }
 
             // Sobreescribir color post-orig: la luz ya leyó paletteTexture física
-            // (en bloques por el Guardián 2). Sustituimos con interpolación suave
-            // desde fadeTexA/B en memoria, que se actualiza cada tick.
             if (canInterpolateColor && light.colorFromEnvironment)
                 light.color = PixelColorInterpolated(cam, light.Pos, t);
         }
@@ -269,21 +268,21 @@ public static class RoomEffectsApplier
 
                         if (opacity < 0f || opacity > 1f)
                         {
-                            Plugin.RSPlugin.log.LogWarning(
+                            RSPlugin.log.LogWarning(
                                 $"[RoomEffectsApplier] LightBeam snapIdx={snapIdx} Opacity={opacity:F4} " +
                                 $"out of [0,1] — clamping. Check ExtractLightBeam token indices (t[8]).");
                             opacity = Mathf.Clamp01(opacity);
                         }
                         if (colorA < 0f || colorA > 1f)
                         {
-                            Plugin.RSPlugin.log.LogWarning(
+                            RSPlugin.log.LogWarning(
                                 $"[RoomEffectsApplier] LightBeam snapIdx={snapIdx} ColorA={colorA:F4} " +
                                 $"out of [0,1] — clamping. Check token t[9].");
                             colorA = Mathf.Clamp01(colorA);
                         }
                         if (colorB < 0f || colorB > 1f)
                         {
-                            Plugin.RSPlugin.log.LogWarning(
+                            RSPlugin.log.LogWarning(
                                 $"[RoomEffectsApplier] LightBeam snapIdx={snapIdx} ColorB={colorB:F4} " +
                                 $"out of [0,1] — clamping. Check token t[10].");
                             colorB = Mathf.Clamp01(colorB);
@@ -305,23 +304,9 @@ public static class RoomEffectsApplier
         Shader.SetGlobalFloat(RainWorld.ShadPropGrime, lerped.Grime);
 
         // Los globals de fondo se aplican desde OverrideBackgroundGlobalsIfActive
-        // (hook post-RoofTopView/AboveCloudsView) usando la cámara activa.
-        // ApplyShaderGlobals no los toca — no tiene acceso a la cámara aquí.
     }
 
-    /// <summary>
-    /// Extrae los colores de fondo en orden de prioridad:
-    ///   1. RC_TINT del snapshot activo (blend o idle) — control explícito del modder
-    ///   2. Fallback a skyColor/fogColor de currentPalette
-    ///
-    /// RC_TINT se declara en el settings file como:
-    ///   RC_TINT: #RRGGBB #RRGGBB
-    /// El primer hex es MultiplyColor (tinte de edificios/sprites Background),
-    /// el segundo es AtmosphereColor (tinte atmosférico de edificios lejanos).
-    /// Si solo se declara uno, el otro usa el fallback de paleta.
-    /// Si no se declara, ambos usan el fallback.
-    /// Durante el blend, los colores se interpolan automáticamente por SettingsSnapshotLerp.
-    /// </summary>
+    // Extrae los colores de fondo en orden de prioridad: 1. RC_TINT del snapshot activo (blend o idle) — control explícito del modder 2. Fallback a skyColor/fogColor de currentPalette  RC_TINT se declara en el settings file como: RC_TINT: #RRGGBB #RRGGBB #RRGGBB El primer hex es MultiplyColor (tinte de edificios/sprites Background), el segundo es AtmosphereColor (tinte atmosférico de edificios lejanos). El tercer hex es TintCloudAtmosphere (AboveCloudsView.atmosphereColor), aplicado directamente en OnAboveCloudsViewUpdate, no aquí. Si solo se declara uno o dos, el resto usa el fallback de paleta. Si no se declara ninguno, todos usan el fallback. Durante el blend, los colores se interpolan automáticamente por SettingsSnapshotLerp.
     internal static void CalcBackgroundColors(RoomCamera cam, out Color multiply, out Color atmosphere)
     {
         if (cam == null)
@@ -331,26 +316,55 @@ public static class RoomEffectsApplier
             return;
         }
 
-        // Prioridad 1: RC_TINT del snapshot activo
-        var snap = SettingsBlendController.ActiveSnapshot;
+        // Durante el frame de MoveCamera, cam.room ya apunta a la sala nueva pero
+        SettingsSnapshot snap = null;
+        if (SettingsBlendController.MoveCameraThisFrame && SettingsBlendController.ActiveSnapshot != null)
+        {
+            snap = SettingsBlendController.ActiveSnapshot;
+        }
+        else if (cam.room != null && BlendSettingsLoader.Active != null)
+        {
+            string roomName = cam.room.abstractRoom?.name;
+            if (roomName != null && BlendSettingsLoader.Active.IncludesRoom(roomName))
+                snap = SettingsBlendController.ActiveSnapshot;
+        }
         if (snap != null)
         {
-            multiply   = snap.TintMultiply.HasValue   ? snap.TintMultiply.Value   : cam.currentPalette.skyColor;
-            atmosphere = snap.TintAtmosphere.HasValue ? snap.TintAtmosphere.Value : cam.currentPalette.fogColor;
+            bool hasMul = snap.TintMultiply.HasValue;
+            bool hasAtm = snap.TintAtmosphere.HasValue;
+
+            if (hasMul && hasAtm)
+            {
+                multiply   = snap.TintMultiply.Value;
+                atmosphere = snap.TintAtmosphere.Value;
+                return;
+            }
+
+            // Prioridad 2: leer sky/fog desde texturas de blend en memoria.
+            var blendRoom = SettingsBlendController.ActiveRoom;
+            bool camIsInBlendRoom = blendRoom != null && cam.room == blendRoom;
+
+            if (camIsInBlendRoom && BlendTextureManager.Ready && BlendClock.IsRunning)
+            {
+                float t = SettingsBlendController.ForcedT;
+                float darkPal = 0f;
+                Color skyFromTex = InterpolatedPalPixel(1, 7, t, darkPal, cam.paletteBlend);
+                Color fogFromTex = InterpolatedPalPixel(2, 7, t, darkPal, cam.paletteBlend);
+
+                multiply   = hasMul ? snap.TintMultiply.Value   : skyFromTex;
+                atmosphere = hasAtm ? snap.TintAtmosphere.Value : fogFromTex;
+                return;
+            }
+
+            // Fallback con snapshot pero sin texturas activas (Idle entre halvs)
+            multiply   = hasMul ? snap.TintMultiply.Value   : cam.currentPalette.skyColor;
+            atmosphere = hasAtm ? snap.TintAtmosphere.Value : cam.currentPalette.fogColor;
             return;
         }
 
-        // Fallback: paleta activa de la cámara
+        // Sin snapshot activo: usar currentPalette (sala no gestionada o clock parado)
         multiply   = cam.currentPalette.skyColor;
         atmosphere = cam.currentPalette.fogColor;
-    }
-
-    /// <summary>
-    /// Overload de compatibilidad — ignora t, usa snapshot activo o paleta.
-    /// </summary>
-    internal static void CalcBackgroundColors(float t, RoomCamera cam, out Color multiply, out Color atmosphere)
-    {
-        CalcBackgroundColors(cam, out multiply, out atmosphere);
     }
 
     internal static void ApplyScalarEffects(Room room, SettingsSnapshot lerped)

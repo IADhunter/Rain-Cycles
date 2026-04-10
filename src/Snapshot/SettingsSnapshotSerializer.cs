@@ -2,14 +2,9 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
-namespace FilesSetting;
+namespace RainCycles.Snapshot;
 
-// ════════════════════════════════════════════════════════════════════════
 // SERIALIZACIÓN
-// Reconstruye el texto de un settings file a partir del snapshot.
-// Usado por el sistema de swap para persistir cambios a disco.
-// El blend NO usa ToFileText() — aplica directamente en memoria.
-// ════════════════════════════════════════════════════════════════════════
 
 public partial class SettingsSnapshot
 {
@@ -51,16 +46,12 @@ public partial class SettingsSnapshot
             else if (line.StartsWith("RC_TINT: "))
             {
                 // Preservar/actualizar RC_TINT con los valores actuales del snapshot.
-                // Si TintMultiply/TintAtmosphere están seteados, escribir los hex.
-                // Si son null (no declarados), escribir la plantilla vacía para que
-                // el modder pueda editarla.
                 sb.AppendLine(BuildRcTintLine());
             }
             else                                                  sb.AppendLine(line);
         }
 
         // Si RC_TINT no estaba en RawText (fue inyectado después de la carga),
-        // agregarlo al final para que no se pierda en el próximo guardado.
         if (!RawText.Contains("RC_TINT:"))
             sb.AppendLine(BuildRcTintLine());
 
@@ -83,7 +74,6 @@ public partial class SettingsSnapshot
         foreach (var kv in LightIntensities)
             if (kv.Key < patched.Count) patched[kv.Key] = PatchLightIntensity(patched[kv.Key], kv.Value);
         // LightBeams NO se parchean aquí — su alpha lo gestiona exclusivamente
-        // RoomEffectsApplier.ApplyLightBeams() con normalización por bandas.
         return "PlacedObjects: " + string.Join(", ", patched.ToArray());
     }
 
@@ -122,13 +112,10 @@ public partial class SettingsSnapshot
 
     private string BuildRcTintLine()
     {
-        string mul = TintMultiply.HasValue
-            ? ColorToHex(TintMultiply.Value)
-            : "#";
-        string atm = TintAtmosphere.HasValue
-            ? ColorToHex(TintAtmosphere.Value)
-            : "#";
-        return $"RC_TINT: {mul} {atm}";
+        string mul = TintMultiply.HasValue        ? ColorToHex(TintMultiply.Value)        : "#FFFFFF";
+        string atm = TintAtmosphere.HasValue      ? ColorToHex(TintAtmosphere.Value)      : "#FFFFFF";
+        string cld = TintCloudAtmosphere.HasValue ? ColorToHex(TintCloudAtmosphere.Value) : "#FFFFFF";
+        return $"RC_TINT: {mul} {atm} {cld}";
     }
 
     private static string ColorToHex(UnityEngine.Color c)

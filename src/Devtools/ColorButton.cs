@@ -153,3 +153,89 @@ public class ModeButton : Button
         }
     }
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// EDIT MODE BUTTON
+// Toggle global que suspende el clock y habilita los sliders para edición
+// manual libre, independientemente del modo configurado.
+// Verde = Edit Mode activo, blanco = modo automático normal.
+// ════════════════════════════════════════════════════════════════════════
+public class EditModeButton : Button
+{
+    private static readonly Color COLOR_ON  = new Color(0.2f, 0.7f, 0.3f);  // verde
+    private static readonly Color COLOR_OFF = new Color(1f,   1f,   1f);     // blanco
+
+    public EditModeButton(DevUI owner, string IDstring, DevUINode parentNode,
+                          Vector2 pos, float width)
+        : base(owner, IDstring, parentNode, pos, width, "Edit")
+    {
+        UpdateVisual();
+    }
+
+    public override void Clicked()
+    {
+        base.Clicked();
+        BlendClock.SetEditMode(!BlendClock.EditMode);
+        UpdateVisual();
+    }
+
+    public override void Update()
+    {
+        base.Update();
+        UpdateVisual();
+    }
+
+    private void UpdateVisual()
+    {
+        this.colorA = BlendClock.EditMode ? COLOR_ON : COLOR_OFF;
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// SKY TYPE BUTTON
+// Botón toggle que asigna o quita el tipo de cielo (RTV/ACV) a la sala.
+// Verde = tipo activo (escrito en [ROOMS] para esta sala).
+// Blanco = inactivo.
+// Mutuamente exclusivo con el otro SkyTypeButton del mismo panel:
+// si se activa ACV, RTV se desactiva automáticamente y viceversa.
+// Si se pulsa el botón ya activo, el sufijo se elimina (→ None).
+// ════════════════════════════════════════════════════════════════════════
+public class SkyTypeButton : Button
+{
+    private static readonly Color COLOR_ACTIVE   = new Color(0.2f, 0.7f, 0.3f);
+    private static readonly Color COLOR_INACTIVE = new Color(1f,   1f,   1f);
+
+    public readonly SkyType Type;
+    private string _roomName;
+
+    public SkyTypeButton(DevUI owner, string IDstring, DevUINode parentNode,
+                         Vector2 pos, float width, SkyType type, string roomName)
+        : base(owner, IDstring, parentNode, pos, width,
+               type == SkyType.ACV ? "ACV" : "RTV")
+    {
+        Type      = type;
+        _roomName = roomName;
+        UpdateVisual();
+    }
+
+    public override void Update()
+    {
+        base.Update();
+        UpdateVisual();
+    }
+
+    /// <summary>Fuerza el refresco visual sin lógica de click.</summary>
+    public void Refresh(SkyType currentSky)
+    {
+        this.colorA = currentSky == Type ? COLOR_ACTIVE : COLOR_INACTIVE;
+    }
+
+    private void UpdateVisual()
+    {
+        var settings = BlendSettingsLoader.Active;
+        SkyType current = settings != null
+            ? settings.GetSkyType(_roomName)
+            : SkyType.None;
+        this.colorA = current == Type ? COLOR_ACTIVE : COLOR_INACTIVE;
+    }
+}

@@ -1,15 +1,8 @@
 using System.Collections.Generic;
 
-namespace FilesSetting;
+namespace RainCycles.Snapshot;
 
-// ════════════════════════════════════════════════════════════════════════
 // ESTRUCTURA DE DATOS
-// Dividida en archivos parciales:
-//   SettingsSnapshot.cs           → campos y estructura (este archivo)
-//   SettingsSnapshotParser.cs     → FromFile, FromFileWithTemplate, extracción de PlacedObjects
-//   SettingsSnapshotLerp.cs       → Lerp, LerpBeamOpacity, GetBeamRange
-//   SettingsSnapshotSerializer.cs → ToFileText, BuildPlacedObjectsLine, Patch*
-// ════════════════════════════════════════════════════════════════════════
 
 public partial class SettingsSnapshot
 {
@@ -33,7 +26,7 @@ public partial class SettingsSnapshot
     public string Triggers      = "";
     public string AmbientSounds = "";
 
-    // ── Flags de campos declarados explícitamente ─────────────────────────
+    // ── Flags de campos declarados explícitamente
     // Cuando un campo no está declarado en el settings, se usa el valor del template
     public bool _hasPalette;
     public bool _hasGrime;
@@ -51,7 +44,7 @@ public partial class SettingsSnapshot
     public Dictionary<int, float>         LightIntensities  = new Dictionary<int, float>();
     public Dictionary<int, LightBeamData> LightBeams        = new Dictionary<int, LightBeamData>();
 
-    // ── Efectos escalares (interpolables en blend) ────────────────────────
+    // ── Efectos escalares (interpolables en blend)
     // Valor -1 indica que el efecto no está declarado en este setting
     public float EffectDarkness     = -1f;
     public float EffectBrightness   = -1f;
@@ -63,16 +56,14 @@ public partial class SettingsSnapshot
 
     public string RawText = "";
 
-    // ── Colores de tinte personalizados (campo RC_TINT del mod) ──────────
-    // Null = no declarado en este settings → CalcBackgroundColors usa fallback.
-    // Formato en archivo: RC_TINT: #RRGGBB #RRGGBB
-    //   primer hex  → TintMultiply   (tinte de sprites Background/edificios)
-    //   segundo hex → TintAtmosphere (tinte atmosférico de edificios lejanos)
-    public UnityEngine.Color? TintMultiply   = null;
-    public UnityEngine.Color? TintAtmosphere = null;
+    // ── Colores de tinte personalizados (campo RC_TINT del mod)
+    // Null = no declarado → fallback al valor hardcodeado o de paleta.
+    public UnityEngine.Color? TintMultiply         = null;
+    public UnityEngine.Color? TintAtmosphere       = null;
+    public UnityEngine.Color? TintCloudAtmosphere  = null;
 }
 
-// ── Datos de un LightBeam capturado en el snapshot ───────────────────────
+// ── Datos de un LightBeam capturado en el snapshot
 public class LightBeamData
 {
     public float Opacity;  // t[8]  — alpha / capa de render (LightBeamData.alpha)

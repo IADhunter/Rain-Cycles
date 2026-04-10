@@ -3,12 +3,9 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 
-namespace FilesSetting;
+namespace RainCycles.Snapshot;
 
-// ════════════════════════════════════════════════════════════════════════
 // PARSING
-// Lee un settings file y rellena un SettingsSnapshot.
-// ════════════════════════════════════════════════════════════════════════
 
 public partial class SettingsSnapshot
 {
@@ -55,7 +52,6 @@ public partial class SettingsSnapshot
                 ParseEffectAmounts(snap, sv);
             }
 
-
             if (line.StartsWith("FadePalette: "))
             {
                 string[] parts = line.Substring("FadePalette: ".Length).Trim().Split(',');
@@ -75,18 +71,18 @@ public partial class SettingsSnapshot
             }
 
             // Campo propio del mod — Rain World ignora líneas que no reconoce.
-            // Formato: RC_TINT: #RRGGBB #RRGGBB
             if (line.StartsWith("RC_TINT: "))
             {
                 string[] hexes = line.Substring("RC_TINT: ".Length).Trim().Split(' ');
-                if (hexes.Length >= 1) snap.TintMultiply   = ParseHexColor(hexes[0]);
-                if (hexes.Length >= 2) snap.TintAtmosphere = ParseHexColor(hexes[1]);
+                if (hexes.Length >= 1) snap.TintMultiply        = ParseHexColor(hexes[0]);
+                if (hexes.Length >= 2) snap.TintAtmosphere      = ParseHexColor(hexes[1]);
+                if (hexes.Length >= 3) snap.TintCloudAtmosphere = ParseHexColor(hexes[2]);
             }
         }
         return snap;
     }
 
-    // ── Template fallback ────────────────────────────────────────────────
+    // ── Template fallback
 
     public static SettingsSnapshot FromFileWithTemplate(string path, string roomName)
     {
@@ -119,7 +115,7 @@ public partial class SettingsSnapshot
 
         if (!System.IO.File.Exists(templatePath))
         {
-            Plugin.RSPlugin.log.LogWarning("[SettingsSnapshot] Template not found: " + templatePath);
+            RSPlugin.log.LogWarning("[SettingsSnapshot] Template not found: " + templatePath);
             return;
         }
 
@@ -139,11 +135,9 @@ public partial class SettingsSnapshot
             snap.FadePaletteID        = tmpl.FadePaletteID;
             snap.FadePaletteOpacities = tmpl.FadePaletteOpacities;
         }
-
-        Plugin.RSPlugin.log.LogInfo("[SettingsSnapshot] Applied template: " + templatePath);
     }
 
-    // ── PlacedObjects ────────────────────────────────────────────────────
+    // ── PlacedObjects
 
     private static void ParsePlacedObjectsContent(SettingsSnapshot snap, string content)
     {
@@ -203,16 +197,11 @@ public partial class SettingsSnapshot
     private static void ExtractLightIntensity(SettingsSnapshot snap, int idx, string obj)
     {
         // Formato: LightSource><posX><posY><ALPHA~Environment~panelOffX~panelOffY~...
-        // El alpha está siempre en parts[3] del header (split por '>'),
-        // donde parts[0]="LightSource", parts[1]=posX, parts[2]=posY, parts[3]=alpha.
-        // Se lee desde el header (antes del primer '~') para no confundirlo con
-        // los campos numéricos que siguen (offsets de panel, radio, flags, etc.).
         int tildePos = obj.IndexOf('~');
         string header = tildePos >= 0 ? obj.Substring(0, tildePos) : obj;
         string[] parts = header.Split('>');
 
         // parts[3] es la posición fija del alpha. Iterar de atrás es frágil porque
-        // versiones futuras del editor pueden agregar campos extra al header.
         const int ALPHA_PART_INDEX = 3;
         if (parts.Length > ALPHA_PART_INDEX)
         {
@@ -225,15 +214,13 @@ public partial class SettingsSnapshot
         }
 
         // Fallback defensivo: si el header tiene menos partes de lo esperado
-        // (formato no estándar), buscar el último float parseable hacia atrás.
-        // Esto no debería dispararse con archivos generados por el editor de RW.
         for (int i = parts.Length - 1; i >= 0; i--)
         {
             string p = parts[i].TrimStart('<').Trim();
             float v;
             if (float.TryParse(p, NF, INV, out v))
             {
-                Plugin.RSPlugin.log.LogWarning(
+                RSPlugin.log.LogWarning(
                     $"[SettingsSnapshot] LightSource idx={idx}: parts[{ALPHA_PART_INDEX}] " +
                     $"no existe o no es float (header='{header}'). " +
                     $"Fallback heurístico → v={v}. Revisar formato del archivo.");
@@ -254,7 +241,7 @@ public partial class SettingsSnapshot
         snap.LightBeams[idx] = d;
     }
 
-    // ── Helpers de parsing ───────────────────────────────────────────────
+    // ── Helpers de parsing
 
     private static bool TryParseInt(string line, string prefix, out int val)
     {
@@ -294,7 +281,6 @@ public partial class SettingsSnapshot
     }
 
     // Parsea la línea de Effects y extrae los amounts de los efectos escalares.
-    // Formato del juego: "EffectName-amount-panelX-panelY, EffectName2-amount2-..."
     private static void ParseEffectAmounts(SettingsSnapshot snap, string effectsLine)
     {
         string[] entries = effectsLine.Split(new[] { ", " }, System.StringSplitOptions.RemoveEmptyEntries);

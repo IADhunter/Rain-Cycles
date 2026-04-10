@@ -1,12 +1,9 @@
 using System;
 using UnityEngine;
 
-namespace FilesSetting;
+namespace RainCycles.Snapshot;
 
-// ════════════════════════════════════════════════════════════════════════
 // INTERPOLACIÓN
-// Produce un snapshot intermedio entre dos snapshots en un tiempo t [0,1].
-// ════════════════════════════════════════════════════════════════════════
 
 public partial class SettingsSnapshot
 {
@@ -19,8 +16,6 @@ public partial class SettingsSnapshot
         snap.Palette               = a.Palette;
         snap.Grime                 = Mathf.Lerp(a.Grime,                 b.Grime,                 t);
         // Clouds: el juego tiene un caso especial cuando Clouds == 0f exacto que produce
-        // un salto brusco al entrar en blend. Clampamos a 0.001f SOLO durante la transición
-        // entre dos valores distintos. Si ambos extremos son 0, respetamos el cero exacto.
         float cloudsLerped = Mathf.Lerp(a.Clouds, b.Clouds, t);
         snap.Clouds = (a.Clouds <= 0f && b.Clouds <= 0f) ? 0f : Mathf.Max(cloudsLerped, 0.001f);
         snap.CeilingDrips          = Mathf.Lerp(a.CeilingDrips,          b.CeilingDrips,          t);
@@ -37,6 +32,7 @@ public partial class SettingsSnapshot
         snap.AmbientSounds  = useB ? b.AmbientSounds  : a.AmbientSounds;
 
         snap.FadePaletteID = useB ? b.FadePaletteID : a.FadePaletteID;
+        snap._hasFadePalette = useB ? b._hasFadePalette : a._hasFadePalette;
         int opCount = Math.Max(a.FadePaletteOpacities.Length, b.FadePaletteOpacities.Length);
         snap.FadePaletteOpacities = new float[opCount];
         for (int i = 0; i < opCount; i++)
@@ -91,8 +87,6 @@ public partial class SettingsSnapshot
         snap.WaterReflectionAlpha = Mathf.Lerp(a.WaterReflectionAlpha, b.WaterReflectionAlpha, t);
 
         // Colores de tinte RC_TINT — si uno no está declarado, se trata como transparente/ninguno.
-        // Si ninguno lo declara → null (CalcBackgroundColors usará fallback).
-        // Si alguno lo declara → interpolar, usando Color.clear como "sin tinte" para el lado que no declaró.
         if (a.TintMultiply.HasValue || b.TintMultiply.HasValue)
         {
             var ca = a.TintMultiply ?? b.TintMultiply.Value;
@@ -104,6 +98,12 @@ public partial class SettingsSnapshot
             var ca = a.TintAtmosphere ?? b.TintAtmosphere.Value;
             var cb = b.TintAtmosphere ?? a.TintAtmosphere.Value;
             snap.TintAtmosphere = Color.Lerp(ca, cb, t);
+        }
+        if (a.TintCloudAtmosphere.HasValue || b.TintCloudAtmosphere.HasValue)
+        {
+            var ca = a.TintCloudAtmosphere ?? b.TintCloudAtmosphere.Value;
+            var cb = b.TintCloudAtmosphere ?? a.TintCloudAtmosphere.Value;
+            snap.TintCloudAtmosphere = Color.Lerp(ca, cb, t);
         }
 
         return snap;
@@ -117,10 +117,8 @@ public partial class SettingsSnapshot
         return Mathf.Lerp(a, b, t);
     }
 
-    // ── LightBeam: interpolación sin cruzar bandas de render ────────────
+    // ── LightBeam: interpolación sin cruzar bandas de render
     // El juego divide el alpha en 3 bandas via floor(alpha*3).
-    // Cruzar una banda cambia la capa de render del beam (parpadeo visible).
-    // Normalizamos opB dentro de su banda y lo reescalamos en la banda de opA.
 
     private static float LerpBeamOpacity(float opA, float opB, float t)
     {
