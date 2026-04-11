@@ -3,7 +3,9 @@ using System.Text.RegularExpressions;
 
 namespace RainCycles.Core;
 
-// Resuelve rutas de archivos settings_N.txt por sala y estado. También incluye el hook de RoomSettings.ctor que rota el settings cargado según el número de ciclo actual (cycle % n + 1).
+// Resuelve rutas de archivos settings_N.txt por sala y estado. También incluye el hook de RoomSettings.ctor que rota el settings cargado según el número de ciclo actual.
+// Modo lineal:   stateNumber = (cycle % n) + 1
+// Modo aleatorio: seed dispersa con primo → rompe correlación entre cycles consecutivos
 public static class StateFileResolver
 {
     // Ciclo congelado al inicio de la partida → no cambia hasta el siguiente ciclo real.
@@ -70,9 +72,8 @@ public static class StateFileResolver
         if (room == null || room.game == null) return;
         var session = room.game.GetStorySession;
         if (session?.saveState == null) return;
-        if (_blockLoad) return; // durante transición de Win no recargar
+        if (_blockLoad) return;
 
-        // Usar ciclo congelado → inmune a incrementos de cycleNumber durante hibernación
         int cycle = _hasFrozenCycle ? _frozenCycle : session.saveState.cycleNumber;
         string rainStatePath = GetRainStateFilePath(name, cycle);
         if (rainStatePath != null)
@@ -84,13 +85,28 @@ public static class StateFileResolver
 
     // ── API pública ───────────────────────────────────────────────────────
 
-    // Devuelve el path del settings_N.txt que corresponde al ciclo dado, rotando entre los N archivos disponibles. Null si no hay ninguno.
+    // Devuelve el path del settings_N.txt que corresponde al ciclo dado.
+    // Modo lineal:   (cycle % n) + 1
+    // Modo aleatorio: seed = cycle dispersado con primo → distribucion uniforme sin correlacion entre cycles consecutivos
     public static string GetRainStateFilePath(string roomName, int cycle)
     {
         int n = CountRainStateFiles(roomName);
         if (n == 0) return null;
 
-        int stateNumber = (cycle % n) + 1;
+        int stateNumber;
+        if (RSPlugin.randomCycles != null && RSPlugin.randomCycles.Value)
+        {
+            // Multiplicar por un primo grande dispersa los bits de seeds consecutivas,
+            // eliminando la correlacion que produce System.Random con seeds 84,85,86...
+            int seed = unchecked(cycle * 1000003);
+            stateNumber = new System.Random(seed).Next(1, n + 1);
+        }
+        else
+        {
+            stateNumber = (cycle % n) + 1;
+        }
+
+        RSPlugin.log.LogDebug($"[StateFileResolver] cycle={cycle} n={n} state={stateNumber} random={RSPlugin.randomCycles?.Value}");
         return FindFileInRainCycles(roomName, stateNumber);
     }
 
@@ -116,13 +132,11 @@ public static class StateFileResolver
 
         if (!Directory.Exists(baseDir)) return null;
 
-        // Primero buscar en la raíz (caso más común, sin overhead de recursión)
         string direct = Path.Combine(baseDir, fileName);
         if (File.Exists(direct)) return direct;
 
-        // Buscar en subcarpetas
         foreach (string found in Directory.GetFiles(baseDir, fileName, SearchOption.AllDirectories))
-            return found;  // primera coincidencia
+            return found;
 
         return null;
     }
@@ -154,7 +168,6 @@ public static class StateFileResolver
     // ── Helpers privados ──────────────────────────────────────────────────
 
     // Resuelve la carpeta RainCycles para una sala recorriendo el stack de mods activos.
-    // A diferencia de AssetManager.ResolveFilePath, funciona con carpetas aunque no contengan un archivo conocido.
     private static string BuildDirectoryPath(string roomName)
     {
         string regionCode   = Regex.Split(roomName, "_")[0].ToUpperInvariant();
@@ -169,7 +182,6 @@ public static class StateFileResolver
                 return candidate;
         }
 
-        // Fallback: ruta relativa sin resolver (comportamiento anterior)
         return AssetManager.ResolveFilePath(regionFolder);
     }
 }

@@ -31,6 +31,11 @@ public static class BlendClockUpdater
     private static string _lastIdleRoom        = null;
     private static bool   _lastDeathRainHasHit = false;
 
+    // Progreso heredado al cruzar región
+    private static float     _savedTimerProgress = -1f;
+    private static bool      _savedWasBlending   = false;
+    private static BlendMode _savedMode          = BlendMode.Loop;
+
     public static void ClearLastIdleRoom() => _lastIdleRoom = null;
     public static void SetLastIdleRoom(string room) => _lastIdleRoom = room;
 
@@ -88,8 +93,18 @@ public static class BlendClockUpdater
                 if (should)
                 {
                     BlendClock.Start(ResolveInitial(s));
-                    RSPlugin.log.LogInfo(
-                        $"[BlendClockUpdater] Fallback start mode={s.Mode} A={BlendClock.StateA}");
+
+                    // Heredar progreso de región anterior si existe y el modo coincide
+                    if (_savedTimerProgress >= 0f &&
+                        BlendSettingsLoader.Active?.Mode == _savedMode)
+                    {
+                        BlendClock.InjectProgress(_savedTimerProgress, _savedWasBlending);
+                        _savedTimerProgress = -1f;
+                    }
+                    else
+                    {
+                        _savedTimerProgress = -1f;
+                    }
                 }
             }
         }
@@ -227,6 +242,7 @@ public static class BlendClockUpdater
         _lastRegion = _lastIdleRoom = null;
         _lastDeathRainHasHit = false;
         _winHandledThisSession = false;
+        _savedTimerProgress = -1f;
         StateFileResolver.SetBlockLoad(false);
     }
 
@@ -254,6 +270,21 @@ public static class BlendClockUpdater
     private static void OnRegionChanged(string region)
     {
         BlendSkyAtlasCache.UnloadAllExcept(region);
+
+        // Capturar progreso antes de detener el clock
+        if (BlendClock.IsRunning)
+        {
+            _savedMode          = BlendSettingsLoader.Active?.Mode ?? BlendMode.Loop;
+            _savedWasBlending   = BlendClock.CurrentPhase == BlendClock.Phase.Blending;
+            _savedTimerProgress = _savedWasBlending
+                ? BlendClock.CurrentT
+                : BlendClock.IdleProgress;
+        }
+        else
+        {
+            _savedTimerProgress = -1f;
+        }
+
         SettingsBlendController.ResetFull(); _lastIdleRoom = null;
         if (BlendClock.IsRunning) BlendClock.Stop();
         if (string.IsNullOrEmpty(region)) return;

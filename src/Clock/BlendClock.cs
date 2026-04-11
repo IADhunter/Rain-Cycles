@@ -80,6 +80,67 @@ public static class BlendClock
 
     public static void ForceStates(int a, int b) { StateA = a; StateB = b; }
 
+    // Progreso [0..1] del idle actual.
+    // Solo Loop/Custom/EndCycle tienen idle propio con _timer.
+    // Cycle no tiene idle propio (depende de rain timer) → siempre 0.
+    public static float IdleProgress
+    {
+        get
+        {
+            if (CurrentPhase != Phase.Idle) return 0f;
+            var s = BlendSettingsLoader.Active;
+            if (s == null) return 0f;
+            float idleTime = s.Mode switch
+            {
+                BlendMode.Loop     => s.LoopIdleTime,
+                BlendMode.Custom   => s.LoopIdleTime,
+                BlendMode.EndCycle => s.EndCycleIdleTime,
+                _                  => 0f
+            };
+            return idleTime > 0f ? Mathf.Clamp01(_timer / idleTime) : 0f;
+        }
+    }
+
+    // Inyecta progreso heredado de region anterior tras un Start().
+    // Solo se llama cuando modo origen == modo destino.
+    // Cycle idle: no inyectable (rain timer manda) -> solo hereda blend.
+    public static void InjectProgress(float progress, bool wasBlending)
+    {
+        if (!IsRunning) return;
+        var s = BlendSettingsLoader.Active;
+        if (s == null) return;
+
+        switch (s.Mode)
+        {
+            case BlendMode.Loop:
+            case BlendMode.Custom:
+            {
+                float dur  = s.LoopDuration > 0f ? s.LoopDuration : 1f;
+                float idle = s.LoopIdleTime  > 0f ? s.LoopIdleTime : 0f;
+                CurrentPhase = wasBlending ? Phase.Blending : Phase.Idle;
+                _timer       = wasBlending ? progress * dur : progress * idle;
+                break;
+            }
+            case BlendMode.EndCycle:
+            {
+                float dur  = s.EndCycleDuration > 0f ? s.EndCycleDuration : 1f;
+                float idle = s.EndCycleIdleTime  > 0f ? s.EndCycleIdleTime : 0f;
+                CurrentPhase = wasBlending ? Phase.Blending : Phase.Idle;
+                _timer       = wasBlending ? progress * dur : progress * idle;
+                break;
+            }
+            case BlendMode.Cycle:
+            {
+                if (!wasBlending) return;
+                float dur = s.CycleDuration > 0f ? s.CycleDuration : 1f;
+                CurrentPhase = Phase.Blending;
+                _timer       = progress * dur;
+                break;
+            }
+        }
+
+    }
+
     public static void Tick(float dt, float rainTimer = 0f, int rainCycleLen = 1)
     {
         if (!IsRunning) return;
