@@ -207,12 +207,7 @@ public static partial class BlendSettingsWriter
     private static string BuildDefaultTemplate(string regionCode)
     {
         return
-$@"# blend_settings.txt — Rain Cycles
-# Region: {regionCode}
-# Generated automatically. Edit freely.
-#
-# Modes: loop, cycle, endcycle, custom
-# Add rooms below via the DevTools panel (RC_Panel toggle button).
+$@"# Rain Cycles — {regionCode}
 
 [CONFIG]
 mode: loop
@@ -222,36 +217,22 @@ idle_time: 60.0
 duration: 10.0
 
 # [CYCLE]
-# Dispara un blend cuando el ciclo de lluvia alcanza trigger_pct (0-1).
-# El blend dura 'duration' segundos y luego el sistema duerme hasta el próximo ciclo.
 # trigger_pct: 0.90
 # duration: 10.0
 
 # [ENDCYCLE]
-# Se activa cuando el ciclo de lluvia termina.
-# 'idle' = segundos de espera post-lluvia antes de iniciar el blend.
-# 'duration' = duración del blend en segundos.
-# target_state:
-#   1 = fin de lluvia normal — hace el blend y se queda en el estado destino.
-#   2 = puente a Loop — tras el blend, arranca Loop saltándose el primer idle.
 # idle: 10.0
 # duration: 25.0
 # target_state: 1
 
 # [CUSTOM]
-# El blend solo corre cuando otro mod activa el trigger vía la API:
-#   CustomModeState.Activate(""REGION"", ""MY_TRIGGER"")
-#   CustomModeState.Deactivate(""REGION"", ""MY_TRIGGER"")
-# El modo declarado en [CONFIG] define qué sistema corre cuando Custom está activo.
+# API: CustomModeState.Activate(""REGION"", ""MY_TRIGGER"")
+#      CustomModeState.Deactivate(""REGION"", ""MY_TRIGGER"")
 # trigger_id: MY_TRIGGER
 
 [BACKGROUNDS]
-# Las imágenes se buscan en la carpeta 'illustrations' (vanilla o del mod).
-# Formato: bkgXX: imagen_acv.png, imagen_rtv.png
-#   Primera imagen → AboveCloudsView (ACV)
-#   Segunda imagen → RoofTopView (RTV) — opcional
-# Asigna una imagen a un estado con el sufijo =bkgXX en [SEQUENCES]:
-#   1: 1, 2, 3, (A = 1,2,3 ~ B = 3,4,1) =bkg00
+#   First image → AboveCloudsView (ACV)
+#   Second image → RoofTopView (RTV) — optional
 bkg00: day.png, rtvday.png
 bkg01: dusk.png, rtvdusk.png
 bkg02: night.png, rtvnight.png
@@ -292,10 +273,8 @@ bkg02: night.png, rtvnight.png
             string existing = BlendSettingsLoader.ResolvePath(upper);
             if (existing != null) return existing;
 
-            // Resolver la ruta del directorio RainCycles usando un settings file
+            // Intentar obtener la carpeta RainCycles desde un settings_1.txt conocido
             string anchor = null;
-
-            // Intentar con settings_1.txt de cualquier sala de la región
             var settings = BlendSettingsLoader.GetForRegion(upper);
             if (settings != null && settings._hasRoomsSection)
             {
@@ -309,21 +288,21 @@ bkg02: night.png, rtvnight.png
             string folder;
             if (anchor != null)
             {
-                // El settings_1.txt vive en .../RainCycles/<room>/<room>_settings_1.txt
-                folder = Path.GetDirectoryName(Path.GetDirectoryName(anchor));
+                // anchor vive en .../RainCycles/<subdir?>/<room>_settings_1.txt
+                // Subir hasta encontrar la carpeta llamada "RainCycles"
+                string dir = Path.GetDirectoryName(anchor);
+                while (!string.IsNullOrEmpty(dir))
+                {
+                    if (Path.GetFileName(dir).Equals("RainCycles", StringComparison.OrdinalIgnoreCase))
+                        break;
+                    dir = Path.GetDirectoryName(dir);
+                }
+                folder = dir;
             }
             else
             {
-                // Fallback: construir la ruta relativa y dejar que AssetManager
-                string relative =
-                    "World" + Path.DirectorySeparatorChar +
-                    upper + "-Rooms" + Path.DirectorySeparatorChar +
-                    "RainCycles";
-                // AssetManager trabaja con '/' en algunas versiones
-                folder = AssetManager.ResolveFilePath(relative.Replace(Path.DirectorySeparatorChar, '/'));
-                // Si devolvió una ruta con el nombre del archivo, quitar el último segmento
-                if (!string.IsNullOrEmpty(Path.GetExtension(folder)))
-                    folder = Path.GetDirectoryName(folder);
+                // Fallback: construir ruta desde Mod.path del plugin (garantiza escritura en carpeta del mod)
+                folder = ResolveRainCyclesFolderFromMod(upper);
             }
 
             if (string.IsNullOrEmpty(folder))
@@ -333,7 +312,6 @@ bkg02: night.png, rtvnight.png
                 return null;
             }
 
-            // Construir el nombre del archivo con mayúsculas garantizadas
             string fileName = upper + "_blend_settings.txt";
             string result   = Path.Combine(folder, fileName);
 
@@ -348,6 +326,39 @@ bkg02: night.png, rtvnight.png
                 $"[BlendSettingsWriter] Cannot resolve path for region {regionCode}: {ex.Message}");
             return null;
         }
+    }
+
+    // Construye la ruta de la carpeta RainCycles para una región buscando qué mod posee dicha región.
+    private static string ResolveRainCyclesFolderFromMod(string regionCode)
+    {
+        string regionFolder = "World" + Path.DirectorySeparatorChar + regionCode + "-Rooms";
+
+        // Buscar el mod que contiene la carpeta de esta región
+        foreach (var mod in ModManager.ActiveMods)
+        {
+            string candidate = Path.Combine(mod.path, regionFolder);
+            if (Directory.Exists(candidate))
+            {
+                string folder = Path.Combine(candidate, "RainCycles");
+                RSPlugin.log.LogInfo(
+                    $"[BlendSettingsWriter] Fallback folder from mod '{mod.id}': {folder}");
+                return folder;
+            }
+        }
+
+        // Último recurso: carpeta del propio mod Rain Cycles
+        foreach (var mod in ModManager.ActiveMods)
+        {
+            if (mod.id != RSPlugin.ID) continue;
+            string folder = Path.Combine(mod.path, regionFolder, "RainCycles");
+            RSPlugin.log.LogWarning(
+                $"[BlendSettingsWriter] Region '{regionCode}' not found in any mod — falling back to RC mod folder: {folder}");
+            return folder;
+        }
+
+        RSPlugin.log.LogError(
+            $"[BlendSettingsWriter] Cannot resolve writable path for {regionCode}");
+        return null;
     }
 
     private static string ExtractRegionCode(string roomName)

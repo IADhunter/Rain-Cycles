@@ -91,24 +91,40 @@ public static class StateFileResolver
         if (n == 0) return null;
 
         int stateNumber = (cycle % n) + 1;
-        string path = BuildFilePath(roomName, stateNumber);
-        return File.Exists(path) ? path : null;
+        return FindFileInRainCycles(roomName, stateNumber);
     }
 
-    // Devuelve el path de settings_N.txt para el número de estado dado. Null si el archivo no existe.
+    // Devuelve el path de settings_N.txt para el número de estado dado. Busca recursivamente en subcarpetas de RainCycles. Null si no existe.
     public static string GetRainStateSettingsFile(string roomName, int number)
-    {
-        string path = BuildFilePath(roomName, number);
-        return File.Exists(path) ? path : null;
-    }
+        => FindFileInRainCycles(roomName, number);
 
-    // Cuenta cuántos settings_N.txt existen para una sala (consecutivos desde 1).
+    // Cuenta cuántos settings_N.txt existen para una sala (consecutivos desde 1). Busca recursivamente en subcarpetas de RainCycles.
     public static int CountRainStateFiles(string roomName)
     {
         int count = 0;
-        while (File.Exists(BuildFilePath(roomName, count + 1)))
+        while (FindFileInRainCycles(roomName, count + 1) != null)
             count++;
         return count;
+    }
+
+    // Busca {roomName}_settings_{number}.txt en la carpeta RainCycles y cualquier subcarpeta.
+    // Devuelve la primera coincidencia, o null si no existe.
+    private static string FindFileInRainCycles(string roomName, int number)
+    {
+        string fileName = $"{roomName}_settings_{number}.txt";
+        string baseDir  = BuildDirectoryPath(roomName);
+
+        if (!Directory.Exists(baseDir)) return null;
+
+        // Primero buscar en la raíz (caso más común, sin overhead de recursión)
+        string direct = Path.Combine(baseDir, fileName);
+        if (File.Exists(direct)) return direct;
+
+        // Buscar en subcarpetas
+        foreach (string found in Directory.GetFiles(baseDir, fileName, SearchOption.AllDirectories))
+            return found;  // primera coincidencia
+
+        return null;
     }
 
     // Extrae el número de estado de un path. Ejemplo: "uw_h01_settings_2.txt" → 2. Devuelve -1 si falla.
@@ -137,20 +153,23 @@ public static class StateFileResolver
 
     // ── Helpers privados ──────────────────────────────────────────────────
 
-    private static string BuildFilePath(string roomName, int number)
-    {
-        return AssetManager.ResolveFilePath(
-            "World" + Path.DirectorySeparatorChar +
-            Regex.Split(roomName, "_")[0] + "-Rooms" + Path.DirectorySeparatorChar +
-            "RainCycles" + Path.DirectorySeparatorChar +
-            roomName + "_settings_" + number + ".txt");
-    }
-
+    // Resuelve la carpeta RainCycles para una sala recorriendo el stack de mods activos.
+    // A diferencia de AssetManager.ResolveFilePath, funciona con carpetas aunque no contengan un archivo conocido.
     private static string BuildDirectoryPath(string roomName)
     {
-        return AssetManager.ResolveFilePath(
-            "World" + Path.DirectorySeparatorChar +
-            Regex.Split(roomName, "_")[0] + "-Rooms" + Path.DirectorySeparatorChar +
-            "RainCycles");
+        string regionCode   = Regex.Split(roomName, "_")[0].ToUpperInvariant();
+        string regionFolder = "World" + Path.DirectorySeparatorChar +
+                              regionCode + "-Rooms" + Path.DirectorySeparatorChar +
+                              "RainCycles";
+
+        foreach (var mod in ModManager.ActiveMods)
+        {
+            string candidate = Path.Combine(mod.path, regionFolder);
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        // Fallback: ruta relativa sin resolver (comportamiento anterior)
+        return AssetManager.ResolveFilePath(regionFolder);
     }
 }

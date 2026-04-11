@@ -59,7 +59,7 @@ public static partial class BlendSettingsWriter
         return path;
     }
 
-    // Detecta cuántos settings_N.txt hay para las salas de [ROOMS] y añade solo las entradas faltantes en [SEQUENCES]. Nunca modifica las existentes. Límite: 3 entradas para modos normales, 6 para Loop (con carriles A/B). Llamado automáticamente desde EnsureFileExists al abrir DevTools.
+    // Detecta cuántos settings_N.txt hay para las salas de [ROOMS] y añade solo las entradas faltantes en [SEQUENCES]. Nunca modifica las existentes. Llamado automáticamente desde EnsureFileExists al abrir DevTools.
     public static void UpdateSequences(string roomName)
     {
         string regionCode = ExtractRegionCode(roomName);
@@ -79,8 +79,7 @@ public static partial class BlendSettingsWriter
 
         // Detectar el modo activo leyendo el archivo raw (más fiable que el caché)
         bool isLoop = DetectLoopModeFromRaw(raw);
-        int  limit  = isLoop ? 6 : 3;
-        int  count   = System.Math.Min(n, limit);
+        int  count  = n;
 
         // Calcular qué entradas ya existen en [SEQUENCES]
         var existing = GetExistingSequenceKeys(raw);
