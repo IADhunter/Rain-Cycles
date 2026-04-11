@@ -191,13 +191,13 @@ public static class BlendClock
     private static void TickIdle(BlendSettings s)
     {
         if (_timer < s.LoopIdleTime) return;
+        RSPlugin.log.LogInfo(
+            $"[BlendClock] Idle → Blending {(IsFirstHalf ? "first" : "second")} half " +
+            $"[{string.Join("→", _seq.GetRange(_halfStart, _halfEnd - _halfStart + 1))}]");
         _timer = 0f;
         CurrentPhase = Phase.Blending;
         CurrentT = 0f; SubPhaseIndex = 0; SubPhaseLocalT = 0f;
         UpdateSeqStates(_seq, _halfStart);
-        RSPlugin.log.LogInfo(
-            $"[BlendClock] Idle → Blending {(IsFirstHalf ? "first" : "second")} half " +
-            $"[{string.Join("→", _seq.GetRange(_halfStart, _halfEnd - _halfStart + 1))}]");
     }
 
     private static void TickBlend(BlendSettings s)
@@ -236,7 +236,8 @@ public static class BlendClock
 
         if (IsFirstHalf)
         {
-            if (_timer < s.LoopIdleTime) return;
+            // Primera mitad completa → entrar directo en segunda mitad sin espera adicional
+            // El idle de la segunda mitad se maneja en TickIdle
             EnterSecondHalf();
             CurrentPhase = Phase.Idle;
             RSPlugin.log.LogInfo($"[BlendClock] Done(first) → Idle before second half. Anchor={StateA}");

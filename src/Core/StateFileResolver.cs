@@ -6,15 +6,59 @@ namespace RainCycles.Core;
 // Resuelve rutas de archivos settings_N.txt por sala y estado. También incluye el hook de RoomSettings.ctor que rota el settings cargado según el número de ciclo actual (cycle % n + 1).
 public static class StateFileResolver
 {
+    // Ciclo congelado al inicio de la partida → no cambia hasta el siguiente ciclo real.
+    // Evita que OnRoomSettingsCtor rote al settings_{N+1} en los frames finales de hibernación.
+    private static int  _frozenCycle    = 0;
+    private static bool _hasFrozenCycle = false;
+
     public static void Init()
     {
         On.RoomSettings.ctor_Room_string_Region_bool_bool_Timeline_RainWorldGame += OnRoomSettingsCtor;
+        On.RainWorldGame.ctor            += OnGameCtor;
+        On.RainWorldGame.Win             += OnGameWin;
+        On.RainWorldGame.ShutDownProcess += OnGameShutDown;
+    }
+
+    // Congela el ciclo cuando arranca la partida
+    private static void OnGameCtor(On.RainWorldGame.orig_ctor orig, RainWorldGame self, ProcessManager manager)
+    {
+        orig(self, manager);
+        _frozenCycle    = self.GetStorySession?.saveState?.cycleNumber ?? 0;
+        _hasFrozenCycle = true;
+        RSPlugin.log.LogInfo($"[StateFileResolver] Cycle frozen at {_frozenCycle}.");
+    }
+
+    // Avanzar el ciclo congelado DESPUÉS de orig() → los frames finales usan el ciclo viejo
+    // Guard: Win() puede llamarse múltiples veces por sesión; solo avanzamos una vez.
+    private static bool _cycleAdvancedThisSession = false;
+
+    private static void OnGameWin(On.RainWorldGame.orig_Win orig, RainWorldGame self, bool mal, bool warp)
+    {
+        orig(self, mal, warp);
+        if (!warp && !_cycleAdvancedThisSession)
+        {
+            _cycleAdvancedThisSession = true;
+            _frozenCycle = self.GetStorySession?.saveState?.cycleNumber ?? _frozenCycle;
+            RSPlugin.log.LogInfo($"[StateFileResolver] Cycle advanced to {_frozenCycle} post-win.");
+        }
+    }
+
+    private static void OnGameShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
+    {
+        orig(self);
+        _hasFrozenCycle = false;
+        _cycleAdvancedThisSession = false;
     }
 
     // ── Hook de rotación por ciclo ────────────────────────────────────────
     // Cuando el juego construye un RoomSettings, interceptamos y reemplazamos
     // self.filePath con el settings_N.txt correspondiente al ciclo actual.
     // Así cada ciclo el juego carga un settings distinto automáticamente.
+    // Bloqueado durante transición de Win → evita que Load() recargue fade palette
+    // mientras la sala todavía es visible.
+    private static bool _blockLoad = false;
+    public static void SetBlockLoad(bool value) => _blockLoad = value;
+
     private static void OnRoomSettingsCtor(
         On.RoomSettings.orig_ctor_Room_string_Region_bool_bool_Timeline_RainWorldGame orig,
         RoomSettings self, Room room, string name, Region region,
@@ -26,8 +70,10 @@ public static class StateFileResolver
         if (room == null || room.game == null) return;
         var session = room.game.GetStorySession;
         if (session?.saveState == null) return;
+        if (_blockLoad) return; // durante transición de Win no recargar
 
-        int cycle = session.saveState.cycleNumber;
+        // Usar ciclo congelado → inmune a incrementos de cycleNumber durante hibernación
+        int cycle = _hasFrozenCycle ? _frozenCycle : session.saveState.cycleNumber;
         string rainStatePath = GetRainStateFilePath(name, cycle);
         if (rainStatePath != null)
         {

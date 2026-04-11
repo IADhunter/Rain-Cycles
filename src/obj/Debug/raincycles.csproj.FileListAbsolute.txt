@@ -1,9 +1,0 @@
-D:\Documentos\Mods\Rain-Cycles-master\RainCycles\plugins\RainCycles.dll
-D:\Documentos\Mods\Rain-Cycles-master\RainCycles\plugins\RainCycles.pdb
-D:\Documentos\Mods\Rain-Cycles-master\src\obj\Debug\raincycles.csproj.AssemblyReference.cache
-D:\Documentos\Mods\Rain-Cycles-master\src\obj\Debug\raincycles.GeneratedMSBuildEditorConfig.editorconfig
-D:\Documentos\Mods\Rain-Cycles-master\src\obj\Debug\raincycles.AssemblyInfoInputs.cache
-D:\Documentos\Mods\Rain-Cycles-master\src\obj\Debug\raincycles.AssemblyInfo.cs
-D:\Documentos\Mods\Rain-Cycles-master\src\obj\Debug\raincycles.csproj.CoreCompileInputs.cache
-D:\Documentos\Mods\Rain-Cycles-master\src\obj\Debug\RainCycles.dll
-D:\Documentos\Mods\Rain-Cycles-master\src\obj\Debug\RainCycles.pdb

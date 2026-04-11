@@ -9,7 +9,23 @@ namespace RainCycles.Clock;
 
 public static class BlendClockUpdater
 {
-    private const float RW_DELTA = 1f / 40f;
+    // Delta lógico del juego: 1 / framesPerSecond.
+    // framesPerSecond es calculado por RainWorldGame.RawUpdate antes de llamar Update,
+    // e incorpora todos los factores de slow-motion: hongo (Adrenaline), VoidMelt,
+    // redsIllness, ghostMode, MMF.cfgSlowTimeFactor, y DevTools (teclas A/S).
+    // Así el blend se ralentiza proporcionalmente al slow-motion del juego.
+    private static float _lastUnscaledTime = 0f;
+    private static float GameDelta(RainWorldGame game)
+    {
+        float now  = UnityEngine.Time.unscaledTime;
+        float dt   = Mathf.Clamp(now - _lastUnscaledTime, 0f, 0.2f);
+        _lastUnscaledTime = now;
+
+        // Escalar por slow-motion del juego: framesPerSecond/40 da la fracción de velocidad.
+        // Con hongo fps=15 → factor=0.375 → timer avanza al 37.5% de la velocidad real.
+        float slowFactor = Mathf.Clamp01(game.framesPerSecond / 40f);
+        return dt * slowFactor;
+    }
 
     private static string _lastRegion          = null;
     private static string _lastIdleRoom        = null;
@@ -54,10 +70,14 @@ public static class BlendClockUpdater
 
         // ────────────────────
         string currentRegion = BlendSettingsLoader.ActiveRegion;
-        if (currentRegion != _lastRegion) { OnRegionChanged(currentRegion); _lastRegion = currentRegion; }
+        if (currentRegion != _lastRegion)
+        {
+            if (!_winHandledThisSession) OnRegionChanged(currentRegion);
+            _lastRegion = currentRegion;
+        }
 
         // ────────────────────
-        if (!BlendClock.IsRunning && !BlendClock.EditMode)
+        if (!_winHandledThisSession && !BlendClock.IsRunning && !BlendClock.EditMode)
         {
             var s = BlendSettingsLoader.Active;
             if (s != null)
@@ -89,6 +109,10 @@ public static class BlendClockUpdater
 
         if (!BlendClock.IsRunning) return;
 
+        // No tickear mientras la cámara no tiene sala visible → el idle time
+        // no corre durante la pantalla de carga, solo desde que el jugador ve la sala.
+        if (self.cameras?[0]?.room == null) return;
+
         // Snapshot before tick
         float prevT       = BlendClock.CurrentT;
         int   prevSub     = BlendClock.SubPhaseIndex;
@@ -99,7 +123,7 @@ public static class BlendClockUpdater
         if (self.world?.rainCycle != null)
         { rainTimer = self.world.rainCycle.timer; rainLen = self.world.rainCycle.cycleLength; }
 
-        BlendClock.Tick(RW_DELTA, rainTimer, rainLen);
+        BlendClock.Tick(GameDelta(self), rainTimer, rainLen);
 
         bool tChanged     = !Mathf.Approximately(BlendClock.CurrentT, prevT);
         bool subChanged   = BlendClock.SubPhaseIndex != prevSub;
@@ -194,16 +218,37 @@ public static class BlendClockUpdater
 
     private static void OnShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
     {
-        orig(self); BlendClock.Stop(); BlendSettingsLoader.ClearCache();
+        // ResetFull antes de orig() → restaura paletas antes de que el juego destruya la cámara
+        SettingsBlendController.ResetFull();
+        BlendClock.Stop();
+        orig(self);
+        BlendSettingsLoader.ClearCache();
         BlendSkyAtlasCache.UnloadAll();
-        _lastRegion = _lastIdleRoom = null; _lastDeathRainHasHit = false;
+        _lastRegion = _lastIdleRoom = null;
+        _lastDeathRainHasHit = false;
+        _winHandledThisSession = false;
+        StateFileResolver.SetBlockLoad(false);
     }
+
+    private static bool _winHandledThisSession = false;
 
     private static void OnWin(On.RainWorldGame.orig_Win orig, RainWorldGame self, bool mal, bool warp)
     {
+        if (!_winHandledThisSession)
+        {
+            _winHandledThisSession = true;
+            StateFileResolver.SetBlockLoad(true);
+            BlendClock.Stop();
+        }
         orig(self, mal, warp);
-        if (warp) return;
-        BlendClock.Stop(); _lastRegion = _lastIdleRoom = null;
+        if (!warp)
+        {
+            // Solo limpiar estado lógico sin restaurar texturas → evita parpadeo vanilla
+            // en los frames finales antes de la pantalla de resultados.
+            // ShutDownProcess hará la limpieza completa cuando la cámara ya no sea visible.
+            SettingsBlendController.ResetFullSoft();
+            _lastRegion = _lastIdleRoom = null;
+        }
     }
 
     private static void OnRegionChanged(string region)
@@ -214,14 +259,9 @@ public static class BlendClockUpdater
         if (string.IsNullOrEmpty(region)) return;
 
         BlendSkyAtlasCache.PreloadRegion(region);
-
-        var s = BlendSettingsLoader.Active;
-        if (s == null || BlendClock.EditMode) return;
-        if (s.Mode == BlendMode.Custom && !CustomModeState.IsActive(region, s.CustomTriggerId)) return;
-        if (s.Mode == BlendMode.EndCycle) return;
-        BlendClock.Start(ResolveInitial(s));
-        RSPlugin.log.LogInfo(
-            $"[BlendClockUpdater] Clock started '{region}' mode={s.Mode} A={BlendClock.StateA}");
+        // No arrancamos el clock aquí — puede ocurrir durante pantalla de carga,
+        // antes de que el jugador tenga control. El bloque fallback de OnGameUpdate
+        // lo arrancará cuando el jugador esté realizado y la sala sea visible.
     }
 
     private static int ResolveInitial(BlendSettings s)

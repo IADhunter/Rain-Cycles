@@ -133,6 +133,26 @@ public static partial class SettingsBlendController
         _pendingSkyStateB    = -1;
     }
 
+    // Limpia estado lógico sin restaurar texturas ni paletas.
+    // Usar al hibernar (Win) para no introducir parpadeo vanilla en los últimos frames.
+    // ShutDownProcess llama ResetFull para la limpieza completa posterior.
+    public static void ResetFullSoft()
+    {
+        _pendingOrigin = null;
+        if (_active) Detach();  // Detach sin restaurar texturas
+        _rtvScene = null; _acvScene = null;
+        _rtvSlotDay = _rtvSlotDusk = _rtvSlotNight = -1;
+        _acvSlotDay = _acvSlotDusk = _acvSlotNight = -1;
+        _lastIdleSkyState    = -1;
+        _lastAtmosphereColor = new Color(0.16078432f, 0.23137255f, 0.31764707f);
+        _hasLastGoodGlobals  = false;
+        _hasSavedAlphas      = false;
+        _entryFrameT         = -1f;
+        _pendingSkySync      = false;
+        _pendingSkyStateA    = -1;
+        _pendingSkyStateB    = -1;
+    }
+
     // aplica estado visual sin blend → clock en Idle
     public static void ApplyIdleState(Room room, string path, bool allowCameraOps = false)
     {

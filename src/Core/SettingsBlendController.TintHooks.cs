@@ -94,9 +94,19 @@ public static partial class SettingsBlendController
         // bloquear DayNight nativo solo en salas [ROOMS]
         if ((_moveCameraThisFrame || _exitedManagedRoomLastFrame) && _hasLastGoodGlobals)
         {
-            Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, _lastGoodMultiply);
-            Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, _lastGoodAtmosphere);
-            return;
+            string curRoomName = self.room?.abstractRoom?.name;
+            bool curManaged = curRoomName != null && BlendSettingsLoader.Active != null
+                              && BlendSettingsLoader.Active.IncludesRoom(curRoomName);
+            if (curManaged)
+            {
+                Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, _lastGoodMultiply);
+                Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, _lastGoodAtmosphere);
+                return;
+            }
+            // sala no gestionada → dejar pasar orig para que vanilla aplique su paleta
+            RSPlugin.log.LogDebug(
+                $"[UpdateDayNightPalette] exited-guard skipped for unmanaged room '{curRoomName}' " +
+                $"(move={_moveCameraThisFrame} exited={_exitedManagedRoomLastFrame}) → letting orig run");
         }
         if (_moveCameraThisFrame && BlendClock.IsRunning)
             return;

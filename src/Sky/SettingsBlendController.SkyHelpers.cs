@@ -92,9 +92,6 @@ public static partial class SettingsBlendController
                 }
                 else
                 {
-                    RSPlugin.log.LogDebug(
-                        $"[PreOrigForce] slots desinc Blending: slotDay={slotDay} sky={sky} " +
-                        $"StateA={BlendClock.StateA} day.name={day?.illustrationName}");
                     day.alpha   = 0f;
                     dusk.alpha  = 1f;
                     night.alpha = 0f;
@@ -137,9 +134,6 @@ public static partial class SettingsBlendController
             }
             else
             {
-                RSPlugin.log.LogDebug(
-                    $"[PreOrigForce] slots desinc Done: slotDay={slotDay} sky={sky} " +
-                    $"StateB={BlendClock.StateB} day.name={day?.illustrationName}");
                 day.alpha   = 0f;
                 dusk.alpha  = 1f;
                 night.alpha = 0f;
@@ -154,9 +148,6 @@ public static partial class SettingsBlendController
         else if (_hasSavedAlphas && BlendClock.IsRunning && sky != SkyType.None
                  && GetSlotDay(sky) > 0 && GetSlotDay(sky) != BlendClock.StateA)
         {
-            RSPlugin.log.LogDebug(
-                $"[PreOrigForce] slots desinc Idle: slotDay={GetSlotDay(sky)} sky={sky} " +
-                $"StateA={BlendClock.StateA} day.name={day?.illustrationName}");
             day.alpha   = 0f;
             dusk.alpha  = 1f;
             night.alpha = 0f;
