@@ -27,7 +27,7 @@ public static class StateFileResolver
         orig(self, manager);
         _frozenCycle    = self.GetStorySession?.saveState?.cycleNumber ?? 0;
         _hasFrozenCycle = true;
-        RSPlugin.log.LogInfo($"[StateFileResolver] Cycle frozen at {_frozenCycle}.");
+        RSPlugin.log.LogDebug($"[StateFileResolver] Cycle frozen at {_frozenCycle}.");
     }
 
     // Avanzar el ciclo congelado DESPUÉS de orig() → los frames finales usan el ciclo viejo

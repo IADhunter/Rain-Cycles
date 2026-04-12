@@ -45,7 +45,7 @@ public class RSPlugin : BaseUnityPlugin
 
             _options = new RCOptions();
             bool ok = MachineConnector.SetRegisteredOI(ID, _options);
-            Logger.LogInfo($"[RC] SetRegisteredOI result: {ok}");
+            Logger.LogDebug($"[RC] SetRegisteredOI result: {ok}");
 
             RCDEVTools.Init();
             StateFileResolver.Init();

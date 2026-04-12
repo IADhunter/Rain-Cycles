@@ -83,7 +83,7 @@ public static class BlendSettingsLoader
         _activeSettings = settings;
 
         if (settings != null)
-            RSPlugin.log.LogInfo(
+            RSPlugin.log.LogDebug(
                 $"[BlendSettingsLoader] Region activated: {regionCode} | mode={settings.Mode}");
     }
 

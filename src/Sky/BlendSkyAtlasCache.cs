@@ -44,7 +44,7 @@ public static class BlendSkyAtlasCache
             if (Futile.atlasManager.GetAtlasWithName(name) != null)
             {
                 Futile.atlasManager.UnloadAtlas(name);
-                RSPlugin.log.LogInfo($"[SkyAtlas] Unloaded '{name}' (region {key})");
+                RSPlugin.log.LogDebug($"[SkyAtlas] Unloaded '{name}' (region {key})");
             }
         }
         _cache.Remove(key);
@@ -67,7 +67,7 @@ public static class BlendSkyAtlasCache
             PreloadFile(kv.Value.RtvFile, key);
         }
 
-        RSPlugin.log.LogInfo(
+        RSPlugin.log.LogDebug(
             $"[SkyAtlas] Preloaded sky atlases for region {key}");
     }
 
@@ -88,7 +88,7 @@ public static class BlendSkyAtlasCache
         AssetManager.SafeWWWLoadTexture(ref tex, "file:///" + path, true, true);
         HeavyTexturesCache.LoadAndCacheAtlasFromTexture(name, tex, false);
         Register(regionKey, name);
-        RSPlugin.log.LogInfo($"[SkyAtlas] Loaded '{name}' for region {regionKey}");
+        RSPlugin.log.LogDebug($"[SkyAtlas] Loaded '{name}' for region {regionKey}");
     }
     public static void UnloadAll()
     {
@@ -101,7 +101,7 @@ public static class BlendSkyAtlasCache
             }
         }
         _cache.Clear();
-        RSPlugin.log.LogInfo("[SkyAtlas] All sky atlases unloaded.");
+        RSPlugin.log.LogDebug("[SkyAtlas] All sky atlases unloaded.");
     }
 
     // Descarga todas las regiones excepto la indicada. Útil en OnRegionChanged para limpiar todo lo que no sea la región activa.

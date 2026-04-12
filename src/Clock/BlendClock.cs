@@ -75,7 +75,7 @@ public static class BlendClock
         _seq               = null;
         _cycleSeq          = null;
         _customPendingStop = false;
-        RSPlugin.log.LogInfo("[BlendClock] Stopped.");
+        RSPlugin.log.LogDebug("[BlendClock] Stopped.");
     }
 
     public static void ForceStates(int a, int b) { StateA = a; StateB = b; }
@@ -138,7 +138,6 @@ public static class BlendClock
                 break;
             }
         }
-
     }
 
     public static void Tick(float dt, float rainTimer = 0f, int rainCycleLen = 1)
@@ -188,7 +187,7 @@ public static class BlendClock
         CurrentPhase = Phase.Idle;
         IsRunning    = true;
 
-        RSPlugin.log.LogInfo(
+        RSPlugin.log.LogDebug(
             $"[BlendClock] Loop started. seq=[{string.Join(",", _seq)}] " +
             $"anchor={_seq[_anchorIdx]}(idx={_anchorIdx}) " +
             $"idle={s.LoopIdleTime}s dur={s.LoopDuration}s");
@@ -301,7 +300,7 @@ public static class BlendClock
             // El idle de la segunda mitad se maneja en TickIdle
             EnterSecondHalf();
             CurrentPhase = Phase.Idle;
-            RSPlugin.log.LogInfo($"[BlendClock] Done(first) → Idle before second half. Anchor={StateA}");
+            RSPlugin.log.LogDebug($"[BlendClock] Done(first) → Idle before second half. Anchor={StateA}");
         }
         else
         {
@@ -313,7 +312,7 @@ public static class BlendClock
 
             EnterFirstHalf();
             CurrentPhase = Phase.Idle;
-            RSPlugin.log.LogInfo($"[BlendClock] Done(second) → Idle before first half. StateA={StateA}");
+            RSPlugin.log.LogDebug($"[BlendClock] Done(second) → Idle before first half. StateA={StateA}");
         }
     }
 
@@ -337,7 +336,7 @@ public static class BlendClock
         _cycleSeq = seq;
         ResetCycleCounters();
         IsRunning = true;
-        RSPlugin.log.LogInfo($"[BlendClock] Cycle started. seq=[{string.Join(",", seq)}] trigger={s.CycleTriggerPct:P0} dur={s.CycleDuration}s");
+        RSPlugin.log.LogDebug($"[BlendClock] Cycle started. seq=[{string.Join(",", seq)}] trigger={s.CycleTriggerPct:P0} dur={s.CycleDuration}s");
     }
 
     private static void ResetCycleCounters()
@@ -384,7 +383,7 @@ public static class BlendClock
         _cycleSeq = seq;
         ResetCycleCounters();
         IsRunning = true;
-        RSPlugin.log.LogInfo($"[BlendClock] EndCycle started. seq=[{string.Join(",", seq)}] idle={s.EndCycleIdleTime}s dur={s.EndCycleDuration}s target={s.EndCycleTargetState}");
+        RSPlugin.log.LogDebug($"[BlendClock] EndCycle started. seq=[{string.Join(",", seq)}] idle={s.EndCycleIdleTime}s dur={s.EndCycleDuration}s target={s.EndCycleTargetState}");
     }
 
     private static void TickEndCycle(BlendSettings s)
@@ -447,7 +446,7 @@ public static class BlendClock
         EnterFirstHalf();
         CurrentPhase = Phase.Blending;
         IsRunning    = true;
-        RSPlugin.log.LogInfo($"[BlendClock] Loop (skip-idle) from {resolved}. seq=[{string.Join(",", _seq)}]");
+        RSPlugin.log.LogDebug($"[BlendClock] Loop (skip-idle) from {resolved}. seq=[{string.Join(",", _seq)}]");
     }
 
     // ────────────────────

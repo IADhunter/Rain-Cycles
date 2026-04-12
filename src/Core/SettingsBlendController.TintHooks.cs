@@ -40,6 +40,36 @@ public static partial class SettingsBlendController
 
         orig(self, timeStacker, timeSpeed);
 
+        // Lightning en DrawUpdate pisa paletteTexture(0,7) y (1,7) con Apply() sin false,
+        // corrompiendo skyColor y fogColor de la paleta durante relámpagos.
+        // Restaurar ambos pixels con los valores correctos de RC después del orig().
+        if (self.room?.lightning != null && BlendClock.IsRunning && BlendSettingsLoader.Active != null
+            && self.fadeTexA != null)
+        {
+            string _rmName = self.room.abstractRoom?.name;
+            if (_rmName != null && BlendSettingsLoader.Active.IncludesRoom(_rmName))
+            {
+                bool hasFadeB = self.paletteB > -1 && self.fadeTexB != null;
+
+                // pixel(0,7) = skyColor, pixel(1,7) = fogColor
+                // Vienen de fadeTexA/B row 15 (ApplyFade escribe row l-8, l=15 → row 7)
+                Color correctSky = hasFadeB
+                    ? Color.Lerp(self.fadeTexA.GetPixel(0, 15), self.fadeTexB.GetPixel(0, 15), self.paletteBlend)
+                    : self.fadeTexA.GetPixel(0, 15);
+                Color correctFog = hasFadeB
+                    ? Color.Lerp(self.fadeTexA.GetPixel(1, 15), self.fadeTexB.GetPixel(1, 15), self.paletteBlend)
+                    : self.fadeTexA.GetPixel(1, 15);
+
+                self.paletteTexture.SetPixel(0, 7, correctSky);
+                self.paletteTexture.SetPixel(1, 7, correctFog);
+                self.paletteTexture.Apply(false);
+
+                // Mantener currentPalette sincronizado
+                self.currentPalette.skyColor = correctSky;
+                self.currentPalette.fogColor = correctFog;
+            }
+        }
+
         // MoveCamera frame → vanilla pisa globals → restaurar
         if (_moveCameraThisFrame && _hasLastGoodGlobals)
         {
@@ -120,6 +150,7 @@ public static partial class SettingsBlendController
                 _lastT = t;
                 ApplyBlend(t);
             }
+            SyncLightningBkgGradient(self);
             return;
         }
 
@@ -128,7 +159,10 @@ public static partial class SettingsBlendController
         {
             string roomName = self.room.abstractRoom?.name;
             if (roomName != null && BlendSettingsLoader.Active.IncludesRoom(roomName))
+            {
+                SyncLightningBkgGradient(self);
                 return;
+            }
         }
 
         // Caso 3: sala en [ROOMS] sin clock → bloquear + reaplica globals
@@ -154,6 +188,7 @@ public static partial class SettingsBlendController
                 _lastGoodMultiply   = multiply;
                 _lastGoodAtmosphere = atmosphere;
                 _hasLastGoodGlobals = true;
+                SyncLightningBkgGradient(self);
                 return;
             }
         }
@@ -296,6 +331,11 @@ public static partial class SettingsBlendController
         string roomName = self.room.abstractRoom?.name;
         if (roomName == null || !settings.IncludesRoom(roomName)) return;
 
+        // TintMultiply/TintAtmosphere solo aplican en salas con sky (RTV/ACV).
+        // En salas sin sky estos valores no tienen sentido y corromperian skyColor/fogColor
+        // de la paleta vanilla — causando fondo blanco cuando TintMultiply = (1,1,1).
+        if (settings.GetSkyType(roomName) == SkyType.None) return;
+
         // Sobreescribir skyColor/fogColor en currentPalette con los tints del mod.
         var snap = _activeSnapshot;
         if (snap == null) return;
@@ -320,6 +360,17 @@ public static partial class SettingsBlendController
         }
 
         orig(self, palA, palB, blend);
+    }
+    // Sincroniza Lightning.bkgGradient[0] con el skyColor actual de la paleta.
+    // Lightning inicializa bkgGradient[0] una sola vez en el ctor — si RC cambia
+    // currentPalette.skyColor via blend, el lerp de vuelta al color base queda
+    // desincronizado y el fondo se queda blanco al terminar el relampago.
+    // Aplica tanto a lightning de Forecast como al vanilla de salas con lluvia.
+    private static void SyncLightningBkgGradient(RoomCamera cam)
+    {
+        var room = cam.room;
+        if (room?.lightning == null) return;
+        room.lightning.bkgGradient[0] = cam.currentPalette.skyColor;
     }
 
 }

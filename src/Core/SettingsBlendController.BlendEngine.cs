@@ -30,7 +30,9 @@ public static partial class SettingsBlendController
             _lastAtmosphereColor = lerped.TintCloudAtmosphere.Value;
         var rs = _room.roomSettings;
         rs.Grime                 = lerped.Grime;
-        rs.Clouds                = lerped.Clouds;
+        // Clouds: ceder a Forecast/mods de clima si tienen WeatherController en esta sala
+        if (!RoomHasWeatherController(_room))
+            rs.Clouds            = lerped.Clouds;
         rs.CeilingDrips          = lerped.CeilingDrips;
         rs.BkgDroneVolume        = lerped.BkgDroneVolume;
         rs.RandomItemDensity     = lerped.RandomItemDensity;
@@ -82,4 +84,14 @@ public static partial class SettingsBlendController
         // LightSources y LightBeams se aplican aquí solo cuando el blend NO es
         RoomEffectsApplier.ApplyScalarEffects(_room, lerped);
     }
+    // Detecta si un mod de clima (Forecast u otro) gestiona Clouds en esta sala.
+    // Usa reflexión por nombre para evitar dependencia directa en el assembly de Forecast.
+    private static bool RoomHasWeatherController(Room room)
+    {
+        if (room == null) return false;
+        for (int i = 0; i < room.updateList.Count; i++)
+            if (room.updateList[i]?.GetType().Name == "WeatherController") return true;
+        return false;
+    }
+
 }

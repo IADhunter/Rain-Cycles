@@ -185,6 +185,9 @@ public static partial class SettingsBlendController
         {
             rs.EffectColorA = snap.EffectColorA;
             rs.EffectColorB = snap.EffectColorB;
+            // Clouds: ceder a Forecast/mods de clima si tienen WeatherController en esta sala
+            if (!RoomHasWeatherController(room))
+                rs.Clouds = snap.Clouds;
         }
         RoomEffectsApplier.ApplyShaderGlobals(snap);
         RoomEffectsApplier.ApplyScalarEffects(room, snap);
