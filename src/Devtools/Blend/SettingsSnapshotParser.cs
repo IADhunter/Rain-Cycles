@@ -27,53 +27,72 @@ public partial class SettingsSnapshot
         {
             string line = rawLine.TrimEnd('\r');
 
-            if (line.StartsWith("PlacedObjects: "))
+            int sep = line.IndexOf(": ", StringComparison.Ordinal);
+            if (sep < 0) continue;
+
+            string key = line.Substring(0, sep);
+            string val = line.Substring(sep + 2);
+
+            int iv; float fv;
+            switch (key)
             {
-                ParsePlacedObjectsContent(snap, line.Substring("PlacedObjects: ".Length));
-                continue;
-            }
+                case "PlacedObjects":
+                    ParsePlacedObjectsContent(snap, val);
+                    break;
 
-            int iv; float fv; string sv;
-            if (TryParseInt(line,   "Palette: ",               out iv))  { snap.Palette = iv;               snap._hasPalette = true; }
-            if (TryParseFloat(line, "Grime: ",                 out fv))  { snap.Grime = fv;                 snap._hasGrime = true; }
-            if (TryParseFloat(line, "Clouds: ",                out fv))  { snap.Clouds = fv;                snap._hasClouds = true; }
-            if (TryParseFloat(line, "CeilingDrips: ",          out fv))  { snap.CeilingDrips = fv;          snap._hasCeilingDrips = true; }
-            if (TryParseFloat(line, "BkgDroneVolume: ",        out fv))  { snap.BkgDroneVolume = fv;        snap._hasBkgDroneVolume = true; }
-            if (TryParseFloat(line, "RandomItemDensity: ",     out fv))  { snap.RandomItemDensity = fv;     snap._hasRandomItemDensity = true; }
-            if (TryParseFloat(line, "RandomItemSpearChance: ", out fv))  { snap.RandomItemSpearChance = fv; snap._hasRandomItemSpearChance = true; }
-            if (TryParseFloat(line, "WaterReflectionAlpha: ",  out fv))  snap.WaterReflectionAlpha = fv;
-            if (TryParseInt(line,   "EffectColorA: ",          out iv))  { snap.EffectColorA = iv;          snap._hasEffectColorA = true; }
-            if (TryParseInt(line,   "EffectColorB: ",          out iv))  { snap.EffectColorB = iv;          snap._hasEffectColorB = true; }
-            if (TryParseValue(line, "DangerType: ",     out sv))  snap.DangerType = sv;
-            if (TryParseValue(line, "Template: ",       out sv))  snap.Template = sv;
-            if (TryParseValue(line, "Triggers: ",       out sv))  snap.Triggers = sv;
-            if (TryParseValue(line, "AmbientSounds: ",  out sv))  snap.AmbientSounds = sv;
-
-            if (TryParseValue(line, "Effects: ", out sv))
-            {
-                snap.Effects = sv;
-                ParseEffectAmounts(snap, sv);
-            }
-
+<<<<<<< Updated upstream:src/Devtools/Blend/SettingsSnapshotParser.cs
 
             if (line.StartsWith("FadePalette: "))
             {
                 string[] parts = line.Substring("FadePalette: ".Length).Trim().Split(',');
                 if (parts.Length >= 1 && int.TryParse(parts[0].Trim(), out int fpid))
-                {
-                    snap.FadePaletteID = fpid;
-                    snap._hasFadePalette = true;
-                    var ops = new List<float>();
-                    for (int i = 1; i < parts.Length; i++)
-                    {
-                        float op;
-                        if (float.TryParse(parts[i].Trim(), NF, INV, out op))
-                            ops.Add(op);
-                    }
-                    snap.FadePaletteOpacities = ops.ToArray();
-                }
-            }
+=======
+                case "Palette":
+                    if (int.TryParse(val.Trim(), out iv)) { snap.Palette = iv; snap._hasPalette = true; }
+                    break;
+                case "Grime":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.Grime = fv; snap._hasGrime = true; }
+                    break;
+                case "Clouds":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.Clouds = fv; snap._hasClouds = true; }
+                    break;
+                case "CeilingDrips":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.CeilingDrips = fv; snap._hasCeilingDrips = true; }
+                    break;
+                case "BkgDroneVolume":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.BkgDroneVolume = fv; snap._hasBkgDroneVolume = true; }
+                    break;
+                case "RandomItemDensity":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.RandomItemDensity = fv; snap._hasRandomItemDensity = true; }
+                    break;
+                case "RandomItemSpearChance":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.RandomItemSpearChance = fv; snap._hasRandomItemSpearChance = true; }
+                    break;
+                case "WaterReflectionAlpha":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.WaterReflectionAlpha = fv;
+                    break;
+                case "EffectColorA":
+                    if (int.TryParse(val.Trim(), out iv)) { snap.EffectColorA = iv; snap._hasEffectColorA = true; }
+                    break;
+                case "EffectColorB":
+                    if (int.TryParse(val.Trim(), out iv)) { snap.EffectColorB = iv; snap._hasEffectColorB = true; }
+                    break;
 
+                case "DangerType":     snap.DangerType    = val.Trim(); break;
+                case "Template":       snap.Template      = val.Trim(); break;
+                case "Triggers":       snap.Triggers      = val.Trim(); break;
+                case "AmbientSounds":  snap.AmbientSounds = val.Trim(); break;
+
+                case "Effects":
+>>>>>>> Stashed changes:src/Snapshot/SettingsSnapshotParser.cs
+                {
+                    string sv = val.Trim();
+                    snap.Effects = sv;
+                    ParseEffectAmounts(snap, sv);
+                    break;
+                }
+
+<<<<<<< Updated upstream:src/Devtools/Blend/SettingsSnapshotParser.cs
             // Campo propio del mod — Rain World ignora líneas que no reconoce.
             // Formato: RC_TINT: #RRGGBB #RRGGBB
             if (line.StartsWith("RC_TINT: "))
@@ -82,6 +101,91 @@ public partial class SettingsSnapshot
                 if (hexes.Length >= 1) snap.TintMultiply        = ParseHexColor(hexes[0]);
                 if (hexes.Length >= 2) snap.TintAtmosphere      = ParseHexColor(hexes[1]);
                 if (hexes.Length >= 3) snap.TintCloudAtmosphere = ParseHexColor(hexes[2]);
+=======
+                case "TerrainPalette":
+                    snap.TerrainPaletteName = val.Trim();
+                    snap._hasTerrainPalette = true;
+                    break;
+                case "TerrainWaves":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainWaves = fv;
+                    break;
+                case "TerrainLight":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainLight = fv;
+                    break;
+                case "TerrainGrain":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainGrain = fv;
+                    break;
+                case "TerrainDepth":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainDepth = fv;
+                    break;
+                case "TerrainSkyFade":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainSkyFade = fv;
+                    break;
+                case "TerrainEdgeRadius":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainEdgeRadius = fv;
+                    break;
+                case "TerrainGooHeight":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainGooHeight = fv;
+                    break;
+                case "TerrainStainAmount":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainStainAmount = fv;
+                    break;
+                case "TerrainStainBrightness":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainStainBrightness = fv;
+                    break;
+                case "TerrainStainHeight":
+                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainStainHeight = fv;
+                    break;
+
+                case "TerrainFadePalette":
+                {
+                    string[] parts = val.Trim().Split(',');
+                    if (parts.Length >= 1 && !string.IsNullOrEmpty(parts[0].Trim()))
+                    {
+                        snap.TerrainFadePaletteName = parts[0].Trim();
+                        snap._hasTerrainFadePalette = true;
+                        var ops = new List<float>();
+                        for (int i = 1; i < parts.Length; i++)
+                        {
+                            float op;
+                            if (float.TryParse(parts[i].Trim(), NF, INV, out op))
+                                ops.Add(op);
+                        }
+                        snap.TerrainFadeOpacities = ops.ToArray();
+                    }
+                    break;
+                }
+
+                case "FadePalette":
+                {
+                    string[] parts = val.Trim().Split(',');
+                    int fpid;
+                    if (parts.Length >= 1 && int.TryParse(parts[0].Trim(), out fpid))
+                    {
+                        snap.FadePaletteID = fpid;
+                        snap._hasFadePalette = true;
+                        var ops = new List<float>();
+                        for (int i = 1; i < parts.Length; i++)
+                        {
+                            float op;
+                            if (float.TryParse(parts[i].Trim(), NF, INV, out op))
+                                ops.Add(op);
+                        }
+                        snap.FadePaletteOpacities = ops.ToArray();
+                    }
+                    break;
+                }
+
+                // Campo propio del mod — Rain World ignora líneas que no reconoce.
+                case "RC_TINT":
+                {
+                    string[] hexes = val.Trim().Split(' ');
+                    if (hexes.Length >= 1) snap.TintMultiply        = ParseHexColor(hexes[0]);
+                    if (hexes.Length >= 2) snap.TintAtmosphere      = ParseHexColor(hexes[1]);
+                    if (hexes.Length >= 3) snap.TintCloudAtmosphere = ParseHexColor(hexes[2]);
+                    break;
+                }
+>>>>>>> Stashed changes:src/Snapshot/SettingsSnapshotParser.cs
             }
         }
         return snap;
@@ -113,14 +217,40 @@ public partial class SettingsSnapshot
                 : t;
         }
 
-        string templatePath = AssetManager.ResolveFilePath(
-            "World" + System.IO.Path.DirectorySeparatorChar +
-            region + System.IO.Path.DirectorySeparatorChar +
-            region + "_settingstemplate_" + templateName + ".txt");
+        string templateFile = region + "_settingstemplate_" + templateName + ".txt";
+        string templateRelative = System.IO.Path.Combine("World", region, templateFile);
 
-        if (!System.IO.File.Exists(templatePath))
+        string templatePath = null;
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
+<<<<<<< Updated upstream:src/Devtools/Blend/SettingsSnapshotParser.cs
             Plugin.RSPlugin.log.LogWarning("[SettingsSnapshot] Template not found: " + templatePath);
+=======
+            string candidate = System.IO.Path.Combine(ModManager.ActiveMods[i].path, templateRelative);
+            if (System.IO.File.Exists(candidate)) { templatePath = candidate; break; }
+        }
+        // Fallback: buscar en todas las subcarpetas de StreamingAssets/mods/
+        // cubre mods que Rain World carga pero BepInEx no registra (ej: moreslugcats built-in)
+        if (templatePath == null)
+        {
+            string modsRoot = System.IO.Path.Combine(UnityEngine.Application.streamingAssetsPath, "mods");
+            if (System.IO.Directory.Exists(modsRoot))
+            {
+                foreach (string found in System.IO.Directory.GetFiles(modsRoot, templateFile, System.IO.SearchOption.AllDirectories))
+                { templatePath = found; break; }
+            }
+        }
+        // Fallback final: StreamingAssets base (vanilla)
+        if (templatePath == null)
+        {
+            string basePath = System.IO.Path.Combine(UnityEngine.Application.streamingAssetsPath, templateRelative);
+            if (System.IO.File.Exists(basePath)) templatePath = basePath;
+        }
+
+        if (templatePath == null || !System.IO.File.Exists(templatePath))
+        {
+            RSPlugin.log.LogDebug("[SettingsSnapshot] Template not found: " + (templatePath ?? "null"));
+>>>>>>> Stashed changes:src/Snapshot/SettingsSnapshotParser.cs
             return;
         }
 
@@ -155,9 +285,12 @@ public partial class SettingsSnapshot
             int sep = obj.IndexOf("><");
             string typeName = sep >= 0 ? obj.Substring(0, sep) : obj;
 
-            if      (typeName == "CustomDecal") ExtractDecalOpacities(snap, idx, obj);
-            else if (typeName == "LightSource") ExtractLightIntensity(snap, idx, obj);
-            else if (typeName == "LightBeam")   ExtractLightBeam(snap, idx, obj);
+            switch (typeName)
+            {
+                case "CustomDecal": ExtractDecalOpacities(snap, idx, obj); break;
+                case "LightSource": ExtractLightIntensity(snap, idx, obj); break;
+                case "LightBeam":   ExtractLightBeam(snap, idx, obj);      break;
+            }
         }
     }
 
@@ -253,6 +386,7 @@ public partial class SettingsSnapshot
         snap.LightBeams[idx] = d;
     }
 
+<<<<<<< Updated upstream:src/Devtools/Blend/SettingsSnapshotParser.cs
     // ── Helpers de parsing ───────────────────────────────────────────────
 
     private static bool TryParseInt(string line, string prefix, out int val)
@@ -292,6 +426,8 @@ public partial class SettingsSnapshot
         return true;
     }
 
+=======
+>>>>>>> Stashed changes:src/Snapshot/SettingsSnapshotParser.cs
     // Parsea la línea de Effects y extrae los amounts de los efectos escalares.
     // Formato del juego: "EffectName-amount-panelX-panelY, EffectName2-amount2-..."
     private static void ParseEffectAmounts(SettingsSnapshot snap, string effectsLine)
@@ -306,13 +442,18 @@ public partial class SettingsSnapshot
 
             switch (parts[0].Trim())
             {
-                case "Darkness":     snap.EffectDarkness     = amount; break;
-                case "Brightness":   snap.EffectBrightness   = amount; break;
-                case "Contrast":     snap.EffectContrast     = amount; break;
-                case "Desaturation": snap.EffectDesaturation = amount; break;
-                case "Hue":          snap.EffectHue          = amount; break;
-                case "DarkenLights": snap.EffectDarkenLights = amount; break;
-                case "Fog":          snap.EffectFog          = amount; break;
+                case "Darkness":          snap.EffectDarkness        = amount; break;
+                case "Brightness":        snap.EffectBrightness      = amount; break;
+                case "Contrast":          snap.EffectContrast        = amount; break;
+                case "Desaturation":      snap.EffectDesaturation    = amount; break;
+                case "Hue":               snap.EffectHue             = amount; break;
+                case "DarkenLights":      snap.EffectDarkenLights    = amount; break;
+                case "Fog":               snap.EffectFog             = amount; break;
+                case "SkyBloom":          snap.EffectSkyBloom        = amount; break;
+                case "SkyAndLightBloom":  snap.EffectSkyAndLightBloom = amount; break;
+                case "LightBurn":         snap.EffectLightBurn       = amount; break;
+                case "Bloom":             snap.EffectBloom           = amount; break;
+                case "SurfaceSandstorm":  snap.EffectSurfaceSandstorm = amount; break;
             }
         }
     }

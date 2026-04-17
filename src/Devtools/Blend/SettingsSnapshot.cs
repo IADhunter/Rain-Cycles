@@ -53,13 +53,39 @@ public partial class SettingsSnapshot
 
     // ── Efectos escalares (interpolables en blend) ────────────────────────
     // Valor -1 indica que el efecto no está declarado en este setting
-    public float EffectDarkness     = -1f;
-    public float EffectBrightness   = -1f;
-    public float EffectContrast     = -1f;
-    public float EffectDesaturation = -1f;
-    public float EffectHue          = -1f;
-    public float EffectDarkenLights = -1f;
-    public float EffectFog          = -1f;
+    public float EffectDarkness        = -1f;
+    public float EffectBrightness      = -1f;
+    public float EffectContrast        = -1f;
+    public float EffectDesaturation    = -1f;
+    public float EffectHue             = -1f;
+    public float EffectDarkenLights    = -1f;
+    public float EffectFog             = -1f;
+    public float EffectSkyBloom        = -1f;
+    public float EffectSkyAndLightBloom = -1f;
+    public float EffectLightBurn       = -1f;
+    public float EffectBloom           = -1f;
+    public float EffectSurfaceSandstorm = -1f;
+
+    // ── Terrain Palette (sistema Watcher)
+    // Null = no declarado en este settings
+    public string  TerrainPaletteName     = null;
+    public string  TerrainFadePaletteName = null;
+    public float[] TerrainFadeOpacities   = new float[0];
+    public bool    _hasTerrainPalette;
+    public bool    _hasTerrainFadePalette;
+
+    // ── Terrain scalars (campos directos de RoomSettings, no RoomEffect)
+    // Null = no declarado en este settings → vanilla hereda del template
+    public float? TerrainWaves          = null;
+    public float? TerrainLight          = null;
+    public float? TerrainGrain          = null;
+    public float? TerrainDepth          = null;
+    public float? TerrainSkyFade        = null;
+    public float? TerrainEdgeRadius     = null;
+    public float? TerrainGooHeight      = null;
+    public float? TerrainStainAmount    = null;
+    public float? TerrainStainBrightness = null;
+    public float? TerrainStainHeight    = null;
 
     public string RawText = "";
 

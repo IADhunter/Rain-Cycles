@@ -36,12 +36,28 @@ public class RSPlugin : BaseUnityPlugin
         try
         {
             IsInit = true;
+<<<<<<< Updated upstream
             FilesSetting.RainStateFiles.Init();
             FilesSetting.CustomModeState.Init();
             DevTools.Init();
             FilesSetting.SettingsBlendController.Init();
             FilesSetting.BlendSettingsLoader.Init();
             FilesSetting.BlendClockUpdater.Init();
+=======
+
+            _options = new RCOptions();
+            bool ok = MachineConnector.SetRegisteredOI(ID, _options);
+            Logger.LogDebug($"[RC] SetRegisteredOI result: {ok}");
+
+            RCDEVTools.Init();
+            StateFileResolver.Init();
+            CustomModeState.Init();
+            SettingsBlendController.Init();
+            BlendSettingsLoader.Init();
+            BlendClockUpdater.Init();
+            ArenaBlendController.Init();
+
+>>>>>>> Stashed changes
             Logger.LogInfo($"[{NAME}] {VER} loaded successfully!");
         }
         catch (Exception ex)
