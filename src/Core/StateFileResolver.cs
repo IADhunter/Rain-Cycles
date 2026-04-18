@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.RegularExpressions;
+using UnityEngine;
 
 namespace RainCycles.Core;
 
@@ -80,6 +81,10 @@ public static class StateFileResolver
         {
             self.filePath = rainStatePath;
             self.Load((SlugcatStats.Timeline)null);
+            // RoomSettings.Load no limpia terrainFadePalette si el settings no lo declara.
+            var snap = RainCycles.Snapshot.SettingsSnapshot.FromFile(rainStatePath);
+            if (!snap._hasTerrainFadePalette)
+                self.terrainFadePalette = null;
         }
     }
 
@@ -168,20 +173,21 @@ public static class StateFileResolver
     // ── Helpers privados ──────────────────────────────────────────────────
 
     // Resuelve la carpeta RainCycles para una sala recorriendo el stack de mods activos.
+    // No usa AssetManager.ResolveFilePath para evitar mergedmods.
     private static string BuildDirectoryPath(string roomName)
     {
         string regionCode   = Regex.Split(roomName, "_")[0].ToUpperInvariant();
-        string regionFolder = "World" + Path.DirectorySeparatorChar +
-                              regionCode + "-Rooms" + Path.DirectorySeparatorChar +
-                              "RainCycles";
+        string regionFolder = Path.Combine("World", regionCode + "-Rooms", "RainCycles");
 
-        foreach (var mod in ModManager.ActiveMods)
+        // Buscar en mods activos en orden inverso (mayor prioridad primero)
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
-            string candidate = Path.Combine(mod.path, regionFolder);
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, regionFolder);
             if (Directory.Exists(candidate))
                 return candidate;
         }
 
-        return AssetManager.ResolveFilePath(regionFolder);
+        // Fallback: StreamingAssets base
+        return Path.Combine(Application.streamingAssetsPath, regionFolder);
     }
 }

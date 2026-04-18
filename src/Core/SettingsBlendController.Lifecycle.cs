@@ -28,6 +28,10 @@ public static partial class SettingsBlendController
             // MixPalettes(0) fuerza t=0 antes de ApplyBlend → evita flash blancuzco
             BlendTextureManager.MixPalettes(cam, 0f);
             cam.ApplyFade();
+            // ApplyFade → ApplyPalette construye cam.terrainPalette si no existía.
+            // Forzar terrain en t=0 ahora que terrainPalette ya existe.
+            if (BlendTextureManager.TerrainReady)
+                BlendTextureManager.MixTerrainPalette(cam, 0f);
         }
         RoomEffectsApplier.BuildLightIndex(room);
         ApplyBlend(0f);
@@ -185,8 +189,10 @@ public static partial class SettingsBlendController
         {
             rs.EffectColorA = snap.EffectColorA;
             rs.EffectColorB = snap.EffectColorB;
-            // Clouds: ceder a Forecast/mods de clima si tienen WeatherController en esta sala
-            if (!RoomHasWeatherController(room))
+            // Clouds: ceder a Forecast/mods de clima si tienen WeatherController en esta sala.
+            // Solo escribir si la sala ya está completamente cargada — respetar el inicio
+            // progresivo de clouds que vanilla hace al cargar la sala por primera vez.
+            if (!RoomHasWeatherController(room) && room.fullyLoaded)
                 rs.Clouds = snap.Clouds;
         }
         RoomEffectsApplier.ApplyShaderGlobals(snap);
@@ -219,6 +225,15 @@ public static partial class SettingsBlendController
             cam.ApplyEffectColorsToAllPaletteTextures(snap.EffectColorA, snap.EffectColorB);
         }
         cam.ApplyFade();
+
+        // Terrain palette: actualizar roomSettings primero, luego ReloadTerrainPalette
+        // ApplyTerrainPalette actualiza rs.terrainFadePalette con la opacidad correcta
+        // antes de que ReloadTerrainPalette/ApplyPalette lo lean.
+        RoomEffectsApplier.ApplyTerrainPalette(cam, snap);
+
+        // Actualizar terrain palette si la sala tiene una declarada
+        if (room.roomSettings?.TerrainPalette != null)
+            cam.ReloadTerrainPalette();
 
         // globals de fondo solo en salas con sky → ShadPropMultiplyColor no tiñe salas normales
         if (cam.room != null && BlendSettingsLoader.Active != null)

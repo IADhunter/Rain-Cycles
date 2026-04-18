@@ -28,8 +28,12 @@ public class RCPanel : Panel, IDevUISignals
     public RCPanel(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos, Vector2 size, string title)
         : base(owner, IDstring, parentNode, pos, size, title)
     {
-        int n     = StateFileResolver.CountRainStateFiles(owner.room?.abstractRoom?.name);
-        int cycle = owner.room.game.GetStorySession.saveState.cycleNumber;
+        bool isArena  = owner.room?.game?.IsArenaSession == true;
+        string roomName0 = owner.room?.abstractRoom?.name;
+        int n     = isArena
+            ? ArenaStateResolver.CountSettingsFiles(roomName0)
+            : StateFileResolver.CountRainStateFiles(roomName0);
+        int cycle = owner.room?.game?.GetStorySession?.saveState?.cycleNumber ?? 0;
         buttonSelectedA = n > 0 ? (cycle % n) + 1 : 1;
         buttonSelectedB = n > 1 ? (buttonSelectedA % n) + 1 : buttonSelectedA;
 
@@ -86,7 +90,9 @@ public class RCPanel : Panel, IDevUISignals
         subNodes.Add(new SkyTypeButton(owner, "RC_Sky_RTV", this,
             new Vector2(rtvX, REGION_ROW_Y + 22f), SKY_BTN_W, SkyType.RTV, roomName));
 
-        bool reg = BlendSettingsWriter.IsRoomRegistered(owner.room?.abstractRoom?.name);
+        bool reg = owner.room?.game?.IsArenaSession == true
+            ? ArenaStateResolver.IsLevelRegistered(owner.room?.abstractRoom?.name)
+            : BlendSettingsWriter.IsRoomRegistered(owner.room?.abstractRoom?.name);
         subNodes.Add(new RoomToggleButton(owner, "RC_ToggleRoom", this,
             new Vector2(MARGIN, REGION_ROW_Y), size.x - MARGIN * 2, reg));
 
@@ -112,8 +118,7 @@ public class RCPanel : Panel, IDevUISignals
         if (sender.IDstring.StartsWith("RCA_"))
         {
             int sel = int.Parse(sender.IDstring.Split('_')[1]);
-            string path = StateFileResolver.GetRainStateSettingsFile(
-                owner.room?.abstractRoom?.name, sel);
+            string path = ResolveSettingsFile(owner.room?.abstractRoom?.name, sel);
             if (path == null) return;
 
             if (SettingsBlendController.IsActive) { SettingsBlendController.Detach(); BlendSlider.Reset(); }
@@ -121,6 +126,10 @@ public class RCPanel : Panel, IDevUISignals
             string rcTint = SettingsBlendController.ExtractRcTintLine(path);
             owner.room.roomSettings.filePath = path;
             owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
+            // RoomSettings.Load no limpia terrainFadePalette si el settings no lo declara.
+            var snapTerrain = SettingsSnapshot.FromFile(path);
+            if (!snapTerrain._hasTerrainFadePalette)
+                owner.room.roomSettings.terrainFadePalette = null;
             var c0 = owner.room.game.cameras[0];
             c0.ApplyEffectColorsToAllPaletteTextures(base.RoomSettings.EffectColorA, base.RoomSettings.EffectColorB);
             c0.ChangeMainPalette(base.RoomSettings.Palette);
@@ -128,6 +137,8 @@ public class RCPanel : Panel, IDevUISignals
                 c0.ChangeFadePalette(base.RoomSettings.fadePalette.palette,
                     base.RoomSettings.fadePalette.fades[c0.currentCameraPosition]);
             c0.ApplyFade();
+            if (owner.room.roomSettings?.TerrainPalette != null)
+                c0.ReloadTerrainPalette();
 
             var snap = SettingsSnapshot.FromFileWithTemplate(path, owner.room.abstractRoom.name);
             SettingsBlendController.SetActiveSnapshot(snap);
@@ -176,7 +187,9 @@ public class RCPanel : Panel, IDevUISignals
         if (sender.IDstring == "RC_ToggleRoom")
         {
             string room = owner.room?.abstractRoom?.name;
-            bool now = BlendSettingsWriter.ToggleRoom(room);
+            bool now = owner.room?.game?.IsArenaSession == true
+                ? ArenaStateResolver.ToggleLevel(room)
+                : BlendSettingsWriter.ToggleRoom(room);
             (subNodes.FirstOrDefault(n => n.IDstring == "RC_ToggleRoom") as RoomToggleButton)?.SetRegistered(now);
             return;
         }
@@ -401,13 +414,33 @@ public class RCPanel : Panel, IDevUISignals
         if (lbl != null) lbl.Text = System.IO.Path.GetFileName(path ?? "");
     }
 
+    // Resuelve el path de un settings_N.txt usando el resolver correcto según sesión.
+    private string ResolveSettingsFile(string roomName, int n)
+    {
+        if (owner.room?.game?.IsArenaSession == true)
+            return ArenaStateResolver.GetSettingsPath(roomName, n);
+        return StateFileResolver.GetRainStateSettingsFile(roomName, n);
+    }
+
     public void ApplyStateA()
     {
-        string path = StateFileResolver.GetRainStateSettingsFile(
-            owner.room?.abstractRoom?.name, buttonSelectedA);
+        string path = ResolveSettingsFile(owner.room?.abstractRoom?.name, buttonSelectedA);
         if (path == null) return;
         owner.room.roomSettings.filePath = path;
         owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
+
+        // RoomSettings.Load no limpia terrainFadePalette si el settings no lo declara.
+        // Verificar via snapshot si realmente está declarado — si no, limpiar.
+        var snapCheck = RainCycles.Snapshot.SettingsSnapshot.FromFile(path);
+        if (!snapCheck._hasTerrainFadePalette)
+        {
+            owner.room.roomSettings.terrainFadePalette = null;
+            RSPlugin.log.LogDebug($"[ApplyStateA] Cleared terrainFadePalette for state {buttonSelectedA}");
+        }
+        else
+        {
+            RSPlugin.log.LogDebug($"[ApplyStateA] Keeping terrainFadePalette='{snapCheck.TerrainFadePaletteName}' for state {buttonSelectedA}");
+        }
         var c0 = owner.room.game.cameras[0];
         c0.ApplyEffectColorsToAllPaletteTextures(base.RoomSettings.EffectColorA, base.RoomSettings.EffectColorB);
         c0.ChangeMainPalette(base.RoomSettings.Palette);
@@ -415,6 +448,9 @@ public class RCPanel : Panel, IDevUISignals
             c0.ChangeFadePalette(base.RoomSettings.fadePalette.palette,
                 base.RoomSettings.fadePalette.fades[c0.currentCameraPosition]);
         c0.ApplyFade();
+        // Actualizar terrain palette si la sala tiene una declarada
+        if (owner.room.roomSettings?.TerrainPalette != null)
+            c0.ReloadTerrainPalette();
         RoomEffectsApplier.ApplyDecalsFromSnapshot(owner.room, path);
         RoomEffectsApplier.ApplyLightSourcesFromSnapshot(owner.room, path);
         RoomEffectsApplier.ApplyLightBeamsFromSnapshot(owner.room, path);

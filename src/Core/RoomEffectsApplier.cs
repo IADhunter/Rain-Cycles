@@ -306,6 +306,59 @@ public static class RoomEffectsApplier
         // Los globals de fondo se aplican desde OverrideBackgroundGlobalsIfActive
     }
 
+    // Aplica terrain palette desde un snapshot actualizando roomSettings.
+    // Deja que ApplyPalette vanilla construya/actualice cam.terrainPalette normalmente.
+    // Para blend: interpola la opacidad del fade por screen en terrainFadePalette.fades.
+    //
+    // Bug 1 fix: si snap no tiene fade, se limpia terrainFadePalette → ApplyPalette lo descarta.
+    // Bug 2 fix: RC no reconstruye cam.terrainPalette — evita conflicto con ApplyPalette vanilla.
+    // Bug 3 fix: sin reconstrucción → sin parpadeo en el frame de swap t=0.5.
+    internal static void ApplyTerrainPalette(RoomCamera cam, SettingsSnapshot snap)
+    {
+        if (cam == null || snap == null) return;
+        if (!snap._hasTerrainPalette || string.IsNullOrEmpty(snap.TerrainPaletteName)) return;
+
+        var rs = cam.room?.roomSettings;
+        if (rs == null) return;
+
+        // Actualizar nombre principal — ApplyPalette lo usa para construir/reconstruir
+        rs.TerrainPalette = snap.TerrainPaletteName;
+
+        if (snap._hasTerrainFadePalette && !string.IsNullOrEmpty(snap.TerrainFadePaletteName))
+        {
+            // Opacidad interpolada para el screen actual
+            int   camIdx = cam.currentCameraPosition;
+            float fade   = camIdx < snap.TerrainFadeOpacities.Length
+                           ? snap.TerrainFadeOpacities[camIdx] : 0f;
+
+            // Reutilizar terrainFadePalette existente si el nombre no cambió
+            string currentFadeName = rs.terrainFadePalette?.palette;
+            if (rs.terrainFadePalette == null || currentFadeName != snap.TerrainFadePaletteName)
+            {
+                // Crear con array de fades del tamaño adecuado
+                int screens = Mathf.Max(snap.TerrainFadeOpacities.Length, 1);
+                rs.terrainFadePalette = new RoomSettings.TerrainFadePalette(
+                    snap.TerrainFadePaletteName, screens);
+            }
+
+            // Escribir opacidad interpolada en todas las posiciones
+            // (ApplyPalette leerá fades[currentCameraPosition])
+            for (int i = 0; i < rs.terrainFadePalette.fades.Length; i++)
+                rs.terrainFadePalette.fades[i] = camIdx == i ? fade :
+                    (i < snap.TerrainFadeOpacities.Length ? snap.TerrainFadeOpacities[i] : 0f);
+        }
+        else
+        {
+            // Sin fade en este snapshot → limpiar para que ApplyPalette no aplique fade
+            rs.terrainFadePalette = null;
+        }
+
+        // ChangeTerrainPaletteFade → ApplyPalette solo reconstruye/actualiza terrainPalette
+        // Es más ligero que ApplyPalette completo (evita recalcular spriteLeasers etc.)
+        if (cam.room != null)
+            cam.ChangeTerrainPaletteFade();
+    }
+
     // Extrae los colores de fondo en orden de prioridad: 1. RC_TINT del snapshot activo (blend o idle) — control explícito del modder 2. Fallback a skyColor/fogColor de currentPalette  RC_TINT se declara en el settings file como: RC_TINT: #RRGGBB #RRGGBB #RRGGBB El primer hex es MultiplyColor (tinte de edificios/sprites Background), el segundo es AtmosphereColor (tinte atmosférico de edificios lejanos). El tercer hex es TintCloudAtmosphere (AboveCloudsView.atmosphereColor), aplicado directamente en OnAboveCloudsViewUpdate, no aquí. Si solo se declara uno o dos, el resto usa el fallback de paleta. Si no se declara ninguno, todos usan el fallback. Durante el blend, los colores se interpolan automáticamente por SettingsSnapshotLerp.
     internal static void CalcBackgroundColors(RoomCamera cam, out Color multiply, out Color atmosphere)
     {
@@ -369,13 +422,42 @@ public static class RoomEffectsApplier
 
     internal static void ApplyScalarEffects(Room room, SettingsSnapshot lerped)
     {
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Darkness,     lerped.EffectDarkness);
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Brightness,   lerped.EffectBrightness);
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Contrast,     lerped.EffectContrast);
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Desaturation, lerped.EffectDesaturation);
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Hue,          lerped.EffectHue);
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.DarkenLights, lerped.EffectDarkenLights);
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Fog,          lerped.EffectFog);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Darkness,          lerped.EffectDarkness);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Brightness,        lerped.EffectBrightness);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Contrast,          lerped.EffectContrast);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Desaturation,      lerped.EffectDesaturation);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Hue,               lerped.EffectHue);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.DarkenLights,      lerped.EffectDarkenLights);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Fog,               lerped.EffectFog);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.SkyBloom,          lerped.EffectSkyBloom);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.SkyAndLightBloom,  lerped.EffectSkyAndLightBloom);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.LightBurn,         lerped.EffectLightBurn);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Bloom,             lerped.EffectBloom);
+        ApplyEffect(room, new RoomSettings.RoomEffect.Type("SurfaceSandstorm"), lerped.EffectSurfaceSandstorm);
+    }
+
+    // Prioridad de efectos mutuamente exclusivos (mayor índice = mayor prioridad)
+    // Si hay un efecto de mayor prioridad activo con amount > 0, no crear uno de menor prioridad.
+    private static readonly RoomSettings.RoomEffect.Type[] _exclusivePriority = new[]
+    {
+        RoomSettings.RoomEffect.Type.Bloom,
+        RoomSettings.RoomEffect.Type.VoidMelt,   // no lerpeado por RC, pero incluido por completitud
+        RoomSettings.RoomEffect.Type.Fog,
+        RoomSettings.RoomEffect.Type.LightBurn,
+        RoomSettings.RoomEffect.Type.SkyAndLightBloom,
+        RoomSettings.RoomEffect.Type.SkyBloom,
+    };
+
+    private static bool IsOverriddenByHigherPriority(RoomSettings rs, RoomSettings.RoomEffect.Type type)
+    {
+        int myPriority = System.Array.IndexOf(_exclusivePriority, type);
+        if (myPriority < 0) return false; // no exclusivo
+        for (int i = myPriority + 1; i < _exclusivePriority.Length; i++)
+        {
+            var higher = rs.GetEffect(_exclusivePriority[i]);
+            if (higher != null && higher.amount > 0f) return true;
+        }
+        return false;
     }
 
     private static void ApplyEffect(Room room, RoomSettings.RoomEffect.Type type, float amount)
@@ -386,10 +468,32 @@ public static class RoomEffectsApplier
             if (existing != null) existing.amount = 0f;
             return;
         }
+        // No crear efecto de menor prioridad si hay uno de mayor prioridad activo
+        if (IsOverriddenByHigherPriority(room.roomSettings, type)) return;
         var effect = room.roomSettings.GetEffect(type);
         if (effect != null)
             effect.amount = amount;
         else
             room.roomSettings.effects.Add(new RoomSettings.RoomEffect(type, amount, false));
+    }
+
+    // Aplica terrain scalars — campos directos de RoomSettings, no RoomEffect.
+    // Solo escribe si el valor fue declarado (>= 0) en al menos uno de los snaps.
+    // Llamar desde MixAndApply igual que ApplyScalarEffects.
+    internal static void ApplyTerrainScalars(Room room, SettingsSnapshot lerped)
+    {
+        if (room?.roomSettings == null) return;
+        var rs = room.roomSettings;
+
+        if (lerped.TerrainWaves.HasValue)          rs.TerrainWaves          = lerped.TerrainWaves.Value;
+        if (lerped.TerrainLight.HasValue)          rs.TerrainLight          = lerped.TerrainLight.Value;
+        if (lerped.TerrainGrain.HasValue)          rs.TerrainGrain          = lerped.TerrainGrain.Value;
+        if (lerped.TerrainDepth.HasValue)          rs.TerrainDepth          = lerped.TerrainDepth.Value;
+        if (lerped.TerrainSkyFade.HasValue)        rs.TerrainSkyFade        = lerped.TerrainSkyFade.Value;
+        if (lerped.TerrainEdgeRadius.HasValue)     rs.TerrainEdgeRadius     = lerped.TerrainEdgeRadius.Value;
+        if (lerped.TerrainGooHeight.HasValue)      rs.TerrainGooHeight      = lerped.TerrainGooHeight.Value;
+        if (lerped.TerrainStainAmount.HasValue)    rs.TerrainStainAmount    = lerped.TerrainStainAmount.Value;
+        if (lerped.TerrainStainBrightness.HasValue) rs.TerrainStainBrightness = lerped.TerrainStainBrightness.Value;
+        if (lerped.TerrainStainHeight.HasValue)    rs.TerrainStainHeight    = lerped.TerrainStainHeight.Value;
     }
 }

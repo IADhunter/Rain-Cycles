@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
+using UnityEngine;
 
 namespace RainCycles.Settings;
 
@@ -122,6 +123,38 @@ public static class BlendSettingsLoader
         _activeSettings = null;
     }
 
+
+    // Carga un blend_settings.txt desde ruta absoluta y lo activa directamente.
+    // Usado por Arena donde no hay región convencional.
+    // roomName actúa como clave de caché (ej: "accelerator").
+    public static void LoadFromPath(string filePath, string roomName)
+    {
+        if (!System.IO.File.Exists(filePath)) return;
+
+        var settings = BlendSettings.FromFile(filePath);
+        string key   = roomName.ToUpperInvariant();
+
+        _cache[key]     = settings;
+        _activeRegion   = key;
+        _activeSettings = settings;
+
+        if (settings != null)
+            RSPlugin.log.LogDebug(
+                $"[BlendSettingsLoader] Arena activated: '{roomName}' | mode={settings.Mode}");
+    }
+
+    // Limpia la sesión de arena sin borrar el caché de regiones Story.
+    // Claves de arena = nombre de sala (sin guión bajo). Claves de Story = código de región.
+    public static void ClearArenaSession()
+    {
+        if (_activeRegion != null && !_activeRegion.Contains("_"))
+        {
+            _cache.Remove(_activeRegion);
+            _activeRegion   = null;
+            _activeSettings = null;
+        }
+    }
+
     // ── Helpers
 
     private static BlendSettings LoadFromDisk(string regionCode)
@@ -132,16 +165,27 @@ public static class BlendSettingsLoader
         return BlendSettings.FromFile(path);
     }
 
-    // Devuelve la ruta resuelta de blend_settings.txt para una región, o null si el archivo no existe.
+    // Devuelve la ruta resuelta de blend_settings.txt para una región.
+    // Busca directamente en las carpetas de mods activos (no mergedmods) en orden de prioridad.
     public static string ResolvePath(string regionCode)
     {
-        string candidate = AssetManager.ResolveFilePath(
-            "World" +
-            Path.DirectorySeparatorChar + regionCode.ToUpperInvariant() + "-Rooms" +
-            Path.DirectorySeparatorChar + "RainCycles" +
-            Path.DirectorySeparatorChar + regionCode.ToUpperInvariant() + "_blend_settings.txt");
+        string upper    = regionCode.ToUpperInvariant();
+        string relative = Path.Combine(
+            "World",
+            upper + "-Rooms",
+            "RainCycles",
+            upper + "_blend_settings.txt");
 
-        return File.Exists(candidate) ? candidate : null;
+        // Buscar en mods activos en orden inverso (mayor prioridad primero)
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, relative);
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        // Fallback: StreamingAssets base (vanilla o mergedmods si no hay otro)
+        string basePath = Path.Combine(Application.streamingAssetsPath, relative);
+        return File.Exists(basePath) ? basePath : null;
     }
 
     // Extrae el código de región de un nombre de habitación (ej: "SU_C01" → "SU"). Devuelve null si el nombre no tiene el formato esperado.

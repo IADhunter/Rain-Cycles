@@ -177,7 +177,7 @@ public static class BlendClock
         List<int> flat = BuildFlatLoop(s, resolved);
         if (flat == null || flat.Count < 2)
         {
-            RSPlugin.log.LogInfo($"[BlendClock] StartLoop: no transition for state {resolved}. Idle.");
+            RSPlugin.log.LogDebug($"[BlendClock] StartLoop: no transition for state {resolved}. Idle.");
             return;
         }
 
@@ -251,7 +251,7 @@ public static class BlendClock
     private static void TickIdle(BlendSettings s)
     {
         if (_timer < s.LoopIdleTime) return;
-        RSPlugin.log.LogInfo(
+        RSPlugin.log.LogDebug(
             $"[BlendClock] Idle → Blending {(IsFirstHalf ? "first" : "second")} half " +
             $"[{string.Join("→", _seq.GetRange(_halfStart, _halfEnd - _halfStart + 1))}]");
         _timer = 0f;
@@ -285,7 +285,7 @@ public static class BlendClock
         CurrentPhase = Phase.Done;
         GlobalT      = IsFirstHalf ? 0.5f : 1.0f;
 
-        RSPlugin.log.LogInfo(
+        RSPlugin.log.LogDebug(
             $"[BlendClock] {(IsFirstHalf ? "First" : "Second")} half complete → Done" +
             (_customPendingStop ? " (custom stop pending)" : ""));
     }

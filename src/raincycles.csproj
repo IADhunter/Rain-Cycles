@@ -48,11 +48,6 @@
       <HintPath>../lib/MonoMod.Utils.dll</HintPath>
       <Private>false</Private>
     </Reference>
-
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>../lib/Newtonsoft.Json.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
   </ItemGroup>
 
   <Target Name="GenerateMod" AfterTargets="PostBuildEvent" Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">

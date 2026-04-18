@@ -346,6 +346,19 @@ public static partial class SettingsBlendController
             self.currentPalette.fogColor = snap.TintAtmosphere.Value;
     }
 
+    private static void OnApplyPalette(On.RoomCamera.orig_ApplyPalette orig, RoomCamera self)
+    {
+        orig(self);
+
+        // Post-orig: vanilla puede haber reconstruido terrainPalette desde rs.TerrainPalette.
+        // Si el blend está activo, restaurar los píxeles interpolados que MixTerrainPalette calculó.
+        if (_active && BlendTextureManager.TerrainReady && self.terrainPalette != null)
+        {
+            float t = _externalT ? _forcedT : BlendSlider.BlendFactor;
+            BlendTextureManager.MixTerrainPalette(self, t);
+        }
+    }
+
     private static void OnChangeBothPalettes(
         On.RoomCamera.orig_ChangeBothPalettes orig, RoomCamera self,
         int palA, int palB, float blend)

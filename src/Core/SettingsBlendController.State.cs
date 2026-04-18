@@ -118,6 +118,7 @@ public static partial class SettingsBlendController
         On.RoomCamera.UpdateDayNightPalette += OnUpdateDayNightPalette;
         On.RoomCamera.ChangeBothPalettes    += OnChangeBothPalettes;
         On.RoomCamera.ApplyFade             += OnApplyFade;
+        On.RoomCamera.ApplyPalette          += OnApplyPalette;
         On.DevInterface.DevUI.Update        += OnDevUIUpdate;
         On.RoomCamera.MoveCamera_Room_int   += OnMoveCamera;
         On.RoofTopView.ctor                 += OnRoofTopViewCtor;

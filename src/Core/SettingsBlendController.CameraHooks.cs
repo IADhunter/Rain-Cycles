@@ -58,13 +58,43 @@ public static partial class SettingsBlendController
             _lastIdleSkyState = -1;
         }
 
-        if (newRoom == null || !BlendClock.IsRunning) return;
+        if (newRoom == null) return;
 
         var blendSettings = BlendSettingsLoader.Active;
         if (blendSettings == null) return;
 
         string newRoomName = newRoom.abstractRoom?.name;
         if (newRoomName == null || !blendSettings.IncludesRoom(newRoomName)) return;
+
+        // Si el clock no está corriendo aún, aplicar el estado correcto del ciclo inmediatamente.
+        // Evita que vanilla pinte el estado base de la sala por unos frames antes de que
+        // TryApplyIdle corra en el updater.
+        if (!BlendClock.IsRunning)
+        {
+            var game = newRoom.game;
+            int cycle = game?.GetStorySession?.saveState?.cycleNumber ?? 0;
+            bool isArena = game?.IsArenaSession == true;
+            string earlyPath = isArena
+                ? ArenaStateResolver.GetSelectedSettingsPath(newRoomName, 0)
+                : StateFileResolver.GetRainStateFilePath(newRoomName, cycle);
+            RSPlugin.log.LogDebug($"[MoveCamera] clock=stopped room={newRoomName} earlyPath={earlyPath ?? "NULL"} self.room=={(self.room == newRoom ? "newRoom" : "other")}");
+            if (earlyPath != null)
+            {
+                if (self.room == newRoom)
+                {
+                    RSPlugin.log.LogDebug($"[MoveCamera] ApplyIdleState immediate room={newRoomName}");
+                    ApplyIdleState(newRoom, earlyPath, allowCameraOps: true);
+                    BlendClockUpdater.SetLastIdleRoom(newRoomName);
+                }
+                else
+                {
+                    RSPlugin.log.LogDebug($"[MoveCamera] pending idle room={newRoomName}");
+                    _pendingIdleRoom = newRoom;
+                    _pendingIdlePath = earlyPath;
+                }
+            }
+            return;
+        }
 
         // consumir pending idle cuando cam llega a la sala
         if (_pendingIdleRoom != null &&

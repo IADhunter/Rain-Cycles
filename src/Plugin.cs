@@ -53,6 +53,7 @@ public class RSPlugin : BaseUnityPlugin
             SettingsBlendController.Init();
             BlendSettingsLoader.Init();
             BlendClockUpdater.Init();
+            ArenaBlendController.Init();
 
             Logger.LogInfo($"[{NAME}] {VER} loaded successfully!");
         }

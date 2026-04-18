@@ -81,8 +81,12 @@ public static partial class SettingsBlendController
         }
 
         RoomEffectsApplier.ApplyDecalOpacities(_room, lerped);
-        // LightSources y LightBeams se aplican aquí solo cuando el blend NO es
         RoomEffectsApplier.ApplyScalarEffects(_room, lerped);
+        RoomEffectsApplier.ApplyTerrainScalars(_room, lerped);
+
+        // Terrain palette blend — pixel-a-pixel igual que paletas normales
+        if (BlendTextureManager.TerrainReady)
+            BlendTextureManager.MixTerrainPalette(cam, t);
     }
     // Detecta si un mod de clima (Forecast u otro) gestiona Clouds en esta sala.
     // Usa reflexión por nombre para evitar dependencia directa en el assembly de Forecast.
