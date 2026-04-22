@@ -19,6 +19,7 @@ public static partial class SettingsBlendController
         _active       = true;
         _lastT        = -1f;
         _lastPaletteT = -1f;
+		_lastCamIdx   = -1;
 
         var cam = room.game?.cameras?[0];
         if (cam != null)

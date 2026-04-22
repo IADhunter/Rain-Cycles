@@ -15,6 +15,7 @@ public static partial class SettingsBlendController
     private static float            _lastT        = -1f;
     private static float            _lastPaletteT = -1f;  // throttle → MixPalettes+Apply
     private static float            _lastLightT   = -1f;  // throttle → LightSources/Beams
+	private static int              _lastCamIdx   = -1;   // detecta cambio de screen durante blend
     private static bool             _active       = false;
     private static bool             _externalT    = false;
     private static float            _forcedT      = 0f;

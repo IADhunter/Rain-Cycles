@@ -181,56 +181,122 @@ public partial class SettingsSnapshot
 
     private static void FillFromTemplate(SettingsSnapshot snap, string roomName)
     {
+        // Si el template es "NONE", no aplicar herencia
         if (snap.Template.ToUpper() == "NONE") return;
 
+        // Determinar el nombre del template a usar
+        string templateName;
+        bool useWildcard = false;
+        
+        if (string.IsNullOrEmpty(snap.Template))
+        {
+            // Si no hay template declarado, usar "outside" como default (comportamiento vanilla)
+            templateName = "outside";
+            useWildcard = true;  // Buscar cualquier template que contenga "outside"
+            RSPlugin.log.LogDebug($"[SettingsSnapshot] No template declared for {roomName}, using default 'outside' (wildcard)");
+        }
+        else
+        {
+            templateName = snap.Template.ToLower();
+            // Si el template contiene "_", tomar la parte después del último "_"
+            int lastUnderscore = templateName.LastIndexOf('_');
+            if (lastUnderscore >= 0)
+                templateName = templateName.Substring(lastUnderscore + 1);
+        }
+
+        // Extraer región del nombre de la sala (ej: "WPTA_F03" → "wpta")
         string region = roomName.Contains("_")
             ? roomName.Split('_')[0].ToLower()
             : roomName.ToLower();
 
-        string templateName = "outside";
-        if (!string.IsNullOrEmpty(snap.Template))
-        {
-            string t = snap.Template.ToLower();
-            templateName = t.Contains("_")
-                ? t.Split('_')[t.Split('_').Length - 1]
-                : t;
-        }
-
-        string templateFile = region + "_settingstemplate_" + templateName + ".txt";
-        string templateRelative = System.IO.Path.Combine("World", region, templateFile);
-
         string templatePath = null;
-        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+
+        // Si usamos wildcard, buscar cualquier archivo que contenga "outside"
+        if (useWildcard)
         {
-            string candidate = System.IO.Path.Combine(ModManager.ActiveMods[i].path, templateRelative);
-            if (System.IO.File.Exists(candidate)) { templatePath = candidate; break; }
-        }
-        // Fallback: buscar en todas las subcarpetas de StreamingAssets/mods/
-        // cubre mods que Rain World carga pero BepInEx no registra (ej: moreslugcats built-in)
-        if (templatePath == null)
-        {
-            string modsRoot = System.IO.Path.Combine(UnityEngine.Application.streamingAssetsPath, "mods");
-            if (System.IO.Directory.Exists(modsRoot))
+            string searchPattern = region + "_settingstemplate_*outside*.txt";
+            string modsRoot = Path.Combine(UnityEngine.Application.streamingAssetsPath, "mods");
+            
+            // Buscar en mods activos
+            for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
             {
-                foreach (string found in System.IO.Directory.GetFiles(modsRoot, templateFile, System.IO.SearchOption.AllDirectories))
-                { templatePath = found; break; }
+                string searchDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region);
+                if (Directory.Exists(searchDir))
+                {
+                    string[] matches = Directory.GetFiles(searchDir, searchPattern);
+                    if (matches.Length > 0)
+                    {
+                        templatePath = matches[0];
+                        break;
+                    }
+                }
+            }
+            
+            // Buscar en StreamingAssets/mods/ (fallback para mods no registrados en BepInEx)
+            if (templatePath == null && Directory.Exists(modsRoot))
+            {
+                foreach (string found in Directory.GetFiles(modsRoot, searchPattern, SearchOption.AllDirectories))
+                {
+                    templatePath = found;
+                    break;
+                }
+            }
+            
+            // Buscar en vanilla
+            if (templatePath == null)
+            {
+                string vanillaDir = Path.Combine(UnityEngine.Application.streamingAssetsPath, "World", region);
+                if (Directory.Exists(vanillaDir))
+                {
+                    string[] matches = Directory.GetFiles(vanillaDir, searchPattern);
+                    if (matches.Length > 0)
+                        templatePath = matches[0];
+                }
             }
         }
-        // Fallback final: StreamingAssets base (vanilla)
-        if (templatePath == null)
+        else
         {
-            string basePath = System.IO.Path.Combine(UnityEngine.Application.streamingAssetsPath, templateRelative);
-            if (System.IO.File.Exists(basePath)) templatePath = basePath;
+            // Búsqueda normal con nombre exacto
+            string templateFile = region + "_settingstemplate_" + templateName + ".txt";
+            string templateRelative = Path.Combine("World", region, templateFile);
+
+            // Buscar en mods activos en orden inverso (mayor prioridad primero)
+            for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+            {
+                string candidate = Path.Combine(ModManager.ActiveMods[i].path, templateRelative);
+                if (File.Exists(candidate)) { templatePath = candidate; break; }
+            }
+
+            // Fallback: buscar en todas las subcarpetas de StreamingAssets/mods/
+            if (templatePath == null)
+            {
+                string modsRoot = Path.Combine(UnityEngine.Application.streamingAssetsPath, "mods");
+                if (Directory.Exists(modsRoot))
+                {
+                    foreach (string found in Directory.GetFiles(modsRoot, templateFile, SearchOption.AllDirectories))
+                    { templatePath = found; break; }
+                }
+            }
+
+            // Fallback final: StreamingAssets base (vanilla)
+            if (templatePath == null)
+            {
+                string basePath = Path.Combine(UnityEngine.Application.streamingAssetsPath, templateRelative);
+                if (File.Exists(basePath)) templatePath = basePath;
+            }
         }
 
-        if (templatePath == null || !System.IO.File.Exists(templatePath))
+        if (templatePath == null || !File.Exists(templatePath))
         {
-            RSPlugin.log.LogDebug("[SettingsSnapshot] Template not found: " + (templatePath ?? "null"));
+            RSPlugin.log.LogDebug($"[SettingsSnapshot] Template not found: {(useWildcard ? "wildcard *outside*" : templateName)}");
             return;
         }
 
+        RSPlugin.log.LogDebug($"[SettingsSnapshot] Template found: {templatePath}");
+        
         var tmpl = FromFile(templatePath);
 
+        // Solo copiar valores que el snapshot original NO declaró explícitamente
         if (!snap._hasPalette)               snap.Palette               = tmpl.Palette;
         if (!snap._hasGrime)                 snap.Grime                 = tmpl.Grime;
         if (!snap._hasClouds)                snap.Clouds                = tmpl.Clouds;
@@ -240,11 +306,71 @@ public partial class SettingsSnapshot
         if (!snap._hasRandomItemSpearChance) snap.RandomItemSpearChance = tmpl.RandomItemSpearChance;
         if (!snap._hasEffectColorA)          snap.EffectColorA          = tmpl.EffectColorA;
         if (!snap._hasEffectColorB)          snap.EffectColorB          = tmpl.EffectColorB;
+        
         if (!snap._hasFadePalette)
         {
             snap.FadePaletteID        = tmpl.FadePaletteID;
             snap.FadePaletteOpacities = tmpl.FadePaletteOpacities;
         }
+
+        // Terrain palette y fade palette también heredan si no fueron declarados
+        if (!snap._hasTerrainPalette)
+        {
+            snap.TerrainPaletteName = tmpl.TerrainPaletteName;
+        }
+        if (!snap._hasTerrainFadePalette)
+        {
+            snap.TerrainFadePaletteName = tmpl.TerrainFadePaletteName;
+            snap.TerrainFadeOpacities   = tmpl.TerrainFadeOpacities;
+        }
+
+        // Terrain scalars (float? - null significa no declarado)
+        if (snap.TerrainWaves == null && tmpl.TerrainWaves != null)
+            snap.TerrainWaves = tmpl.TerrainWaves;
+        if (snap.TerrainLight == null && tmpl.TerrainLight != null)
+            snap.TerrainLight = tmpl.TerrainLight;
+        if (snap.TerrainGrain == null && tmpl.TerrainGrain != null)
+            snap.TerrainGrain = tmpl.TerrainGrain;
+        if (snap.TerrainDepth == null && tmpl.TerrainDepth != null)
+            snap.TerrainDepth = tmpl.TerrainDepth;
+        if (snap.TerrainSkyFade == null && tmpl.TerrainSkyFade != null)
+            snap.TerrainSkyFade = tmpl.TerrainSkyFade;
+        if (snap.TerrainEdgeRadius == null && tmpl.TerrainEdgeRadius != null)
+            snap.TerrainEdgeRadius = tmpl.TerrainEdgeRadius;
+        if (snap.TerrainGooHeight == null && tmpl.TerrainGooHeight != null)
+            snap.TerrainGooHeight = tmpl.TerrainGooHeight;
+        if (snap.TerrainStainAmount == null && tmpl.TerrainStainAmount != null)
+            snap.TerrainStainAmount = tmpl.TerrainStainAmount;
+        if (snap.TerrainStainBrightness == null && tmpl.TerrainStainBrightness != null)
+            snap.TerrainStainBrightness = tmpl.TerrainStainBrightness;
+        if (snap.TerrainStainHeight == null && tmpl.TerrainStainHeight != null)
+            snap.TerrainStainHeight = tmpl.TerrainStainHeight;
+
+        // Efectos escalares (sentinel -1 = no declarado)
+        if (snap.EffectDarkness < 0f && tmpl.EffectDarkness >= 0f)
+            snap.EffectDarkness = tmpl.EffectDarkness;
+        if (snap.EffectBrightness < 0f && tmpl.EffectBrightness >= 0f)
+            snap.EffectBrightness = tmpl.EffectBrightness;
+        if (snap.EffectContrast < 0f && tmpl.EffectContrast >= 0f)
+            snap.EffectContrast = tmpl.EffectContrast;
+        if (snap.EffectDesaturation < 0f && tmpl.EffectDesaturation >= 0f)
+            snap.EffectDesaturation = tmpl.EffectDesaturation;
+        if (snap.EffectHue < 0f && tmpl.EffectHue >= 0f)
+            snap.EffectHue = tmpl.EffectHue;
+        if (snap.EffectDarkenLights < 0f && tmpl.EffectDarkenLights >= 0f)
+            snap.EffectDarkenLights = tmpl.EffectDarkenLights;
+        if (snap.EffectFog < 0f && tmpl.EffectFog >= 0f)
+            snap.EffectFog = tmpl.EffectFog;
+        if (snap.EffectSkyBloom < 0f && tmpl.EffectSkyBloom >= 0f)
+            snap.EffectSkyBloom = tmpl.EffectSkyBloom;
+        if (snap.EffectSkyAndLightBloom < 0f && tmpl.EffectSkyAndLightBloom >= 0f)
+            snap.EffectSkyAndLightBloom = tmpl.EffectSkyAndLightBloom;
+        if (snap.EffectLightBurn < 0f && tmpl.EffectLightBurn >= 0f)
+            snap.EffectLightBurn = tmpl.EffectLightBurn;
+        if (snap.EffectBloom < 0f && tmpl.EffectBloom >= 0f)
+            snap.EffectBloom = tmpl.EffectBloom;
+        if (snap.EffectSurfaceSandstorm < 0f && tmpl.EffectSurfaceSandstorm >= 0f)
+            snap.EffectSurfaceSandstorm = tmpl.EffectSurfaceSandstorm;
     }
 
     // ── PlacedObjects

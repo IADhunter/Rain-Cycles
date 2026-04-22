@@ -69,15 +69,25 @@ public static partial class SettingsBlendController
         float opacB      = camIdx < _snapB.FadePaletteOpacities.Length ? _snapB.FadePaletteOpacities[camIdx] : 0f;
         cam.paletteBlend = Mathf.Lerp(opacA, opacB, t);
 
+        bool camChanged = camIdx != _lastCamIdx;
+        _lastCamIdx = camIdx;
+
         // Throttle: MixPalettes + Texture2D.Apply son costosos (upload CPU→GPU).
+        // camChanged fuerza refresco inmediato al moverse a otra screen durante blend.
         const float PALETTE_THRESHOLD = 0.008f;
-        if (Mathf.Abs(t - _lastPaletteT) >= PALETTE_THRESHOLD || _lastPaletteT < 0f)
+        if (Mathf.Abs(t - _lastPaletteT) >= PALETTE_THRESHOLD || _lastPaletteT < 0f || camChanged)
         {
             _lastPaletteT = t;
             BlendTextureManager.MixPalettes(cam, t);
             cam.ApplyFade();
             RoomEffectsApplier.ApplyLightSources(_room, lerped);
             RoomEffectsApplier.ApplyLightBeams(_room, lerped);
+
+            // El fade de terrain está horneado dentro de TerrainPxA/B con el camIdx del Load.
+            // Al moverse a otra screen hay que rebakear con el nuevo camIdx para que
+            // MixTerrainPalette lerp con la opacidad correcta para esa posición.
+            if (camChanged && BlendTextureManager.TerrainReady)
+                BlendTextureManager.LoadTerrain(cam, _snapA, _snapB);
         }
 
         RoomEffectsApplier.ApplyDecalOpacities(_room, lerped);
