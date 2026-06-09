@@ -1,4 +1,6 @@
+using System;
 using UnityEngine;
+using System.Diagnostics;
 
 namespace RainCycles.Core;
 
@@ -18,98 +20,116 @@ internal static class BlendTextureManager
     internal static Color32[] PxB_s2;
 
     // ── Terrain palette blend ─────────────────────────────────────────────
-    // Píxeles horneados de terrain A y B al inicio del blend.
-    // Incluyen el fade palette de cada snapshot aplicado con su opacidad.
-    internal static Color[] TerrainPxA = null;
-    internal static Color[] TerrainPxB = null;
-    internal static bool    TerrainReady => TerrainPxA != null && TerrainPxB != null;
+    internal static TerrainPalette TerrainPalA = null;
+    internal static TerrainPalette TerrainPalB = null;
+    internal static bool TerrainReady => TerrainPalA != null && TerrainPalB != null;
 
-    // Hornea los texturePixels de terrain para snapA y snapB.
-    // Llamar desde Attach/AttachWithExternalT igual que Load.
-    internal static void LoadTerrain(RoomCamera cam,
+    internal static void LoadTerrainTextures(
         RainCycles.Snapshot.SettingsSnapshot snapA,
         RainCycles.Snapshot.SettingsSnapshot snapB)
     {
-        TerrainPxA = null;
-        TerrainPxB = null;
+        TerrainPalette newA = null;
+        TerrainPalette newB = null;
 
-        if (cam?.room == null) return;
+        if (snapA._hasTerrainPalette && !string.IsNullOrEmpty(snapA.TerrainPaletteName))
+        {
+            string fadeA = snapA._hasTerrainFadePalette ? snapA.TerrainFadePaletteName : null;
+            try { newA = new TerrainPalette(snapA.TerrainPaletteName, fadeA); }
+            catch { newA = null; }
+            if (newA != null && newA.fadePal != null)
+            {
+                var basePxA = (Color[])newA.texturePixels.Clone();
+                newA.UpdateFade(1f, 0f, 0f, 0f, 0f);
+                Array.Copy(basePxA, newA.texturePixels, basePxA.Length);
+            }
+        }
 
-        TerrainPxA = BakeTerrainPixels(cam, snapA);
-        TerrainPxB = BakeTerrainPixels(cam, snapB);
+        if (snapB._hasTerrainPalette && !string.IsNullOrEmpty(snapB.TerrainPaletteName))
+        {
+            string fadeB = snapB._hasTerrainFadePalette ? snapB.TerrainFadePaletteName : null;
+            try { newB = new TerrainPalette(snapB.TerrainPaletteName, fadeB); }
+            catch { newB = null; }
+            if (newB != null && newB.fadePal != null)
+            {
+                var basePxB = (Color[])newB.texturePixels.Clone();
+                newB.UpdateFade(1f, 0f, 0f, 0f, 0f);
+                Array.Copy(basePxB, newB.texturePixels, basePxB.Length);
+            }
+        }
+
+        var oldA = TerrainPalA;
+        var oldB = TerrainPalB;
+        TerrainPalA = newA;
+        TerrainPalB = newB;
+
+        if (oldA != null) oldA.Dispose();
+        if (oldB != null) oldB.Dispose();
     }
 
-    // Interpola los píxeles de terrain entre A y B según t y sube al shader.
-    // Opera sobre cam.terrainPalette.texturePixels que vanilla ya construyó con fade.
-    // Lerpa hasta Mathf.Min(PxA, PxB, cam) para tolerar tamaños distintos entre snaps.
-    internal static void MixTerrainPalette(RoomCamera cam, float t)
+    internal static void MixTerrainPalette(RoomCamera cam, float t,
+        RainCycles.Snapshot.SettingsSnapshot snapA,
+        RainCycles.Snapshot.SettingsSnapshot snapB)
     {
-        if (!TerrainReady) return;
-        if (cam?.terrainPalette == null) return;
-        if (cam.terrainPalette.texturePixels == null) return;
+        if (!TerrainReady || cam?.terrainPalette == null) return;
+        if (TerrainPalA.texturePixels == null || TerrainPalB.texturePixels == null) return;
 
-        int len = Mathf.Min(TerrainPxA.Length,
-                  Mathf.Min(TerrainPxB.Length,
-                            cam.terrainPalette.texturePixels.Length));
+        var tp = cam.terrainPalette;
+        if (tp.texturePixels == null) return;
+
+        int camIdx = cam.currentCameraPosition;
+
+        float fadeA = camIdx < snapA.TerrainFadeOpacities.Length
+                      ? snapA.TerrainFadeOpacities[camIdx] : 0f;
+        float fadeB = camIdx < snapB.TerrainFadeOpacities.Length
+                      ? snapB.TerrainFadeOpacities[camIdx] : 0f;
+
+        var pxA = TerrainPalA.texturePixels;
+        var pxB = TerrainPalB.texturePixels;
+
+        if (fadeA > 0f && TerrainPalA.fadePixels != null)
+        {
+            var fadedA = (Color[])pxA.Clone();
+            TerrainPalette.LerpColors(fadedA, TerrainPalA.fadePixels, fadeA);
+            pxA = fadedA;
+        }
+        if (fadeB > 0f && TerrainPalB.fadePixels != null)
+        {
+            var fadedB = (Color[])pxB.Clone();
+            TerrainPalette.LerpColors(fadedB, TerrainPalB.fadePixels, fadeB);
+            pxB = fadedB;
+        }
+
+        int len = Mathf.Min(pxA.Length, Mathf.Min(pxB.Length, tp.texturePixels.Length));
 
         for (int i = 0; i < len; i++)
         {
-            Color a = TerrainPxA[i];
-            Color b = TerrainPxB[i];
-            cam.terrainPalette.texturePixels[i] = new Color(
+            Color a = pxA[i];
+            Color b = pxB[i];
+            tp.texturePixels[i] = new Color(
                 a.r + (b.r - a.r) * t,
                 a.g + (b.g - a.g) * t,
                 a.b + (b.b - a.b) * t,
                 1f);
         }
 
-        cam.terrainPalette.texture.SetPixels(cam.terrainPalette.texturePixels);
-        cam.terrainPalette.texture.Apply(false);
-        Shader.SetGlobalTexture("_terrainPalette", cam.terrainPalette.texture);
+        tp.texture.SetPixels(tp.texturePixels);
+        tp.texture.Apply(false);
+        Shader.SetGlobalTexture("_terrainPalette", tp.texture);
     }
 
-    // Hornea los texturePixels de un snapshot de terrain:
-    // construye TerrainPalette temporal, llama UpdateFade con la opacidad del screen,
-    // captura texturePixels y destruye el objeto temporal.
-    private static Color[] BakeTerrainPixels(RoomCamera cam,
-        RainCycles.Snapshot.SettingsSnapshot snap)
+    internal static void DestroyTerrainTextures()
     {
-        if (snap == null || !snap._hasTerrainPalette ||
-            string.IsNullOrEmpty(snap.TerrainPaletteName)) return null;
-
-        // Hornear con fade palette del snap (igual que vanilla construye cam.terrainPalette)
-        // → texturePixels tiene el mismo tamaño y composición que cam.terrainPalette.texturePixels.
-        // Si A y B tienen distinto fade → distinto tamaño → MixTerrainPalette toma Mathf.Min,
-        // el exceso de pixels queda como estaba en cam.terrainPalette (fade parcial visible).
-        string fadeName = snap._hasTerrainFadePalette ? snap.TerrainFadePaletteName : null;
-
-        TerrainPalette tp = null;
-        try { tp = new TerrainPalette(snap.TerrainPaletteName, fadeName); }
-        catch { return null; }
-
-        int   camIdx = cam.currentCameraPosition;
-        float fade   = (fadeName != null && camIdx < snap.TerrainFadeOpacities.Length)
-                       ? snap.TerrainFadeOpacities[camIdx] : 0f;
-
-        tp.UpdateFade(fade, cam.mushroomMode, cam.DarkPalette, cam.ghostMode, cam.rotMode);
-
-        var pixels = (Color[])tp.texturePixels.Clone();
-        tp.Dispose();
-        return pixels;
-    }
-
-    internal static void DestroyTerrain()
-    {
-        TerrainPxA = null;
-        TerrainPxB = null;
+        if (TerrainPalA != null) { TerrainPalA.Dispose(); TerrainPalA = null; }
+        if (TerrainPalB != null) { TerrainPalB.Dispose(); TerrainPalB = null; }
     }
 
     internal static void Load(RoomCamera cam, SettingsSnapshot snapA, SettingsSnapshot snapB,
                               SettingsSnapshot snapOrigin = null, bool applyFade = true)
     {
+        var swTotal = Stopwatch.StartNew();
+
         Destroy();
 
-        // snapOrigin es el estado visual actual de la sala (puede ser distinto del archivo de disco
         var rs = cam.room?.roomSettings;
         int   realPalette   = snapOrigin?.Palette    ?? rs?.Palette    ?? snapA.Palette;
         int   realFadePal   = snapOrigin != null
@@ -118,58 +138,56 @@ internal static class BlendTextureManager
         float realFadeBlend = (rs?.fadePalette != null && cam.currentCameraPosition < rs.fadePalette.fades.Length)
                               ? rs.fadePalette.fades[cam.currentCameraPosition]
                               : 0f;
-        int   realEffColorA = snapOrigin?.EffectColorA ?? rs?.EffectColorA ?? 0;
-        int   realEffColorB = snapOrigin?.EffectColorB ?? rs?.EffectColorB ?? 0;
 
-        // Preservar terrain palette durante horneado — ChangeBothPalettes→ApplyPalette
-        // vanilla reconstruye cam.terrainPalette desde rs → no debe quedar contaminado.
         string savedTerrainName = rs?.TerrainPalette;
         var    savedTerrainFade = rs?.terrainFadePalette;
 
         // snapA: hornear paleta + fade con sus EffectColors
+        var swSnapA = Stopwatch.StartNew();
         cam.ChangeBothPalettes(snapA.Palette,
             snapA._hasFadePalette ? snapA.FadePaletteID : snapA.Palette, 0f);
-        cam.ApplyEffectColorsToAllPaletteTextures(snapA.EffectColorA, snapA.EffectColorB);
         TexA_s1  = Copy(cam.fadeTexA);
         TexB_s1  = Copy(cam.fadeTexB);
         PxA_s1   = TexA_s1?.GetPixels32();
         PxB_s1   = TexB_s1?.GetPixels32();
+        swSnapA.Stop();
 
         // snapB: hornear paleta + fade con sus EffectColors
+        var swSnapB = Stopwatch.StartNew();
         cam.ChangeBothPalettes(snapB.Palette,
             snapB._hasFadePalette ? snapB.FadePaletteID : snapB.Palette, 0f);
-        cam.ApplyEffectColorsToAllPaletteTextures(snapB.EffectColorA, snapB.EffectColorB);
         TexA_s2  = Copy(cam.fadeTexA);
         TexB_s2  = Copy(cam.fadeTexB);
         PxA_s2   = TexA_s2?.GetPixels32();
         PxB_s2   = TexB_s2?.GetPixels32();
+        swSnapB.Stop();
 
-        // Restaurar la paleta real de la cámara — sin esto el horneado deja rastros visibles
+        // Restaurar la paleta real de la cámara
         cam.ChangeBothPalettes(realPalette, realFadePal, realFadeBlend);
-        cam.ApplyEffectColorsToAllPaletteTextures(realEffColorA, realEffColorB);
 
-        // Restaurar terrain palette — el horneado puede haberla contaminado via ApplyPalette
         if (rs != null)
         {
             rs.TerrainPalette     = savedTerrainName;
             rs.terrainFadePalette = savedTerrainFade;
         }
 
-        // applyFade=false durante transiciones de sala: la cámara aún renderiza la sala
         if (applyFade) cam.ApplyFade();
 
         Ready = true;
 
-        // Hornear terrain palette A y B para blend pixel-a-pixel
-        LoadTerrain(cam, snapA, snapB);
+        LoadTerrainTextures(snapA, snapB);
+
+        swTotal.Stop();
+        RSPlugin.log.LogDebug(
+            $"[PERF] BlendTextureManager.Load TOTAL={swTotal.Elapsed.TotalMilliseconds:F2}ms | " +
+            $"snapA={swSnapA.Elapsed.TotalMilliseconds:F2}ms snapB={swSnapB.Elapsed.TotalMilliseconds:F2}ms");
     }
 
-    // Mezcla los píxeles de las 4 texturas según t y aplica el resultado
     internal static void MixPalettes(RoomCamera cam, float t)
     {
         if (!Ready || PxA_s1 == null || PxA_s2 == null) return;
 
-        int len = PxA_s1.Length; // 32 * 16 = 512
+        int len = PxA_s1.Length;
         var outA = new Color32[len];
 
         for (int i = 0; i < len; i++)
@@ -204,34 +222,15 @@ internal static class BlendTextureManager
         }
     }
 
-    // Restaura los píxeles de fadeTexA/B de la cámara al estado del snapshot A (el estado "antes del blend"). Llamar antes de Destroy() en DetachAndRestore.
-    internal static void RestoreOriginalTextures(RoomCamera cam)
-    {
-        if (!Ready || TexA_s1 == null || cam == null) return;
-
-        // Copiar los píxeles originales (snapA) directamente en fadeTexA/B de la cámara.
-        if (cam.fadeTexA != null && TexA_s1 != null)
-        {
-            cam.fadeTexA.SetPixels(TexA_s1.GetPixels());
-            cam.fadeTexA.Apply(false);
-        }
-        if (cam.fadeTexB != null && TexB_s1 != null)
-        {
-            cam.fadeTexB.SetPixels(TexB_s1.GetPixels());
-            cam.fadeTexB.Apply(false);
-        }
-    }
-
     internal static void Destroy()
     {
-        if (TexA_s1 != null) Object.Destroy(TexA_s1);
-        if (TexA_s2 != null) Object.Destroy(TexA_s2);
-        if (TexB_s1 != null) Object.Destroy(TexB_s1);
-        if (TexB_s2 != null) Object.Destroy(TexB_s2);
+        if (TexA_s1 != null) UnityEngine.Object.Destroy(TexA_s1);
+        if (TexA_s2 != null) UnityEngine.Object.Destroy(TexA_s2);
+        if (TexB_s1 != null) UnityEngine.Object.Destroy(TexB_s1);
+        if (TexB_s2 != null) UnityEngine.Object.Destroy(TexB_s2);
         TexA_s1 = TexA_s2 = TexB_s1 = TexB_s2 = null;
         PxA_s1  = PxA_s2  = PxB_s1  = PxB_s2  = null;
         Ready = false;
-        DestroyTerrain();
     }
 
     private static Texture2D Copy(Texture2D src)

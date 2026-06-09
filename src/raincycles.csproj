@@ -5,7 +5,7 @@
     <LangVersion>13</LangVersion>
     <AssemblyName>RainCycles</AssemblyName>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <OutputPath>../RainCycles/plugins</OutputPath>
+    <OutputPath>D:\programas\Steam\steamapps\common\Rain World\RainWorld_Data\StreamingAssets\mods\RainCycles\plugins\</OutputPath>
     <PathMap>$(MSBuildProjectDirectory)=/$(SolutionName)</PathMap>
   </PropertyGroup>
 
@@ -24,6 +24,16 @@
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>../lib/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>../lib/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>../lib/UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
 
@@ -52,7 +62,7 @@
 
   <Target Name="GenerateMod" AfterTargets="PostBuildEvent" Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <ItemGroup>
-      <RemovePlugins Include="../RainCycles/plugins/*.pdb" />
+      <RemovePlugins Include="D:\programas\Steam\steamapps\common\Rain World\RainWorld_Data\StreamingAssets\mods\RainCycles\plugins\*.pdb" />
     </ItemGroup>
     <Delete Files="@(RemovePlugins)" />
   </Target>

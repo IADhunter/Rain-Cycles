@@ -2,26 +2,12 @@ using System.Collections.Generic;
 
 namespace RainCycles.Sky;
 
-// ════════════════════════════════════════════════════════════════════════
-// BLEND SKY ATLAS CACHE
-//
-// Registra qué atlas de ilustración de cielo cargó el mod por región.
-// Al cambiar de región, descarga los atlas de la región anterior via
-// Futile.atlasManager.UnloadAtlas — evita acumulación de texturas en VRAM.
-//
-// Ciclo de vida:
-//   Register(region, name)   → llamado al cargar cada atlas en el ctor del hook
-//   UnloadRegion(region)     → llamado en OnRegionChanged para la región anterior
-//   UnloadAll()              → llamado en ShutDownProcess
-// ════════════════════════════════════════════════════════════════════════
-
+// Registra y descarga atlas de cielo por región para evitar acumulación en VRAM.
 public static class BlendSkyAtlasCache
 {
-    // región → nombres de atlas que el mod cargó para esa región
     private static readonly Dictionary<string, HashSet<string>> _cache =
         new Dictionary<string, HashSet<string>>(System.StringComparer.OrdinalIgnoreCase);
 
-    // Registra un atlas como perteneciente a una región. Llamar justo después de LoadGraphic para que el atlas quede tracked.
     public static void Register(string regionCode, string atlasName)
     {
         if (string.IsNullOrEmpty(regionCode) || string.IsNullOrEmpty(atlasName)) return;
@@ -31,7 +17,6 @@ public static class BlendSkyAtlasCache
         _cache[key].Add(atlasName);
     }
 
-    // Descarga todos los atlas registrados para una región. Llamar al salir de la región (OnRegionChanged con la región anterior).
     public static void UnloadRegion(string regionCode)
     {
         if (string.IsNullOrEmpty(regionCode)) return;
@@ -40,35 +25,30 @@ public static class BlendSkyAtlasCache
 
         foreach (string name in names)
         {
-            // Verificar que el atlas existe antes de intentar descargarlo
             if (Futile.atlasManager.GetAtlasWithName(name) != null)
-            {
                 Futile.atlasManager.UnloadAtlas(name);
-                RSPlugin.log.LogDebug($"[SkyAtlas] Unloaded '{name}' (region {key})");
-            }
         }
         _cache.Remove(key);
     }
 
-    // Precarga todos los atlas de sky declarados en [BACKGROUNDS] para la región. Llamar en OnRegionChanged para que los atlas estén en Futile antes de que el jugador llegue a cualquier sala con sky — evita freeze al entrar. LoadGraphic tiene early-return si el atlas ya está cacheado — sin costo extra.
     public static void PreloadRegion(string regionCode)
     {
         if (string.IsNullOrEmpty(regionCode)) return;
         var settings = BlendSettingsLoader.GetForRegion(regionCode);
-        if (settings == null || !settings._hasBackgroundsSection
+        if (settings == null || !settings.HasBackgroundsSection
             || settings.BackgroundAliases.Count == 0) return;
 
         string key = regionCode.ToUpperInvariant();
 
-        foreach (var kv in settings.BackgroundAliases)
+        foreach (var viewDict in settings.BackgroundAliases)
         {
-            // Precargar ambas variantes (ACV y RTV) si están declaradas
-            PreloadFile(kv.Value.AcvFile, key);
-            PreloadFile(kv.Value.RtvFile, key);
+            foreach (var aliasKv in viewDict.Value)
+            {
+                string file = aliasKv.Value;
+                if (!string.IsNullOrEmpty(file))
+                    PreloadFile(file, key);
+            }
         }
-
-        RSPlugin.log.LogDebug(
-            $"[SkyAtlas] Preloaded sky atlases for region {key}");
     }
 
     private static void PreloadFile(string file, string regionKey)
@@ -78,7 +58,7 @@ public static class BlendSkyAtlasCache
         if (Futile.atlasManager.GetAtlasWithName(name) != null)
         {
             Register(regionKey, name);
-            return;  // ya está en Futile
+            return;
         }
         string path = AssetManager.ResolveFilePath(
             "Illustrations" + System.IO.Path.DirectorySeparatorChar + name + ".png");
@@ -88,32 +68,5 @@ public static class BlendSkyAtlasCache
         AssetManager.SafeWWWLoadTexture(ref tex, "file:///" + path, true, true);
         HeavyTexturesCache.LoadAndCacheAtlasFromTexture(name, tex, false);
         Register(regionKey, name);
-        RSPlugin.log.LogDebug($"[SkyAtlas] Loaded '{name}' for region {regionKey}");
-    }
-    public static void UnloadAll()
-    {
-        foreach (var kv in _cache)
-        {
-            foreach (string name in kv.Value)
-            {
-                if (Futile.atlasManager.GetAtlasWithName(name) != null)
-                    Futile.atlasManager.UnloadAtlas(name);
-            }
-        }
-        _cache.Clear();
-        RSPlugin.log.LogDebug("[SkyAtlas] All sky atlases unloaded.");
-    }
-
-    // Descarga todas las regiones excepto la indicada. Útil en OnRegionChanged para limpiar todo lo que no sea la región activa.
-    public static void UnloadAllExcept(string keepRegion)
-    {
-        var toRemove = new List<string>();
-        foreach (var key in _cache.Keys)
-        {
-            if (!string.Equals(key, keepRegion, System.StringComparison.OrdinalIgnoreCase))
-                toRemove.Add(key);
-        }
-        foreach (string key in toRemove)
-            UnloadRegion(key);
     }
 }

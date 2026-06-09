@@ -2,476 +2,360 @@ using System.Collections.Generic;
 using UnityEngine;
 using RainCycles.Settings;
 using RainCycles.Core;
+using RainCycles.Blend;
 
 namespace RainCycles.Clock;
 
 public static class BlendClock
 {
-    public enum Phase { Idle, Blending, Done }
+    public enum Phase { Idle, Blending }
 
-    // ────────────────────
-    public static float CurrentT        { get; private set; } = 0f;
-    public static Phase CurrentPhase    { get; private set; } = Phase.Idle;
-    public static int   SubPhaseIndex   { get; private set; } = 0;
-    public static float SubPhaseLocalT  { get; private set; } = 0f;
-    public static int   StateA          { get; private set; } = 1;
-    public static int   StateB          { get; private set; } = 2;
-    public static bool  IsRunning       { get; private set; } = false;
+    public struct ClockState
+    {
+        public BlendMode Mode;
+        public bool IsRunning;
+        public float T;
+        public Phase CurrentPhase;
+        public int StateA;
+        public int StateB;
+        public float Timer;
+    }
 
-    public static float GlobalT         { get; private set; } = 0f;
-    public static bool  IsFirstHalf     { get; private set; } = true;
-    public static bool  IsLaneA         => IsFirstHalf;
+    public static Phase CurrentPhase { get; private set; } = Phase.Idle;
+    public static int   StateA       { get; private set; } = 1;
+    public static int   StateB       { get; private set; } = 1;
+    public static float T            { get; private set; } = 0f;
+    public static bool  IsRunning    { get; private set; } = false;
+
+    public static float CurrentT => T;
+    public static float GlobalT => T;
+    public static float SubPhaseLocalT => CalculateLocalT();
+    public static int   SubPhaseIndex => CalculateTransitionIndex();
+    public static bool  IsFirstHalf => T < 0.5f;
 
     public static bool EditMode { get; private set; } = false;
     public static void SetEditMode(bool value)
     {
         EditMode = value;
         if (value && IsRunning) Stop();
-        RSPlugin.log.LogInfo($"[BlendClock] EditMode = {value}");
     }
 
-    // ────────────────────
-    private static List<int> _seq        = null;
-    private static int       _anchorIdx  = 0;
-    private static int _halfStart = 0;
-    private static int _halfEnd   = 0;
-    private static float _timer = 0f;
-    private static List<int> _cycleSeq      = null;
-    private static float     _rainTimer     = 0f;
-    private static int       _rainCycleLen  = 1;
-    private static bool _customPendingStop = false;
+    private static BlendMode _mode;
+    private static List<int> _sequence;
+    private static float     _idleDuration;
+    private static float     _blendDuration;
+    private static float     _timer = 0f;
+    private static float     _rainTimer = 0f;
+    private static int       _rainCycleLen = 1;
+    private static bool      _customPendingStop = false;
+    private static string    _regionCode = null;
+    private static int       _lastTransitionIndex = -1;
+    private static float     _subIdleDuration;
+    private static float     _subBlendDuration;
 
     public static void SetCustomPendingStop()
     {
         _customPendingStop = true;
-        RSPlugin.log.LogInfo("[BlendClock] Custom pending stop set.");
     }
 
-    // ────────────────────
+    public static ClockState SaveState()
+    {
+        return new ClockState
+        {
+            Mode = _mode,
+            IsRunning = IsRunning,
+            T = T,
+            CurrentPhase = CurrentPhase,
+            StateA = StateA,
+            StateB = StateB,
+            Timer = _timer,
+        };
+    }
 
-    public static void Start(int initialStateA = 1)
+    public static void RestoreState(ClockState state)
+    {
+        if (state.Mode != _mode) return;
+        _mode = state.Mode;
+        IsRunning = state.IsRunning;
+        T = state.T;
+        CurrentPhase = state.CurrentPhase;
+        StateA = state.StateA;
+        StateB = state.StateB;
+        _timer = state.Timer;
+    }
+
+    public static void Start(string regionCode, int initialState = 1)
     {
         var s = BlendSettingsLoader.Active;
-        if (s == null) { RSPlugin.log.LogWarning("[BlendClock] Cannot start: no settings."); return; }
-        switch (s.Mode)
+        if (s == null) return;
+
+        _regionCode = regionCode?.ToUpperInvariant();
+        _mode = s.Mode;
+
+        _idleDuration = s.IdleTime;
+        _blendDuration = s.Duration;
+        _subIdleDuration = s.SubIdleTime;
+        _subBlendDuration = s.SubDuration;
+
+        switch (_mode)
         {
-            case BlendMode.Loop:     StartLoop(s, initialStateA);     break;
-            case BlendMode.Cycle:    StartCycle(s, initialStateA);    break;
-            case BlendMode.EndCycle: StartEndCycle(s, initialStateA); break;
-            case BlendMode.Custom:   StartLoop(s, initialStateA);     break;
+            case BlendMode.Loop:
+                StartLoop(s, initialState);
+                break;
+            case BlendMode.Cycle:
+                StartCycle(s, initialState);
+                break;
+            case BlendMode.EndCycle:
+                StartEndCycle(s, initialState);
+                break;
         }
     }
+
+    public static void Start(int initialState = 1)
+        => Start(BlendSettingsLoader.ActiveRegion, initialState);
 
     public static void Stop()
     {
-        IsRunning          = false;
-        CurrentT           = 0f;
-        GlobalT            = 0f;
-        CurrentPhase       = Phase.Idle;
-        SubPhaseIndex      = 0;
-        SubPhaseLocalT     = 0f;
-        IsFirstHalf        = true;
-        _timer             = 0f;
-        _seq               = null;
-        _cycleSeq          = null;
+        IsRunning = false;
+        T = 0f;
+        CurrentPhase = Phase.Idle;
+        _timer = 0f;
+        _sequence = null;
         _customPendingStop = false;
-        RSPlugin.log.LogDebug("[BlendClock] Stopped.");
+        _regionCode = null;
+        _lastTransitionIndex = -1;
     }
 
-    public static void ForceStates(int a, int b) { StateA = a; StateB = b; }
-
-    // Progreso [0..1] del idle actual.
-    // Solo Loop/Custom/EndCycle tienen idle propio con _timer.
-    // Cycle no tiene idle propio (depende de rain timer) → siempre 0.
-    public static float IdleProgress
+    public static void Tick(float dt, float rainTimer = 0f, int rainCycleLength = 1)
     {
-        get
-        {
-            if (CurrentPhase != Phase.Idle) return 0f;
-            var s = BlendSettingsLoader.Active;
-            if (s == null) return 0f;
-            float idleTime = s.Mode switch
-            {
-                BlendMode.Loop     => s.LoopIdleTime,
-                BlendMode.Custom   => s.LoopIdleTime,
-                BlendMode.EndCycle => s.EndCycleIdleTime,
-                _                  => 0f
-            };
-            return idleTime > 0f ? Mathf.Clamp01(_timer / idleTime) : 0f;
-        }
-    }
-
-    // Inyecta progreso heredado de region anterior tras un Start().
-    // Solo se llama cuando modo origen == modo destino.
-    // Cycle idle: no inyectable (rain timer manda) -> solo hereda blend.
-    public static void InjectProgress(float progress, bool wasBlending)
-    {
-        if (!IsRunning) return;
+        if (!IsRunning || EditMode) return;
         var s = BlendSettingsLoader.Active;
         if (s == null) return;
 
-        switch (s.Mode)
+        _rainTimer = rainTimer;
+        _rainCycleLen = Mathf.Max(1, rainCycleLength);
+        _timer += dt;
+
+        switch (_mode)
         {
             case BlendMode.Loop:
-            case BlendMode.Custom:
-            {
-                float dur  = s.LoopDuration > 0f ? s.LoopDuration : 1f;
-                float idle = s.LoopIdleTime  > 0f ? s.LoopIdleTime : 0f;
-                CurrentPhase = wasBlending ? Phase.Blending : Phase.Idle;
-                _timer       = wasBlending ? progress * dur : progress * idle;
+                TickLoop(s);
                 break;
-            }
-            case BlendMode.EndCycle:
-            {
-                float dur  = s.EndCycleDuration > 0f ? s.EndCycleDuration : 1f;
-                float idle = s.EndCycleIdleTime  > 0f ? s.EndCycleIdleTime : 0f;
-                CurrentPhase = wasBlending ? Phase.Blending : Phase.Idle;
-                _timer       = wasBlending ? progress * dur : progress * idle;
-                break;
-            }
             case BlendMode.Cycle:
-            {
-                if (!wasBlending) return;
-                float dur = s.CycleDuration > 0f ? s.CycleDuration : 1f;
-                CurrentPhase = Phase.Blending;
-                _timer       = progress * dur;
+                TickCycle(s);
                 break;
-            }
+            case BlendMode.EndCycle:
+                TickEndCycle(s);
+                break;
         }
     }
 
-    public static void Tick(float dt, float rainTimer = 0f, int rainCycleLen = 1)
+    // ============================================================
+    // SECUENCIAS INTRÍNSECAS
+    // ============================================================
+    private static List<int> BuildLoopSequence(int initialState)
     {
-        if (!IsRunning) return;
-        if (EditMode) return;
-        var s = BlendSettingsLoader.Active;
-        if (s == null) return;
-
-        _rainTimer    = rainTimer;
-        _rainCycleLen = Mathf.Max(1, rainCycleLen);
-        _timer       += dt;
-
-        switch (s.Mode)
-        {
-            case BlendMode.Loop:
-            case BlendMode.Custom:
-                switch (CurrentPhase)
-                {
-                    case Phase.Idle:     TickIdle(s);    break;
-                    case Phase.Blending: TickBlend(s);   break;
-                    case Phase.Done:     TickDone(s);    break;
-                }
-                break;
-            case BlendMode.Cycle:    TickCycle(s);    break;
-            case BlendMode.EndCycle: TickEndCycle(s); break;
-        }
+        var laneA = new List<int>();
+        var laneB = new List<int>();
+        
+        for (int i = 0; i < 3; i++)
+            laneA.Add(((initialState - 1 + i) % 4) + 1);
+        
+        for (int i = 2; i < 5; i++)
+            laneB.Add(((initialState - 1 + i) % 4) + 1);
+        
+        var flat = new List<int>(laneA);
+        for (int i = 1; i < laneB.Count; i++)
+            flat.Add(laneB[i]);
+        
+        if (flat.Count > 1 && flat[flat.Count - 1] == flat[0])
+            flat.RemoveAt(flat.Count - 1);
+        
+        return flat;
     }
 
-    // ────────────────────
+    private static List<int> BuildCycleSequence(int initialState)
+    {
+        var seq = new List<int>();
+        for (int i = 0; i < 3; i++)
+            seq.Add(((initialState - 1 + i) % 4) + 1);
+        return seq;
+    }
 
+    private static int CalculateTransitionIndex()
+    {
+        if (_sequence == null || _sequence.Count < 2) return 0;
+        float stepSize = 1f / _sequence.Count;
+        return Mathf.Min(Mathf.FloorToInt(T / stepSize), _sequence.Count - 1);
+    }
+
+    private static float CalculateLocalT()
+    {
+        if (_sequence == null || _sequence.Count < 2) return 0f;
+        float stepSize = 1f / _sequence.Count;
+        int idx = CalculateTransitionIndex();
+        float tStart = idx * stepSize;
+        float tEnd = (idx + 1) * stepSize;
+        if (tEnd <= tStart) return 0f;
+        return Mathf.Clamp01((T - tStart) / (tEnd - tStart));
+    }
+
+    private static void UpdateStatesFromT()
+    {
+        if (_sequence == null || _sequence.Count < 2) return;
+        
+        int transIdx = CalculateTransitionIndex();
+        int nextIdx = (transIdx + 1) % _sequence.Count;
+        
+        StateA = _sequence[transIdx];
+        StateB = _sequence[nextIdx];
+
+        if (transIdx != _lastTransitionIndex)
+            _lastTransitionIndex = transIdx;
+    }
+
+    // ============================================================
+    // LOOP
+    // ============================================================
     private static void StartLoop(BlendSettings s, int initialState)
     {
-        int resolved = FindFirstValidState(s, initialState);
-        if (resolved < 0) { RSPlugin.log.LogWarning("[BlendClock] StartLoop: no valid state."); return; }
+        _sequence = BuildLoopSequence(initialState);
+        if (_sequence == null || _sequence.Count < 4)
+            _sequence = new List<int> { 1, 2, 3, 4 };
 
-        List<int> flat = BuildFlatLoop(s, resolved);
-        if (flat == null || flat.Count < 2)
-        {
-            RSPlugin.log.LogDebug($"[BlendClock] StartLoop: no transition for state {resolved}. Idle.");
-            return;
-        }
-
-        _seq       = flat;
-        _anchorIdx = _seq.Count / 2;
-        EnterFirstHalf();
-        CurrentPhase = Phase.Idle;
-        IsRunning    = true;
-
-        RSPlugin.log.LogDebug(
-            $"[BlendClock] Loop started. seq=[{string.Join(",", _seq)}] " +
-            $"anchor={_seq[_anchorIdx]}(idx={_anchorIdx}) " +
-            $"idle={s.LoopIdleTime}s dur={s.LoopDuration}s");
-    }
-
-    private static List<int> BuildFlatLoop(BlendSettings s, int resolved)
-    {
-        var laneData = s.GetLoopLane(resolved);
-        if (laneData.HasValue && laneData.Value.IsValid)
-        {
-            var ld = laneData.Value;
-            List<int> first, second;
-            if (ld.LaneA.Count > 0 && ld.LaneA[0] == resolved)
-            { first = ld.LaneA; second = ld.LaneB; }
-            else if (ld.LaneB.Count > 0 && ld.LaneB[0] == resolved)
-            { first = ld.LaneB; second = ld.LaneA; }
-            else
-            {
-                RSPlugin.log.LogWarning(
-                    $"[BlendClock] resolved={resolved} not at [0] of either lane. Using LaneA.");
-                first = ld.LaneA; second = ld.LaneB;
-            }
-            var flat = new List<int>(first);
-            for (int i = 1; i < second.Count; i++) flat.Add(second[i]);
-            return flat;
-        }
-
-        var seq = BuildSeqFrom(s, resolved);
-        if (seq.Count < 2) return null;
-        var result = new List<int>(seq);
-        if (result[result.Count - 1] != resolved) result.Add(resolved);
-        return result;
-    }
-
-    private static void EnterFirstHalf()
-    {
-        IsFirstHalf    = true;
-        _halfStart     = 0;
-        _halfEnd       = _anchorIdx;
-        CurrentT       = 0f;
-        SubPhaseIndex  = 0;
-        SubPhaseLocalT = 0f;
-        _timer         = 0f;
-        GlobalT        = 0f;
-        UpdateSeqStates(_seq, _halfStart);
-    }
-
-    private static void EnterSecondHalf()
-    {
-        IsFirstHalf    = false;
-        _halfStart     = _anchorIdx;
-        _halfEnd       = _seq.Count - 1;
-        CurrentT       = 0f;
-        SubPhaseIndex  = 0;
-        SubPhaseLocalT = 0f;
-        _timer         = 0f;
-        GlobalT        = 0.5f;
-        UpdateSeqStates(_seq, _halfStart);
-    }
-
-    private static void TickIdle(BlendSettings s)
-    {
-        if (_timer < s.LoopIdleTime) return;
-        RSPlugin.log.LogDebug(
-            $"[BlendClock] Idle → Blending {(IsFirstHalf ? "first" : "second")} half " +
-            $"[{string.Join("→", _seq.GetRange(_halfStart, _halfEnd - _halfStart + 1))}]");
+        T = 0f;
         _timer = 0f;
-        CurrentPhase = Phase.Blending;
-        CurrentT = 0f; SubPhaseIndex = 0; SubPhaseLocalT = 0f;
-        UpdateSeqStates(_seq, _halfStart);
+        _lastTransitionIndex = -1;
+        CurrentPhase = Phase.Idle;
+        UpdateStatesFromT();
+        IsRunning = true;
     }
 
-    private static void TickBlend(BlendSettings s)
+    private static void TickLoop(BlendSettings s)
     {
-        float dur      = s.LoopDuration > 0f ? s.LoopDuration : 1f;
-        int   subCount = _halfEnd - _halfStart;
-
-        if (subCount <= 0) { RSPlugin.log.LogWarning("[BlendClock] TickBlend: half has 0 transitions."); Stop(); return; }
-
-        float subSize = 1f / subCount;
-        CurrentT = Mathf.Clamp01(_timer / dur);
-        GlobalT  = IsFirstHalf ? CurrentT * 0.5f : 0.5f + CurrentT * 0.5f;
-
-        int   newSub = Mathf.Min(Mathf.FloorToInt(CurrentT / subSize), subCount - 1);
-        float locT   = Mathf.Clamp01((CurrentT - newSub * subSize) / subSize);
-
-        if (newSub != SubPhaseIndex) { SubPhaseIndex = newSub; UpdateSeqStates(_seq, _halfStart); }
-        SubPhaseLocalT = locT;
-
-        if (_timer < dur) return;
-
-        CurrentT = 1f; SubPhaseIndex = subCount - 1; SubPhaseLocalT = 1f;
-        UpdateSeqStates(_seq, _halfStart);
-        _timer       = 0f;
-        CurrentPhase = Phase.Done;
-        GlobalT      = IsFirstHalf ? 0.5f : 1.0f;
-
-        RSPlugin.log.LogDebug(
-            $"[BlendClock] {(IsFirstHalf ? "First" : "Second")} half complete → Done" +
-            (_customPendingStop ? " (custom stop pending)" : ""));
-    }
-
-    private static void TickDone(BlendSettings s)
-    {
-        if (_customPendingStop) { Stop(); return; }
-
-        if (IsFirstHalf)
+        if (CurrentPhase == Phase.Idle)
         {
-            // Primera mitad completa → entrar directo en segunda mitad sin espera adicional
-            // El idle de la segunda mitad se maneja en TickIdle
-            EnterSecondHalf();
-            CurrentPhase = Phase.Idle;
-            RSPlugin.log.LogDebug($"[BlendClock] Done(first) → Idle before second half. Anchor={StateA}");
+            if (_timer < _idleDuration) return;
+
+            _timer = 0f;
+            CurrentPhase = Phase.Blending;
+            
+            if (T >= 1.0f) T = 0f;
+            UpdateStatesFromT();
         }
-        else
+        else if (CurrentPhase == Phase.Blending)
         {
-            var settings = BlendSettingsLoader.Active;
-            if (settings != null)
-                foreach (int st in _seq)
-                    if (!StateExists(settings, st))
-                    { RSPlugin.log.LogWarning($"[BlendClock] State {st} missing. Stopping."); Stop(); return; }
+            float progress = Mathf.Clamp01(_timer / _blendDuration);
+            
+            float tStart = IsFirstHalf ? 0f : 0.5f;
+            float tEnd = IsFirstHalf ? 0.5f : 1.0f;
+            T = Mathf.Lerp(tStart, tEnd, progress);
+            UpdateStatesFromT();
 
-            EnterFirstHalf();
-            CurrentPhase = Phase.Idle;
-            RSPlugin.log.LogDebug($"[BlendClock] Done(second) → Idle before first half. StateA={StateA}");
+            if (_timer >= _blendDuration)
+            {
+                T = tEnd;
+                UpdateStatesFromT();
+                _timer = 0f;
+                CurrentPhase = Phase.Idle;
+
+                if (T >= 1.0f)
+                {
+                    if (_customPendingStop)
+                    {
+                        Stop();
+                        return;
+                    }
+                    T = 0f;
+                    _lastTransitionIndex = -1;
+                    UpdateStatesFromT();
+                }
+            }
         }
     }
 
-    private static void UpdateSeqStates(List<int> seq, int halfStart)
-    {
-        if (seq == null || seq.Count < 2) return;
-        int ia = Mathf.Clamp(halfStart + SubPhaseIndex,     0, seq.Count - 1);
-        int ib = Mathf.Clamp(halfStart + SubPhaseIndex + 1, 0, seq.Count - 1);
-        StateA = seq[ia];
-        StateB = seq[ib];
-    }
-
-    // ────────────────────
-
+    // ============================================================
+    // CYCLE
+    // ============================================================
     private static void StartCycle(BlendSettings s, int initialState)
     {
-        int resolved = FindFirstValidState(s, initialState);
-        if (resolved < 0) { RSPlugin.log.LogWarning("[BlendClock] StartCycle: no valid state."); return; }
-        var seq = BuildSeqFrom(s, resolved);
-        if (seq.Count < 2) { RSPlugin.log.LogInfo("[BlendClock] StartCycle: no transition."); return; }
-        _cycleSeq = seq;
-        ResetCycleCounters();
+        _sequence = BuildCycleSequence(initialState);
+        if (_sequence == null || _sequence.Count < 3)
+            _sequence = new List<int> { 1, 2, 3 };
+
+        T = 0f;
+        _timer = 0f;
+        _lastTransitionIndex = -1;
+        CurrentPhase = Phase.Blending;
+        UpdateStatesFromT();
         IsRunning = true;
-        RSPlugin.log.LogDebug($"[BlendClock] Cycle started. seq=[{string.Join(",", seq)}] trigger={s.CycleTriggerPct:P0} dur={s.CycleDuration}s");
-    }
-
-    private static void ResetCycleCounters()
-    {
-        CurrentT = 0f; SubPhaseIndex = 0; SubPhaseLocalT = 0f; _timer = 0f;
-        CurrentPhase = Phase.Idle;
-        UpdateCycleStates();
-    }
-
-    private static void UpdateCycleStates()
-    {
-        if (_cycleSeq == null || _cycleSeq.Count < 2) return;
-        StateA = _cycleSeq[Mathf.Clamp(SubPhaseIndex,     0, _cycleSeq.Count - 1)];
-        StateB = _cycleSeq[Mathf.Clamp(SubPhaseIndex + 1, 0, _cycleSeq.Count - 1)];
     }
 
     private static void TickCycle(BlendSettings s)
     {
-        if (CurrentPhase == Phase.Idle)
+        if (CurrentPhase != Phase.Blending) return;
+
+        float progress = Mathf.Clamp01(_timer / _blendDuration);
+        T = progress;
+        UpdateStatesFromT();
+
+        if (_timer >= _blendDuration)
         {
-            if (_rainTimer < s.CycleTriggerPct * _rainCycleLen) return;
-            _timer = 0f; CurrentT = 0f; SubPhaseIndex = 0; SubPhaseLocalT = 0f;
-            CurrentPhase = Phase.Blending; UpdateCycleStates();
-            RSPlugin.log.LogInfo($"[BlendClock] Cycle triggered {_rainTimer:F1}/{_rainCycleLen}.");
-        }
-        else if (CurrentPhase == Phase.Blending)
-        {
-            TickLinearBlend(s.CycleDuration, _cycleSeq, UpdateCycleStates, () =>
-            {
-                CurrentPhase = Phase.Done;
-                RSPlugin.log.LogInfo($"[BlendClock] Cycle complete at state {StateB}.");
-            });
+            T = 1f;
+            UpdateStatesFromT();
+            CurrentPhase = Phase.Idle;
         }
     }
 
-    // ────────────────────
-
+    // ============================================================
+    // ENDCYCLE
+    // ============================================================
     private static void StartEndCycle(BlendSettings s, int initialState)
     {
-        int resolved = FindFirstValidState(s, initialState);
-        if (resolved < 0) { RSPlugin.log.LogWarning("[BlendClock] StartEndCycle: no valid state."); return; }
-        var seq = BuildSeqFrom(s, resolved);
-        if (seq.Count < 2) { RSPlugin.log.LogInfo("[BlendClock] StartEndCycle: no transition."); return; }
-        _cycleSeq = seq;
-        ResetCycleCounters();
+        _sequence = BuildCycleSequence(initialState);
+        if (_sequence == null || _sequence.Count < 3)
+            _sequence = new List<int> { 1, 2, 3 };
+
+        T = 0f;
+        _timer = 0f;
+        _lastTransitionIndex = -1;
+
+        if (_idleDuration > 0f)
+        {
+            CurrentPhase = Phase.Idle;
+            UpdateStatesFromT();
+        }
+        else
+        {
+            CurrentPhase = Phase.Blending;
+            UpdateStatesFromT();
+        }
+
         IsRunning = true;
-        RSPlugin.log.LogDebug($"[BlendClock] EndCycle started. seq=[{string.Join(",", seq)}] idle={s.EndCycleIdleTime}s dur={s.EndCycleDuration}s target={s.EndCycleTargetState}");
     }
 
     private static void TickEndCycle(BlendSettings s)
     {
         if (CurrentPhase == Phase.Idle)
         {
-            if (_timer < s.EndCycleIdleTime) return;
-            _timer = 0f; CurrentT = 0f; SubPhaseIndex = 0; SubPhaseLocalT = 0f;
-            CurrentPhase = Phase.Blending; UpdateCycleStates();
-            RSPlugin.log.LogInfo($"[BlendClock] EndCycle idle done. Blending {s.EndCycleDuration}s.");
+            if (_timer < _idleDuration) return;
+            _timer = 0f;
+            CurrentPhase = Phase.Blending;
+            UpdateStatesFromT();
         }
         else if (CurrentPhase == Phase.Blending)
         {
-            TickLinearBlend(s.EndCycleDuration, _cycleSeq, UpdateCycleStates, () =>
+            float progress = Mathf.Clamp01(_timer / _blendDuration);
+            T = progress;
+            UpdateStatesFromT();
+
+            if (_timer >= _blendDuration)
             {
-                CurrentPhase = Phase.Done;
-                if (s.EndCycleTargetState == 2)
-                {
-                    int bridge = StateB;
-                    RSPlugin.log.LogInfo($"[BlendClock] EndCycle → bridging to Loop from {bridge}.");
-                    Stop();
-                    var settings = BlendSettingsLoader.Active;
-                    if (settings != null) StartLoopSkipIdle(settings, bridge);
-                }
-                else RSPlugin.log.LogInfo($"[BlendClock] EndCycle complete at state {StateB}.");
-            });
+                T = 1f;
+                UpdateStatesFromT();
+                CurrentPhase = Phase.Idle;
+                IsRunning = false;
+            }
         }
-    }
-
-    private static void TickLinearBlend(float duration, List<int> seq,
-        System.Action updateStates, System.Action onDone)
-    {
-        if (duration <= 0f) duration = 1f;
-        int subCount = seq != null ? seq.Count - 1 : 0;
-        if (subCount <= 0) { Stop(); return; }
-
-        float subSize = 1f / subCount;
-        CurrentT = Mathf.Clamp01(_timer / duration);
-
-        int   newSub = Mathf.Min(Mathf.FloorToInt(CurrentT / subSize), subCount - 1);
-        float locT   = Mathf.Clamp01((CurrentT - newSub * subSize) / subSize);
-
-        if (newSub != SubPhaseIndex) { SubPhaseIndex = newSub; updateStates(); }
-        SubPhaseLocalT = locT;
-
-        if (_timer < duration) return;
-        CurrentT = 1f; SubPhaseIndex = subCount - 1; SubPhaseLocalT = 1f;
-        updateStates(); _timer = 0f; onDone();
-    }
-
-    private static void StartLoopSkipIdle(BlendSettings s, int fromState)
-    {
-        int resolved = FindFirstValidState(s, fromState);
-        if (resolved < 0) return;
-        List<int> flat = BuildFlatLoop(s, resolved);
-        if (flat == null || flat.Count < 2) return;
-
-        _seq       = flat;
-        _anchorIdx = _seq.Count / 2;
-        EnterFirstHalf();
-        CurrentPhase = Phase.Blending;
-        IsRunning    = true;
-        RSPlugin.log.LogDebug($"[BlendClock] Loop (skip-idle) from {resolved}. seq=[{string.Join(",", _seq)}]");
-    }
-
-    // ────────────────────
-
-    private static int FindFirstValidState(BlendSettings s, int start)
-    {
-        if (StateExists(s, start)) return start;
-        var seq = s.GetSequenceFor(start);
-        if (seq != null) foreach (int st in seq) if (StateExists(s, st)) return st;
-        RSPlugin.log.LogWarning($"[BlendClock] State {start} not found. Cannot start.");
-        return -1;
-    }
-
-    private static List<int> BuildSeqFrom(BlendSettings s, int stateA)
-    {
-        var d = s.GetSequenceFor(stateA);
-        return (d != null && d.Count > 0) ? d : new List<int> { stateA };
-    }
-
-    private static bool StateExists(BlendSettings s, int state)
-    {
-        if (state < 1) return false;
-        if (!s._hasRoomsSection || s.Rooms.Count == 0) return true;
-        foreach (string room in s.Rooms.Keys)
-            if (StateFileResolver.GetRainStateSettingsFile(room, state) != null) return true;
-        return false;
     }
 }

@@ -6,6 +6,8 @@ using BepInEx.Logging;
 using RainCycles.Core;
 using RainCycles.Settings;
 using RainCycles.Clock;
+using RainCycles.Patches;
+using RainCycles.Blend;
 using FilesSetting;
 
 #pragma warning disable CS0618
@@ -47,14 +49,20 @@ public class RSPlugin : BaseUnityPlugin
             bool ok = MachineConnector.SetRegisteredOI(ID, _options);
             Logger.LogDebug($"[RC] SetRegisteredOI result: {ok}");
 
+            // NUEVO: Sistema centralizado de limpieza
+            ModResetter.Init();
+            
             RCDEVTools.Init();
             StateFileResolver.Init();
-            CustomModeState.Init();
             SettingsBlendController.Init();
+            StaticTintManager.Init();
             BlendSettingsLoader.Init();
             BlendClockUpdater.Init();
             ArenaBlendController.Init();
-
+            RoomSettingsPatches.Init();
+            RainTimerHudController.Init();
+            RoomCameraExtensions.InitPreloadHooks();
+            
             Logger.LogInfo($"[{NAME}] {VER} loaded successfully!");
         }
         catch (Exception ex)

@@ -1,105 +1,99 @@
 using UnityEngine;
 using RainCycles.Settings;
 using RainCycles.Snapshot;
-using RainCycles.Sky;
 using RainCycles.Clock;
 using RainCycles.Core;
+using RainCycles.Blend;
 
 namespace RainCycles.Core;
 
-// Motor de blend: ApplyBlend, MixAndApply
 public static partial class SettingsBlendController
 {
-    // ── Blend por frame
+    // ─── CONTADORES PARA DIAGNÓSTICO DE RENDIMIENTO ───
+    private static int _vanillaApplyFadeCount = 0;
+    private static int _vanillaLastLoggedFrame = 0;
 
     private static void ApplyBlend(float t)
     {
-        if (_snapA == null || _snapB == null || _room == null) return;
+        if (_snapA == null || _snapB == null || _room == null)
+            return;
 
         var cam = _room.game?.cameras?[0];
-        if (cam == null) return;
+        if (cam == null)
+            return;
 
-        if (!BlendTextureManager.Ready)
-            BlendTextureManager.Load(cam, _snapA, _snapB, _snapOriginal);
+        // ================================================================
+        // 1. PALETAS — COMPLETAMENTE AUTÓNOMAS
+        // ================================================================
+        var blendData = cam.GetBlendData();
+        if (blendData == null || !blendData.isBlendActive)
+            cam.SetBlendActive(_room.abstractRoom.name);
+        
+        cam.UpdateBlendPalette();
 
+        // ================================================================
+        // 2. TINTES — Shaders globales
+        // ================================================================
         var lerped = SettingsSnapshot.Lerp(_snapA, _snapB, t);
         _activeSnapshot = lerped;
 
-        // Mantener _lastAtmosphereColor siempre actualizado al valor lerpeado actual.
         if (lerped.TintCloudAtmosphere.HasValue)
             _lastAtmosphereColor = lerped.TintCloudAtmosphere.Value;
-        var rs = _room.roomSettings;
-        rs.Grime                 = lerped.Grime;
-        // Clouds: ceder a Forecast/mods de clima si tienen WeatherController en esta sala
-        if (!RoomHasWeatherController(_room))
-            rs.Clouds            = lerped.Clouds;
-        rs.CeilingDrips          = lerped.CeilingDrips;
-        rs.BkgDroneVolume        = lerped.BkgDroneVolume;
-        rs.RandomItemDensity     = lerped.RandomItemDensity;
-        rs.RandomItemSpearChance = lerped.RandomItemSpearChance;
-        rs.WaterReflectionAlpha  = lerped.WaterReflectionAlpha;
 
-        RoomEffectsApplier.ApplyShaderGlobals(lerped);
+        if (lerped.TintMultiply.HasValue)
+        {
+            var c = lerped.TintMultiply.Value;
+            Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, new Vector4(c.r, c.g, c.b, 1f));
+        }
+        if (lerped.TintAtmosphere.HasValue)
+        {
+            var c = lerped.TintAtmosphere.Value;
+            Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, new Vector4(c.r, c.g, c.b, 1f));
+        }
+
+        // ================================================================
+        // 3. ROOMSETTINGS — Propiedades escalares
+        // ================================================================
+        var rs = _room.roomSettings;
+        rs.Grime = lerped.Grime;
+        if (!RoomHasWeatherController(_room))
+            rs.Clouds = lerped.Clouds;
+        rs.CeilingDrips = lerped.CeilingDrips;
+        rs.BkgDroneVolume = lerped.BkgDroneVolume;
+        rs.RandomItemDensity = lerped.RandomItemDensity;
+        rs.RandomItemSpearChance = lerped.RandomItemSpearChance;
+        rs.WaterReflectionAlpha = lerped.WaterReflectionAlpha;
+
+        // ================================================================
+        // 4. MIXANDAPPLY — Decals, luces, efectos, terrain
+        // ================================================================
         MixAndApply(cam, t, lerped);
 
-        // Aplicar globals de fondo aquí cubre salas sin RoofTopView/AboveCloudsView
-        OverrideBackgroundGlobalsIfActive(_room);
-
-        // En modo no-externo (slider manual) los lights se aplican aquí junto con
         if (!_externalT)
         {
             RoomEffectsApplier.ApplyLightSources(_room, lerped);
             RoomEffectsApplier.ApplyLightBeams(_room, lerped);
         }
-    }
 
-    // ELIMINADO: bakear TintMultiply/TintAtmosphere en fadeTexA[1,7] y [2,7] causaba que paletteTexture.skyColor/fogColor quedaran contaminados con el color del tinte. Esos píxeles los lee PixelColorAtCoordinate para colorear tiles y objetos físicos — exactamente los objetos que NO deben ser teñidos.  El mecanismo correcto es doble: 1. ShadPropMultiplyColor / ShadPropAboveCloudsAtmosphereColor se setean via Shader.SetGlobalVector en OverrideBackgroundGlobalsIfActive y OnUpdateDayNightPalette — afectan solo los shaders Background/DistantBkgObject. 2. OnApplyFade sobreescribe currentPalette.skyColor/fogColor directamente sobre la struct después de cada ApplyFade — el vanilla los lee para backgroundGraphic.color y RoofTopView.Update sin tocar fadeTexA.
-    private static void BakeTintIntoFadeTex(RoomCamera cam, SettingsSnapshot snap)
-    {
-// no-op intencional
+        // Crossfade alpha en slots de fondo
+        if (_room != null)
+        {
+            var skyType = GetViewFromLoadedSettings(_room);
+            if (skyType != SkyType.None)
+                ApplyRcSlotsAlpha(skyType, t, isBlending: true);
+        }
     }
 
     private static void MixAndApply(RoomCamera cam, float t, SettingsSnapshot lerped)
     {
-        if (!BlendTextureManager.Ready) return;
-
-        // Interpolar opacidad de FadePalette según posición de cámara
-        int   camIdx     = cam.currentCameraPosition;
-        float opacA      = camIdx < _snapA.FadePaletteOpacities.Length ? _snapA.FadePaletteOpacities[camIdx] : 0f;
-        float opacB      = camIdx < _snapB.FadePaletteOpacities.Length ? _snapB.FadePaletteOpacities[camIdx] : 0f;
-        cam.paletteBlend = Mathf.Lerp(opacA, opacB, t);
-
-        bool camChanged = camIdx != _lastCamIdx;
-        _lastCamIdx = camIdx;
-
-        // Throttle: MixPalettes + Texture2D.Apply son costosos (upload CPU→GPU).
-        // camChanged fuerza refresco inmediato al moverse a otra screen durante blend.
-        const float PALETTE_THRESHOLD = 0.008f;
-        if (Mathf.Abs(t - _lastPaletteT) >= PALETTE_THRESHOLD || _lastPaletteT < 0f || camChanged)
-        {
-            _lastPaletteT = t;
-            BlendTextureManager.MixPalettes(cam, t);
-            cam.ApplyFade();
-            RoomEffectsApplier.ApplyLightSources(_room, lerped);
-            RoomEffectsApplier.ApplyLightBeams(_room, lerped);
-
-            // El fade de terrain está horneado dentro de TerrainPxA/B con el camIdx del Load.
-            // Al moverse a otra screen hay que rebakear con el nuevo camIdx para que
-            // MixTerrainPalette lerp con la opacidad correcta para esa posición.
-            if (camChanged && BlendTextureManager.TerrainReady)
-                BlendTextureManager.LoadTerrain(cam, _snapA, _snapB);
-        }
-
         RoomEffectsApplier.ApplyDecalOpacities(_room, lerped);
         RoomEffectsApplier.ApplyScalarEffects(_room, lerped);
         RoomEffectsApplier.ApplyTerrainScalars(_room, lerped);
 
-        // Terrain palette blend — pixel-a-pixel igual que paletas normales
         if (BlendTextureManager.TerrainReady)
-            BlendTextureManager.MixTerrainPalette(cam, t);
+            BlendTextureManager.MixTerrainPalette(cam, t, _snapA, _snapB);
     }
-    // Detecta si un mod de clima (Forecast u otro) gestiona Clouds en esta sala.
-    // Usa reflexión por nombre para evitar dependencia directa en el assembly de Forecast.
+
     private static bool RoomHasWeatherController(Room room)
     {
         if (room == null) return false;
@@ -108,4 +102,61 @@ public static partial class SettingsBlendController
         return false;
     }
 
+    private static void OnChangeBothPalettes(
+        On.RoomCamera.orig_ChangeBothPalettes orig, RoomCamera self,
+        int palA, int palB, float blend)
+    {
+        var blendData = self.GetBlendData();
+        bool isBlendActive = blendData != null && blendData.isBlendActive;
+
+        // DEFENSA: si la cámara está cargando una nueva sala vanilla, nunca bloquear.
+        // Durante ChangeRoom, self.room aún es la anterior pero loadingRoom es la nueva.
+        if (self.loadingRoom != null && !IsBlendRoom(self.loadingRoom))
+        {
+            orig(self, palA, palB, blend);
+            return;
+        }
+
+        // DEFENSA: si la cámara ya está en una sala vanilla con datos residuales,
+        // limpiar el flag y permitir que vanilla maneje sus paletas.
+        if (self.room != null && !IsBlendRoom(self.room) && isBlendActive)
+        {
+            if (blendData != null) blendData.isBlendActive = false;
+            orig(self, palA, palB, blend);
+            return;
+        }
+
+        if (_active && _room != null && self.room == _room && isBlendActive
+            && !_moveCameraThisFrame)
+        {
+            return;
+        }
+        orig(self, palA, palB, blend);
+    }
+
+    private static void OnApplyPalette(On.RoomCamera.orig_ApplyPalette orig, RoomCamera self)
+    {
+        orig(self);
+
+        if (_active && BlendTextureManager.TerrainReady && self.terrainPalette != null)
+        {
+            float t = _externalT ? _forcedT : BlendClock.SubPhaseLocalT;
+            BlendTextureManager.MixTerrainPalette(self, t, _snapA, _snapB);
+        }
+    }
+
+    public static void OnApplyFade(On.RoomCamera.orig_ApplyFade orig, RoomCamera self)
+    {
+        // ─── LOG DE RENDIMIENTO: contar llamadas a vanilla ApplyFade ───
+        if (Time.frameCount - _vanillaLastLoggedFrame >= 60)
+        {
+            _vanillaLastLoggedFrame = Time.frameCount;
+            RSPlugin.log.LogInfo($"[PERF] Vanilla ApplyFade llamado {_vanillaApplyFadeCount} veces en últimos 60 frames");
+            _vanillaApplyFadeCount = 0;
+        }
+        _vanillaApplyFadeCount++;
+
+        // Por ahora solo medimos, no bloqueamos
+        orig(self);
+    }
 }

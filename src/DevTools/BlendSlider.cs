@@ -3,49 +3,84 @@ using UnityEngine;
 
 namespace FilesSetting;
 
-/// <summary>
-/// Slider A — Cycle/EndCycle: blend 0→100%
-/// Slider B — Loop/Custom:   full trip 0→100% (first half 0→50%, pause, second half 50→100%)
-/// </summary>
+// Slider único de blend — estilo visual vanilla.
 public class BlendSlider : PositionedDevUINode, IDevUISignals
 {
-    public static float BlendFactor  = 0f;  // Slider A
-    public static float BlendFactorB = 0f;  // Slider B
+    public static float BlendFactor = 0f;
 
-    private const float SLIDER_WIDTH  = 160f;
-    private const float HEIGHT        = 15f;
-    private const float RESET_WIDTH   = 25f;
-    private const float RESET_SPACING = 5f;
+    private const float SLIDER_WIDTH   = 100f;
+    private const float HEIGHT         = 16f;
+    private const float NUB_WIDTH      = 8f;
+    private const float CLEAR_WIDTH    = 30f;
+    private const float LABEL_WIDTH    = 22f;
+    private const float GAP            = 5f;
+
+    // Clear pegado a la derecha, luego slider, luego label
+    private const float LABEL_X   = 43f;
+    private const float SLIDER_X  = 70f;
+    private const float CLEAR_X   = 175f;
+
+    private float SliderStartX => absPos.x + SLIDER_X;
 
     private DevUILabel _label;
     private bool _dragging  = false;
     private bool _wasMoving = false;
-    private bool _isB;
     private bool _locked    = false;
     private RCPanel _panel;
-
-    private static string _activeDrag = null;
+    
+    // Para debugging del throttling
+    private float _lastReportedT = -1f;
 
     public BlendSlider(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos)
         : base(owner, IDstring, parentNode, pos)
     {
         _panel = parentNode as RCPanel;
-        _isB   = IDstring.EndsWith("B");
+
+        subNodes.Add(new DevUILabel(owner, IDstring + "_Title", this,
+            new Vector2(0f, 0f), 33f, "Blend"));
 
         _label = new DevUILabel(owner, IDstring + "_Label", this,
-            new Vector2(0f, 0f), (int)SLIDER_WIDTH, _isB ? "Blend B: 0%" : "Blend A: 0%");
+            new Vector2(LABEL_X, 0f), LABEL_WIDTH, "0");
         subNodes.Add(_label);
 
-        if (!_isB)
-            subNodes.Add(new Button(owner, IDstring + "_Reset", this,
-                new Vector2(SLIDER_WIDTH + RESET_SPACING, 0f), RESET_WIDTH, "R"));
+        subNodes.Add(new Button(owner, IDstring + "_Reset", this,
+            new Vector2(CLEAR_X, 0f), CLEAR_WIDTH, "Clear"));
+
+        // Barra de fondo
+        fSprites.Add(new FSprite("pixel"));
+        fSprites[0].scaleX = SLIDER_WIDTH;
+        fSprites[0].scaleY = HEIGHT;
+        fSprites[0].anchorX = 0f;
+        fSprites[0].anchorY = 0f;
+        fSprites[0].color = new Color(1f, 1f, 1f);
+        fSprites[0].alpha = 0.5f;
+        Futile.stage.AddChild(fSprites[0]);
+
+        // Línea indicadora
+        fSprites.Add(new FSprite("pixel"));
+        fSprites[1].scaleX = SLIDER_WIDTH;
+        fSprites[1].scaleY = 2f;
+        fSprites[1].anchorX = 0f;
+        fSprites[1].anchorY = 0f;
+        fSprites[1].color = new Color(0f, 0f, 0f);
+        Futile.stage.AddChild(fSprites[1]);
+
+        // Nub
+        fSprites.Add(new FSprite("pixel"));
+        fSprites[2].scaleX = NUB_WIDTH;
+        fSprites[2].scaleY = HEIGHT;
+        fSprites[2].anchorX = 0f;
+        fSprites[2].anchorY = 0f;
+        fSprites[2].color = new Color(0f, 0f, 0f);
+        Futile.stage.AddChild(fSprites[2]);
     }
 
     public void Signal(DevUISignalType type, DevUINode sender, string message)
     {
         if (sender.IDstring == IDstring + "_Reset")
         {
-            BlendFactor = BlendFactorB = 0f;
+            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            BlendFactor = 0f;
             _wasMoving  = false;
             SettingsBlendController.Detach();
             _panel?.ResetRelaySystem();
@@ -58,11 +93,24 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
         if (locked) SetDisplayT(0f);
     }
 
-    public void SetDisplayT(float t)
+public void SetDisplayT(float t)
+{
+    RSPlugin.log.LogDebug($"[BlendSlider] SetDisplayT: t={t:F3}, old BlendFactor={BlendFactor:F3}");
+    BlendFactor = t;
+    RefreshLabel();
+    Refresh();
+}
+
+    public void SetExternalT(float t)
     {
-        if (_isB) BlendFactorB = t;
-        else      BlendFactor  = t;
-        _label.Text = (_isB ? "Blend B: " : "Blend A: ") + Mathf.RoundToInt(t * 100f) + "%";
+        BlendFactor = t;
+        RefreshLabel();
+        Refresh();
+    }
+
+    private void RefreshLabel()
+    {
+        _label.Text = Mathf.RoundToInt(BlendFactor * 100f) + "%";
     }
 
     public override void Update()
@@ -77,41 +125,73 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
         }
         if (_locked && !BlendClock.EditMode) return;
 
+        float sliderStartX = SliderStartX;
         Vector2 mPos = owner.mousePos;
-        Vector2 aPos = absPos;
-        bool down = owner.mouseDown;
 
-        bool over = mPos.x >= aPos.x && mPos.x <= aPos.x + SLIDER_WIDTH &&
-                    mPos.y >= aPos.y && mPos.y <= aPos.y + HEIGHT;
+        bool over = mPos.x >= sliderStartX && mPos.x <= sliderStartX + SLIDER_WIDTH &&
+                    mPos.y >= absPos.y && mPos.y <= absPos.y + HEIGHT;
 
-        string id = _isB ? "B" : "A";
-        if (down && over && _activeDrag == null) _activeDrag = id;
-        if (!down && _activeDrag == id) { _activeDrag = null; _dragging = false; }
-        _dragging = (_activeDrag == id) && down;
+        if (_dragging)
+            fSprites[2].color = new Color(0f, 0f, 1f);
+        else if (over)
+            fSprites[2].color = new Color(1f, 0f, 0f);
+        else
+            fSprites[2].color = new Color(0f, 0f, 0f);
+
+        if (owner.mouseClick && over)
+            _dragging = true;
+        if (_dragging && !owner.mouseDown)
+            _dragging = false;
+
         if (!_dragging) return;
 
-        float newT = Mathf.Clamp01((mPos.x - aPos.x) / SLIDER_WIDTH);
-        int   pct  = Mathf.RoundToInt(newT * 100f);
+        float newT = Mathf.Clamp01((mPos.x - sliderStartX) / (SLIDER_WIDTH - NUB_WIDTH));
+        
+        // ================================================================
+        // CAMBIO CRÍTICO: Siempre actualizar durante el drag,
+        // incluso si el cambio es mínimo (ej: 0.250 → 0.249)
+        // ================================================================
+        
+        // Loggear cambios muy pequeños para debugging
+        if (Mathf.Abs(newT - BlendFactor) < 0.005f && Mathf.Abs(newT - _lastReportedT) > 0.001f)
+        {
+            RSPlugin.log.LogDebug($"[BlendSlider] Micro-movement: {BlendFactor:F4} → {newT:F4} (delta={newT - BlendFactor:F4})");
+            _lastReportedT = newT;
+        }
+        else if (Mathf.Abs(newT - BlendFactor) > 0.01f)
+        {
+            RSPlugin.log.LogDebug($"[BlendSlider] Normal movement: {BlendFactor:F3} → {newT:F3}");
+        }
 
-        if (_isB)
-        {
-            if (!_wasMoving && newT > 0f) _panel?.OnSliderBStarted();
-            bool prev = _wasMoving;
-            BlendFactorB = newT;
-            _label.Text  = "Blend B: " + pct + "%";
-            _wasMoving   = newT > 0f;
-            if (prev || _wasMoving) _panel?.OnSliderBMoved(newT);
-        }
-        else
-        {
-            if (!_wasMoving && newT > 0f) _panel?.OnSliderAStarted();
-            bool prev = _wasMoving;
-            BlendFactor = newT;
-            _label.Text = "Blend A: " + pct + "%";
-            _wasMoving  = newT > 0f;
-            if (prev) _panel?.OnSliderAMoved(newT);
-        }
+        // Iniciar la fase si es la primera vez que se mueve desde 0
+        if (!_wasMoving && newT > 0f) 
+            _panel?.OnSliderStarted();
+        
+        bool wasMovingPrev = _wasMoving;
+        BlendFactor = newT;
+        _label.Text = Mathf.RoundToInt(newT * 100f) + "%";
+        _wasMoving = newT > 0f;
+        
+        // CRÍTICO: Siempre llamar a OnSliderMoved durante el drag,
+        // no solo cuando wasMovingPrev es true.
+        // Esto garantiza que incluso movimientos lentos disparen actualizaciones.
+        _panel?.OnSliderMoved(newT);
+        
+        // Forzar actualización visual inmediata
+        Refresh();
     }
 
-    public static void Reset() { BlendFactor = BlendFactorB = 0f; }
+public override void Refresh()
+{
+    base.Refresh();
+    float sliderStartX = SliderStartX;
+    float nubX = sliderStartX + BlendFactor * (SLIDER_WIDTH - NUB_WIDTH);
+    RSPlugin.log.LogDebug($"[BlendSlider] Refresh: BlendFactor={BlendFactor:F3}, nubX={nubX:F1}, sliderStartX={sliderStartX:F1}");
+    
+    MoveSprite(0, new Vector2(sliderStartX, absPos.y));
+    MoveSprite(1, new Vector2(sliderStartX, absPos.y + 7f));
+    MoveSprite(2, new Vector2(nubX, absPos.y));
+}
+
+    public static void Reset() { BlendFactor = 0f; }
 }

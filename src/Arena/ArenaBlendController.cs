@@ -8,8 +8,12 @@ namespace RainCycles.Core;
 // Flujo:
 //   ArenaGameSession.ctor  → selecciona path del state, lo guarda en _selectedPath
 //   RoomSettings.ctor      → si es sala arena activa, reemplaza filePath y recarga
-//   ArenaGameSession.Initiate → activa blend si hay blend_settings.txt
+//   ArenaGameSession.Initiate → activa blend (usa su propio sistema, no blend_settings)
 //   ArenaGameSession.EndSession / ShutDownProcess → avanza contador, limpia
+//
+// NOTA: Arena funciona independientemente del sistema de blend_settings.
+//       No usa Clock ni RC_TYPE. Su blend se controla exclusivamente por
+//       blend_settings.txt dentro de la carpeta de Arena.
 
 public static class ArenaBlendController
 {
@@ -99,19 +103,19 @@ public static class ArenaBlendController
         if (ArenaStateResolver.HasBlendSettings(_currentRoom))
         {
             string blendPath = ArenaStateResolver.GetBlendSettingsPath(_currentRoom);
-            BlendSettingsLoader.LoadFromPath(blendPath, _currentRoom);
+            // Arena usa su propio sistema de blend, no depende de BlendSettingsLoader
+            // El archivo blend_settings.txt para arena se carga directamente desde ArenaStateResolver
+            RSPlugin.log.LogInfo($"[ArenaBlend] Arena blend settings found at {blendPath}");
 
             // Arrancar el clock — en arena el updater no lo hace automáticamente
-            var s = BlendSettingsLoader.Active;
-            if (s != null && !BlendClock.IsRunning && !BlendClock.EditMode)
+            // El clock de arena es independiente y no usa la configuración Clock del blend_settings regional
+            if (!BlendClock.IsRunning && !BlendClock.EditMode)
             {
                 int n = ArenaStateResolver.CountSettingsFiles(_currentRoom);
                 int initial = n > 0 ? (_sessionCount % n) + 1 : 1;
                 BlendClock.Start(initial);
+                RSPlugin.log.LogInfo($"[ArenaBlend] Arena clock started with initial state {initial}");
             }
-
-            RSPlugin.log.LogInfo(
-                $"[ArenaBlend] Blend active for '{_currentRoom}' — {blendPath}");
         }
     }
 
@@ -145,7 +149,6 @@ public static class ArenaBlendController
             SettingsBlendController.Detach();
 
         BlendClock.Stop();
-        BlendSettingsLoader.ClearArenaSession();
 
         _sessionCount++;
         _currentRoom          = null;

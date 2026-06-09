@@ -2,51 +2,88 @@ using UnityEngine;
 using FilesSetting;
 using RainCycles.Settings;
 using RainCycles.Core;
-using RainCycles.Sky;
-
+using RainCycles.Snapshot;
+using RainCycles.Blend;
 
 namespace RainCycles.Clock;
 
 public static class BlendClockUpdater
 {
-    // Delta lógico del juego: 1 / framesPerSecond.
-    // framesPerSecond es calculado por RainWorldGame.RawUpdate antes de llamar Update,
-    // e incorpora todos los factores de slow-motion: hongo (Adrenaline), VoidMelt,
-    // redsIllness, ghostMode, MMF.cfgSlowTimeFactor, y DevTools (teclas A/S).
-    // Así el blend se ralentiza proporcionalmente al slow-motion del juego.
     private static float _lastUnscaledTime = 0f;
+
     private static float GameDelta(RainWorldGame game)
     {
-        float now  = UnityEngine.Time.unscaledTime;
-        float dt   = Mathf.Clamp(now - _lastUnscaledTime, 0f, 0.2f);
+        float now = UnityEngine.Time.unscaledTime;
+        float dt = Mathf.Clamp(now - _lastUnscaledTime, 0f, 0.2f);
         _lastUnscaledTime = now;
-
-        // Escalar por slow-motion del juego: framesPerSecond/40 da la fracción de velocidad.
-        // Con hongo fps=15 → factor=0.375 → timer avanza al 37.5% de la velocidad real.
         float slowFactor = Mathf.Clamp01(game.framesPerSecond / 40f);
         return dt * slowFactor;
     }
 
-    private static string _lastRegion          = null;
-    private static string _lastIdleRoom        = null;
-    private static int    _lastIdleState       = -1;  // estado aplicado en último idle
-    private static bool   _lastDeathRainHasHit = false;
-    private static bool   _startFailed         = false;
-
-    // Progreso heredado al cruzar región
-    private static float     _savedTimerProgress = -1f;
-    private static bool      _savedWasBlending   = false;
-    private static BlendMode _savedMode          = BlendMode.Loop;
-
-    public static void ClearLastIdleRoom() { _lastIdleRoom = null; _lastIdleState = -1; }
-    public static void SetLastIdleRoom(string room) => _lastIdleRoom = room;
+    private static string _lastRegion = null;
+    private static bool _startFailed = false;
+    private static bool _lastDeathRainHasHit = false;
+    private static bool _winHandledThisSession = false;
+    private static BlendClock.ClockState _savedState;
 
     public static void Init()
     {
-        On.RainWorldGame.Update          += OnGameUpdate;
+        On.RainWorldGame.Update += OnGameUpdate;
         On.RainWorldGame.ShutDownProcess += OnShutDown;
-        On.RainWorldGame.Win             += OnWin;
-        On.RainCycle.Update              += OnRainCycleUpdate;
+        On.RoomCamera.DrawUpdate += OnRoomCameraDrawUpdate;
+        On.RainWorldGame.Win += OnWin;
+        On.RainCycle.Update += OnRainCycleUpdate;
+        On.OverWorld.Update += OnOverWorldUpdate;
+        On.RoomCamera.ApplyFade += SettingsBlendController.OnApplyFade;
+    }
+
+    private static void OnRoomCameraDrawUpdate(
+        On.RoomCamera.orig_DrawUpdate orig, RoomCamera self,
+        float timeStacker, float timeSpeed)
+    {
+        if (self.room?.roomSettings != null)
+            Shader.SetGlobalFloat(RainWorld.ShadPropGrime, self.room.roomSettings.Grime);
+        orig(self, timeStacker, timeSpeed);
+    }
+
+    private static void OnOverWorldUpdate(On.OverWorld.orig_Update orig, OverWorld self)
+    {
+        string regionBefore = self.activeWorld?.region?.name?.ToUpperInvariant();
+        orig(self);
+        string regionAfter = self.activeWorld?.region?.name?.ToUpperInvariant();
+
+        if (string.IsNullOrEmpty(regionAfter)) return;
+        bool regionChanged = regionAfter != _lastRegion;
+
+        if (regionChanged)
+        {
+            RSPlugin.log.LogInfo($"[RegionChange] {_lastRegion ?? "null"} → {regionAfter}");
+
+            if (BlendClock.IsRunning)
+            {
+                _savedState = BlendClock.SaveState();
+                BlendClock.Stop();
+            }
+            else
+            {
+                _savedState = default;
+            }
+
+            if (!string.IsNullOrEmpty(_lastRegion))
+            {
+                BlendSkyAtlasCache.UnloadRegion(_lastRegion);
+            }
+
+            SettingsBlendController.ClearAllSlots();
+            BlendSkyAtlasCache.PreloadRegion(regionAfter);
+            StaticTintManager.PreloadRegionTemplates(regionAfter);
+            BlendSettingsLoader.LoadRegion(regionAfter);
+
+            SettingsBlendController.ResetFull();
+            _startFailed = false;
+            _lastRegion = regionAfter;
+            RoomCameraExtensions.ClearAllCaches();
+        }
     }
 
     private static void OnGameUpdate(On.RainWorldGame.orig_Update orig, RainWorldGame self)
@@ -55,163 +92,243 @@ public static class BlendClockUpdater
         orig(self);
         SettingsBlendController.OverrideLightColorsPostOrig();
 
-        if (self.GamePaused) return;
+        // SAFETY NET: Limpieza para caso idle (fuga de paleta residual)
+        var activeRoom = SettingsBlendController.ActiveRoom;
+        if (activeRoom != null)
+        {
+            var cam = self.cameras?[0];
+            if (cam != null)
+            {
+                string camRoom = cam.room?.abstractRoom?.name;
+                string blendRoom = activeRoom.abstractRoom?.name;
+                
+                if (blendRoom != null && camRoom != blendRoom && 
+                    !SettingsBlendController.MoveCameraThisFrame)
+                {
+                    RSPlugin.log.LogWarning(
+                        $"Room change missed (idle): '{blendRoom}'→'{camRoom}'. Forcing cleanup.");
+                    
+                    SettingsBlendController.Detach();
+                    
+                    var blendData = cam.GetBlendData();
+                    if (blendData != null)
+                    {
+                        blendData.isBlendActive = false;
+                    }
+                    
+                    int correctPal = cam.room?.roomSettings?.Palette ?? 0;
+                    cam.ChangeMainPalette(correctPal);
+                    cam.ApplyFade();
+                }
+            }
+        }
 
-        // En arena no hay StorySession — solo continuar si hay blend settings cargado
+        if (self.GamePaused)
+        {
+            if (!BlendClock.EditMode)
+                UpdateCameras(self);
+            return;
+        }
+
         bool isArena = self.GetStorySession == null;
         if (isArena && BlendSettingsLoader.Active == null) return;
         if (!isArena && self.GetStorySession == null) return;
 
-        // ────────────────────
         if (SettingsBlendController.IsActive)
         {
             var cam = self.cameras?[0];
             if (cam != null)
             {
-                string camRoom   = cam.room?.abstractRoom?.name;
+                string camRoom = cam.room?.abstractRoom?.name;
                 string blendRoom = SettingsBlendController.ActiveRoom?.abstractRoom?.name;
-                if (blendRoom != null && camRoom != blendRoom &&
-                    !SettingsBlendController.MoveCameraThisFrame)
+                if (blendRoom != null && camRoom != blendRoom && !SettingsBlendController.MoveCameraThisFrame)
                 {
-                    RSPlugin.log.LogWarning(
-                        $"[SafetyNet] Room change missed: '{blendRoom}'→'{camRoom}'. Recovering.");
-                    SettingsBlendController.DetachAndRestore();
+                    RSPlugin.log.LogWarning($"Room change missed: '{blendRoom}'→'{camRoom}'. Recovering.");
+                    SettingsBlendController.Detach();
+                    int correctPal = cam.room?.roomSettings?.Palette ?? 0;
+                    cam.ChangeMainPalette(correctPal);
+                    cam.ApplyFade();
                 }
             }
         }
 
-        // ────────────────────
-        // En arena el clock lo gestiona ArenaBlendController — no disparar OnRegionChanged
-        if (!isArena)
-        {
-            string currentRegion = BlendSettingsLoader.ActiveRegion;
-            if (currentRegion != _lastRegion)
-            {
-                if (!_winHandledThisSession) OnRegionChanged(currentRegion);
-                _lastRegion = currentRegion;
-            }
-        }
-
-        // ────────────────────
-        // En arena el clock lo arranca ArenaBlendController.OnArenaInitiate
+        // ============================================================
+        // BLEND CLOCK STARTUP - CON LOGS
+        // ============================================================
         if (!isArena && !_winHandledThisSession && !BlendClock.IsRunning && !BlendClock.EditMode && !_startFailed)
         {
             var s = BlendSettingsLoader.Active;
+            
+            RSPlugin.log.LogInfo($"[DEBUG] === BlendClock Startup Check ===");
+            RSPlugin.log.LogInfo($"[DEBUG] s is null? {s == null}");
             if (s != null)
             {
-                bool should = s.Mode == BlendMode.Loop || s.Mode == BlendMode.Cycle
-                    || (s.Mode == BlendMode.Custom &&
-                        CustomModeState.IsActive(BlendSettingsLoader.ActiveRegion, s.CustomTriggerId));
-                if (should)
-                {
-                    BlendClock.Start(ResolveInitial(s));
-
-                    // Si sigue sin correr → no hay secuencia válida, no reintentar
-                    if (!BlendClock.IsRunning)
-                        _startFailed = true;
-
-                    // Heredar progreso de región anterior si existe y el modo coincide
-                    if (_savedTimerProgress >= 0f &&
-                        BlendSettingsLoader.Active?.Mode == _savedMode)
-                    {
-                        BlendClock.InjectProgress(_savedTimerProgress, _savedWasBlending);
-                        _savedTimerProgress = -1f;
-                    }
-                    else
-                    {
-                        _savedTimerProgress = -1f;
-                    }
-                }
+                RSPlugin.log.LogInfo($"[DEBUG] s.Clock = {s.Clock}");
+                RSPlugin.log.LogInfo($"[DEBUG] s.Mode = {s.Mode}");
+                RSPlugin.log.LogInfo($"[DEBUG] s.IdleTime = {s.IdleTime}");
+                RSPlugin.log.LogInfo($"[DEBUG] s.Duration = {s.Duration}");
             }
-        }
-
-        // ────────────────────
-        if (BlendClock.IsRunning && !SettingsBlendController.IsActive &&
-            !SettingsBlendController.DetachedThisFrame &&
-            BlendClock.CurrentPhase == BlendClock.Phase.Blending)
-            TryAttach(self);
-
-        // ────────────────────
-        bool idleOrDone = BlendClock.CurrentPhase == BlendClock.Phase.Idle ||
-                          BlendClock.CurrentPhase == BlendClock.Phase.Done;
-        if (BlendClock.IsRunning && !SettingsBlendController.IsActive &&
-            !SettingsBlendController.DetachedThisFrame && idleOrDone)
-            TryApplyIdle(self);
-
-        if (!BlendClock.IsRunning) return;
-
-        // No tickear mientras la cámara no tiene sala visible → el idle time
-        // no corre durante la pantalla de carga, solo desde que el jugador ve la sala.
-        if (self.cameras?[0]?.room == null) return;
-
-        // Snapshot before tick
-        float prevT       = BlendClock.CurrentT;
-        int   prevSub     = BlendClock.SubPhaseIndex;
-        var   prevPhase   = BlendClock.CurrentPhase;
-        bool  prevFirst   = BlendClock.IsFirstHalf;
-
-        float rainTimer = 0f; int rainLen = 1;
-        if (self.world?.rainCycle != null)
-        { rainTimer = self.world.rainCycle.timer; rainLen = self.world.rainCycle.cycleLength; }
-
-        BlendClock.Tick(GameDelta(self), rainTimer, rainLen);
-
-        bool tChanged     = !Mathf.Approximately(BlendClock.CurrentT, prevT);
-        bool subChanged   = BlendClock.SubPhaseIndex != prevSub;
-        bool phaseChanged = BlendClock.CurrentPhase != prevPhase;
-        bool halfChanged  = BlendClock.IsFirstHalf != prevFirst;
-
-        if (subChanged && BlendClock.CurrentPhase == BlendClock.Phase.Blending)
-        {
-            RSPlugin.log.LogDebug(
-                $"[Updater] SubPhase→{BlendClock.SubPhaseIndex} A={BlendClock.StateA} B={BlendClock.StateB}");
-            _lastIdleRoom = null; _lastIdleState = -1;
-            SettingsBlendController.AdvanceOriginToB();
-            SettingsBlendController.RotateSkySlots();
-            SettingsBlendController.Detach();
-        }
-
-        if (prevPhase == BlendClock.Phase.Blending && BlendClock.CurrentPhase != BlendClock.Phase.Blending)
-        {
-            RSPlugin.log.LogDebug(
-                $"[Updater] Blending→{BlendClock.CurrentPhase} A={BlendClock.StateA} B={BlendClock.StateB}");
-
-            // Pre-aplicar terrain palette del estado B antes de Detach
-            // para evitar el parpadeo blanco del frame de gap entre blend e idle.
-            var camPre = self.cameras?[0];
-            if (camPre?.room != null && BlendSettingsLoader.Active != null)
+            RSPlugin.log.LogInfo($"[DEBUG] _winHandledThisSession = {_winHandledThisSession}");
+            RSPlugin.log.LogInfo($"[DEBUG] _startFailed = {_startFailed}");
+            RSPlugin.log.LogInfo($"[DEBUG] _lastRegion = {_lastRegion}");
+            
+            if (s != null && s.Clock)
             {
-                string roomPre = camPre.room.abstractRoom?.name;
-                if (roomPre != null && BlendSettingsLoader.Active.IncludesRoom(roomPre))
+                RSPlugin.log.LogInfo($"[DEBUG] Starting BlendClock for region {_lastRegion}");
+                int initialState = ResolveInitial(s);
+                BlendClock.Start(_lastRegion, initialState);
+                RSPlugin.log.LogInfo($"[DEBUG] BlendClock.Start called, IsRunning={BlendClock.IsRunning}");
+
+                if (!BlendClock.IsRunning)
                 {
-                    string pathB = GetSettingsFile(self, roomPre, BlendClock.StateB);
-                    if (pathB != null)
-                    {
-                        var snapB = RainCycles.Snapshot.SettingsSnapshot.FromFile(pathB);
-                        RoomEffectsApplier.ApplyTerrainPalette(camPre, snapB);
-                        if (camPre.room.roomSettings?.TerrainPalette != null)
-                            camPre.ReloadTerrainPalette();
-                    }
+                    _startFailed = true;
+                    RSPlugin.log.LogWarning($"[DEBUG] BlendClock.Start failed, _startFailed set to true");
+                }
+                else
+                {
+                    if (_savedState.IsRunning && _savedState.Mode == s.Mode)
+                        BlendClock.RestoreState(_savedState);
+                    _savedState = default;
+                    RSPlugin.log.LogInfo($"[DEBUG] BlendClock is running successfully");
                 }
             }
-
-            SettingsBlendController.AdvanceOriginToB();
-            SettingsBlendController.RotateSkySlots();
-            SettingsBlendController.Detach();
-            _lastIdleRoom = null; _lastIdleState = -1;
+            else if (s != null && !s.Clock && self.cameras?[0]?.room != null)
+            {
+                var cam = self.cameras[0];
+                if (cam?.room != null && SettingsBlendController.IsBlendRoom(cam.room))
+                    ApplyStaticTintsForCurrentState(cam.room);
+            }
         }
 
-        if (halfChanged || (prevPhase == BlendClock.Phase.Done && BlendClock.CurrentPhase == BlendClock.Phase.Idle))
-        { _lastIdleRoom = null; _lastIdleState = -1; }
+        // NO actualizar el clock si EditMode está activo
+        if (!BlendClock.EditMode && BlendClock.IsRunning)
+        {
+            float rainTimer = 0f;
+            int rainLen = 1;
+            if (self.world?.rainCycle != null)
+            {
+                rainTimer = self.world.rainCycle.timer;
+                rainLen = self.world.rainCycle.cycleLength;
+            }
+            BlendClock.Tick(GameDelta(self), rainTimer, rainLen);
+        }
 
-        if (prevPhase == BlendClock.Phase.Idle && BlendClock.CurrentPhase == BlendClock.Phase.Blending)
-            SettingsBlendController.PrefetchBlendAtmosphereColor(self);
+        // EN MODO EDICIÓN: NO actualizar cámaras con lógica de blend
+        if (BlendClock.EditMode)
+        {
+            UpdateSlidersOnly(self);
+            return;
+        }
 
-        if ((tChanged || subChanged || phaseChanged || halfChanged) &&
-            !SettingsBlendController.DetachedThisFrame)
-            NotifyCameras(self);
+        // ============================================================
+        // NUEVO: Procesar refresco pendiente de sky slots (post-guardado)
+        // ============================================================
+        SettingsBlendController.ProcessPendingSkyRefresh();
 
+        UpdateCameras(self);
         SettingsBlendController.OverrideLightColorsPostOrig();
+    }
+
+    private static void UpdateSlidersOnly(RainWorldGame game)
+    {
+        var page = game.devUI?.activePage;
+        if (page == null) return;
+
+        BlendSlider slider = null;
+        foreach (var node in page.subNodes)
+        {
+            if (node is RCPanel panel)
+            {
+                foreach (var sub in panel.subNodes)
+                {
+                    if (sub is BlendSlider bs) { slider = bs; break; }
+                }
+                break;
+            }
+        }
+
+        if (slider == null) return;
+    }
+
+    private static void UpdateCameras(RainWorldGame game)
+    {
+        var s = BlendSettingsLoader.Active;
+        if (s == null) return;
+
+        foreach (var cam in game.cameras ?? System.Array.Empty<RoomCamera>())
+        {
+            if (cam?.room == null) continue;
+            string room = cam.room.abstractRoom?.name;
+            if (room == null) continue;
+            if (!SettingsBlendController.IsBlendRoom(cam.room)) continue;
+
+            if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending)
+            {
+                string pA = GetSettingsFile(game, room, BlendClock.StateA);
+                string pB = GetSettingsFile(game, room, BlendClock.StateB);
+
+                if (pA != null && pB != null && BlendClock.StateA != BlendClock.StateB)
+                {
+                    if (!SettingsBlendController.IsActive ||
+                        SettingsBlendController.CurrentPathA != pA ||
+                        SettingsBlendController.CurrentPathB != pB)
+                    {
+                        SettingsBlendController.AttachWithExternalT(cam.room, pA, pB, isAuto: true);
+                    }
+                    SettingsBlendController.SetExternalT(BlendClock.SubPhaseLocalT);
+                }
+            }
+            else if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Idle)
+            {
+                int idleState = BlendClock.StateA;
+                string path = GetSettingsFile(game, room, idleState);
+
+                if (path != null)
+                {
+                    bool stateChanged = SettingsBlendController.IsActive &&
+                                       (SettingsBlendController.CurrentPathA != path ||
+                                        SettingsBlendController.CurrentPathB != path);
+
+                    if (stateChanged || !SettingsBlendController.IsActive)
+                    {
+                        if (SettingsBlendController.IsActive)
+                            SettingsBlendController.Detach();
+                        SettingsBlendController.AttachWithExternalT(cam.room, path, path, isAuto: true);
+                    }
+                    SettingsBlendController.SetExternalT(0f);
+                    SettingsBlendController.RotateSlotsOnIdle(cam.room, idleState);
+                }
+            }
+            else if (!BlendClock.IsRunning)
+            {
+                if (SettingsBlendController.IsActive && SettingsBlendController.IsExternalT && !SettingsBlendController.IsAutoBlend)
+                {
+                    RSPlugin.log.LogDebug($"[UpdateCameras] Skipping idle force - Manual mode active for room {room}");
+                    if (SettingsBlendController.ActiveRoom == cam.room)
+                    {
+                        cam.UpdateBlendPalette();
+                    }
+                    goto AfterIdleCheck;
+                }
+                
+                int finalState = BlendClock.StateA;
+                string path = GetSettingsFile(game, room, finalState);
+                if (path != null)
+                {
+                    if (!SettingsBlendController.IsActive || SettingsBlendController.CurrentPathA != path)
+                        SettingsBlendController.AttachWithExternalT(cam.room, path, path, isAuto: true);
+                    RSPlugin.log.LogDebug($"[UpdateCameras] Forcing t=0 for room {room}, finalState={finalState}");
+                    SettingsBlendController.SetExternalT(0f);
+                }
+            }
+            
+            AfterIdleCheck:
+
+            if (BlendClock.IsRunning)
+                cam.UpdateBlendPalette();
+        }
+
+        UpdateSliders(game);
     }
 
     private static string GetSettingsFile(RainWorldGame game, string room, int state)
@@ -221,62 +338,100 @@ public static class BlendClockUpdater
         return StateFileResolver.GetRainStateSettingsFile(room, state);
     }
 
-    private static void TryAttach(RainWorldGame game)
+    private static void ApplyStaticTintsForCurrentState(Room room)
     {
-        var s   = BlendSettingsLoader.Active;
-        var cam = game.cameras?[0];
-        if (s == null || cam?.room == null) return;
-        string room = cam.room.abstractRoom?.name;
-        if (room == null || !s.IncludesRoom(room)) return;
-        string pA = GetSettingsFile(game, room, BlendClock.StateA);
-        string pB = GetSettingsFile(game, room, BlendClock.StateB);
-        if (pA != null && pB != null && BlendClock.StateA != BlendClock.StateB)
+        if (room == null) return;
+        string settingsPath = room.roomSettings?.filePath;
+        if (string.IsNullOrEmpty(settingsPath)) return;
+
+        var snap = SettingsSnapshot.FromFile(settingsPath);
+        if (snap == null) return;
+
+        if (snap.TintMultiply.HasValue)
         {
-            SettingsBlendController.AttachWithExternalT(cam.room, pA, pB);
-            SettingsBlendController.SetExternalT(BlendClock.SubPhaseLocalT);
+            var c = snap.TintMultiply.Value;
+            Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, new Vector4(c.r, c.g, c.b, 1f));
+        }
+        if (snap.TintAtmosphere.HasValue)
+        {
+            var c = snap.TintAtmosphere.Value;
+            Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, new Vector4(c.r, c.g, c.b, 1f));
+        }
+        if (snap.TintCloudAtmosphere.HasValue)
+        {
+            for (int i = 0; i < room.updateList.Count; i++)
+            {
+                if (room.updateList[i] is AboveCloudsView acv)
+                {
+                    acv.atmosphereColor = snap.TintCloudAtmosphere.Value;
+                    break;
+                }
+            }
         }
     }
 
-    private static void TryApplyIdle(RainWorldGame game)
+    private static void UpdateSliders(RainWorldGame game)
     {
-        var s   = BlendSettingsLoader.Active;
-        var cam = game.cameras?[0];
-        if (s == null || cam?.room == null) return;
-        if (SettingsBlendController.MoveCameraThisFrame) return;
-
-        string room = cam.room.abstractRoom?.name;
-        if (room == null || !s.IncludesRoom(room)) return;
-
-        int state = BlendClock.CurrentPhase == BlendClock.Phase.Done
-            ? BlendClock.StateB : BlendClock.StateA;
-        string path = GetSettingsFile(game, room, state);
-
-        // Solo aplicar si cambió sala o estado
-        if (path != null && (room != _lastIdleRoom || state != _lastIdleState))
+        var page = game.devUI?.activePage;
+        if (page == null) 
         {
-            RSPlugin.log.LogDebug($"[TryApplyIdle] room={room} state={state} lastRoom={_lastIdleRoom ?? "null"} lastState={_lastIdleState} path={System.IO.Path.GetFileName(path)}");
-
-            // Si el roomSettings ya apunta al path correcto (ej: StateFileResolver ya lo cargó
-            // al construir el RoomSettings), solo actualizar snapshot visual sin recargar.
-            bool alreadyLoaded = string.Equals(
-                cam.room.roomSettings?.filePath, path,
-                System.StringComparison.OrdinalIgnoreCase);
-
-            bool camSettled = !SettingsBlendController.MoveCameraThisFrame &&
-                              cam.room?.abstractRoom?.name == room;
-
-            // En ambos casos usar ApplyIdleState para cubrir todos los efectos:
-            // Grime global, sky state, atmosphere globals, scalar effects, terrain, palette.
-            // allowCameraOps=false en visitas no-firstVisit o cuando la cámara no está asentada
-            // para evitar recargar paletas innecesariamente en frames intermedios.
-            bool firstVisit = _lastIdleState == -1;
-            SettingsBlendController.ApplyIdleState(
-                cam.room, path,
-                allowCameraOps: (firstVisit || !alreadyLoaded) && camSettled);
-
-            _lastIdleRoom  = room;
-            _lastIdleState = state;
+            RSPlugin.log.LogDebug("[UpdateSliders] No activePage");
+            return;
         }
+
+        BlendSlider slider = null;
+        foreach (var node in page.subNodes)
+        {
+            if (node is RCPanel panel)
+            {
+                RSPlugin.log.LogDebug("[UpdateSliders] Found RCPanel");
+                foreach (var sub in panel.subNodes)
+                {
+                    if (sub is BlendSlider bs) 
+                    { 
+                        slider = bs; 
+                        RSPlugin.log.LogDebug("[UpdateSliders] Found BlendSlider");
+                        break; 
+                    }
+                }
+                break;
+            }
+        }
+
+        if (slider == null) 
+        {
+            RSPlugin.log.LogDebug("[UpdateSliders] No BlendSlider found");
+            return;
+        }
+        
+        if (SettingsBlendController.IsActive && SettingsBlendController.IsExternalT && !SettingsBlendController.IsAutoBlend)
+        {
+            RSPlugin.log.LogDebug($"[UpdateSliders] Manual mode active, skipping. BlendClock.T={BlendClock.T:F3}");
+            return;
+        }
+        
+        if (!BlendClock.EditMode)
+        {
+            if (BlendClock.IsRunning)
+            {
+                float currentT = BlendClock.T;
+                RSPlugin.log.LogDebug($"[UpdateSliders] Auto mode - updating slider to T={currentT:F3}, Phase={BlendClock.CurrentPhase}");
+                slider.SetDisplayT(currentT);
+            }
+            else
+            {
+                RSPlugin.log.LogDebug("[UpdateSliders] No blend running, setting to 0");
+                slider.SetDisplayT(0f);
+            }
+        }
+    }
+
+    private static int ResolveInitial(BlendSettings s)
+    {
+        int state = StateFileResolver.GetCurrentCycleState();
+        if (state > 0) return state;
+        RSPlugin.log.LogWarning("[ResolveInitial] Fallback a estado 1");
+        return 1;
     }
 
     private static void OnRainCycleUpdate(On.RainCycle.orig_Update orig, RainCycle self)
@@ -284,34 +439,31 @@ public static class BlendClockUpdater
         bool was = self.deathRainHasHit;
         orig(self);
         if (!was && self.deathRainHasHit && !_lastDeathRainHasHit)
-        { _lastDeathRainHasHit = true; OnDeathRainHit(); }
-        else if (!self.deathRainHasHit) _lastDeathRainHasHit = false;
+        {
+            _lastDeathRainHasHit = true;
+            OnDeathRainHit();
+        }
+        else if (!self.deathRainHasHit)
+        {
+            _lastDeathRainHasHit = false;
+        }
     }
 
     private static void OnDeathRainHit()
     {
         var s = BlendSettingsLoader.Active;
         if (s == null || s.Mode != BlendMode.EndCycle || BlendClock.EditMode || BlendClock.IsRunning) return;
+
         RSPlugin.log.LogInfo("[BlendClockUpdater] Death rain → EndCycle trigger.");
-        BlendClock.Start(ResolveInitial(s));
+        BlendClock.Start(_lastRegion, ResolveInitial(s));
     }
 
     private static void OnShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
     {
-        // ResetFull antes de orig() → restaura paletas antes de que el juego destruya la cámara
-        SettingsBlendController.ResetFull();
         BlendClock.Stop();
         orig(self);
-        BlendSettingsLoader.ClearCache();
-        BlendSkyAtlasCache.UnloadAll();
-        _lastRegion = _lastIdleRoom = null; _lastIdleState = -1;
-        _lastDeathRainHasHit = false;
-        _winHandledThisSession = false;
-        _savedTimerProgress = -1f;
         StateFileResolver.SetBlockLoad(false);
     }
-
-    private static bool _winHandledThisSession = false;
 
     private static void OnWin(On.RainWorldGame.orig_Win orig, RainWorldGame self, bool mal, bool warp)
     {
@@ -323,148 +475,6 @@ public static class BlendClockUpdater
         }
         orig(self, mal, warp);
         if (!warp)
-        {
-            // Solo limpiar estado lógico sin restaurar texturas → evita parpadeo vanilla
-            // en los frames finales antes de la pantalla de resultados.
-            // ShutDownProcess hará la limpieza completa cuando la cámara ya no sea visible.
-            SettingsBlendController.ResetFullSoft();
-            _lastRegion = _lastIdleRoom = null; _lastIdleState = -1;
-        }
-    }
-
-    private static void OnRegionChanged(string region)
-    {
-        BlendSkyAtlasCache.UnloadAllExcept(region);
-
-        // Capturar progreso antes de detener el clock
-        if (BlendClock.IsRunning)
-        {
-            _savedMode          = BlendSettingsLoader.Active?.Mode ?? BlendMode.Loop;
-            _savedWasBlending   = BlendClock.CurrentPhase == BlendClock.Phase.Blending;
-            _savedTimerProgress = _savedWasBlending
-                ? BlendClock.CurrentT
-                : BlendClock.IdleProgress;
-        }
-        else
-        {
-            _savedTimerProgress = -1f;
-        }
-
-        SettingsBlendController.ResetFull(); _lastIdleRoom = null; _lastIdleState = -1; _startFailed = false;
-        if (BlendClock.IsRunning) BlendClock.Stop();
-        if (string.IsNullOrEmpty(region)) return;
-
-        BlendSkyAtlasCache.PreloadRegion(region);
-
-        // Pre-aplicar idle state inmediatamente si la cámara ya está en una sala gestionada.
-        // Evita el frame de gap donde la cámara muestra un settings incorrecto
-        // antes de que OnGameUpdate arranque el clock y llame TryApplyIdle.
-        var game2 = GetGame();
-        var cam2  = game2?.cameras?[0];
-        if (cam2?.room != null)
-        {
-            var s2 = BlendSettingsLoader.Active;
-            if (s2 != null)
-            {
-                string room2 = cam2.room.abstractRoom?.name;
-                if (room2 != null && s2.IncludesRoom(room2))
-                {
-                    bool isArena2 = game2?.IsArenaSession == true;
-                    int cycle2    = game2?.GetStorySession?.saveState?.cycleNumber ?? 0;
-                    string path2  = isArena2
-                        ? ArenaStateResolver.GetSelectedSettingsPath(room2, 0)
-                        : StateFileResolver.GetRainStateFilePath(room2, cycle2);
-                    if (path2 != null)
-                        SettingsBlendController.ApplyIdleState(cam2.room, path2, allowCameraOps: true);
-                }
-            }
-        }
-        // No arrancamos el clock aquí — puede ocurrir durante pantalla de carga,
-        // antes de que el jugador tenga control. El bloque fallback de OnGameUpdate
-        // lo arrancará cuando el jugador esté realizado y la sala sea visible.
-    }
-
-    private static int ResolveInitial(BlendSettings s)
-    {
-        int cycle = 0;
-        var game  = GetGame();
-        if (game?.GetStorySession?.saveState != null) cycle = game.GetStorySession.saveState.cycleNumber;
-
-        int n = 2;
-        bool isArena = game?.IsArenaSession == true;
-        if (s._hasRoomsSection)
-            foreach (string room in s.Rooms.Keys)
-            {
-                int c = isArena
-                    ? ArenaStateResolver.CountSettingsFiles(room)
-                    : StateFileResolver.CountRainStateFiles(room);
-                if (c > 0) { n = c; break; }
-            }
-        return n > 0 ? (cycle % n) + 1 : 1;
-    }
-
-    private static void NotifyCameras(RainWorldGame game)
-    {
-        var s = BlendSettingsLoader.Active;
-        if (s == null || SettingsBlendController.DetachedThisFrame) return;
-        foreach (var cam in game.cameras ?? System.Array.Empty<RoomCamera>())
-        {
-            if (cam?.room == null) continue;
-            string room = cam.room.abstractRoom?.name;
-            if (room == null || !s.IncludesRoom(room)) continue;
-            if (BlendClock.CurrentPhase != BlendClock.Phase.Blending) continue;
-            string pA = GetSettingsFile(game, room, BlendClock.StateA);
-            string pB = GetSettingsFile(game, room, BlendClock.StateB);
-            if (pA != null && pB != null && BlendClock.StateA != BlendClock.StateB)
-            {
-                if (!SettingsBlendController.IsActive ||
-                    SettingsBlendController.CurrentPathA != pA ||
-                    SettingsBlendController.CurrentPathB != pB)
-                    SettingsBlendController.AttachWithExternalT(cam.room, pA, pB);
-                SettingsBlendController.SetExternalT(BlendClock.SubPhaseLocalT);
-            }
-        }
-        UpdateSliders(game);
-    }
-
-    private static void UpdateSliders(RainWorldGame game)
-    {
-        var page = game.devUI?.activePage;
-        if (page == null) return;
-
-        BlendSlider sliderA = null, sliderB = null;
-        foreach (var node in page.subNodes)
-        {
-            if (!(node is RCPanel panel)) continue;
-            foreach (var sub in panel.subNodes)
-            {
-                if (sub is BlendSlider bs)
-                {
-                    if (bs.IDstring == "RC_BlendSlider")  sliderA = bs;
-                    if (bs.IDstring == "RC_BlendSliderB") sliderB = bs;
-                }
-            }
-            break;
-        }
-
-        var s = BlendSettingsLoader.Active;
-        bool isLoop = s == null || s.Mode == BlendMode.Loop || s.Mode == BlendMode.Custom;
-
-        if (isLoop)
-        {
-            sliderA?.SetDisplayT(0f);
-            sliderB?.SetDisplayT(BlendClock.GlobalT);
-        }
-        else
-        {
-            sliderA?.SetDisplayT(BlendClock.CurrentT);
-            sliderB?.SetDisplayT(0f);
-        }
-    }
-
-    private static RainWorldGame GetGame()
-    {
-        var rw = UnityEngine.Object.FindObjectOfType<RainWorld>();
-        return rw?.processManager?.currentMainLoop as RainWorldGame;
+            _lastRegion = null;
     }
 }

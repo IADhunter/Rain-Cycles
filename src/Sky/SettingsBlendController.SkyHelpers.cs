@@ -1,235 +1,386 @@
+using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using RainCycles.Settings;
 using RainCycles.Clock;
 
 namespace RainCycles.Core;
 
-// Sky helpers: AssignSkySlots, SyncSkySlots, RefreshSlotSprite, ApplySkyForState, NextStateIn
 public static partial class SettingsBlendController
 {
-    // ── Sky helpers ───────────────────────────────────────────────────────
-    /// según la secuencia declarada en blend_settings. Llama LoadGraphic por cada
-    /// imagen y registra el atlas en BlendSkyAtlasCache.
-    /// Corre en el ctor — antes de elementsAddedToRoom, sin crear objetos nuevos.
-    /// </summary>
-    private static void AssignSkySlots(BackgroundScene scene, Room room,
-        BlendSettings settings, SkyType sky)
+    private static List<BackgroundScene.Simple2DBackgroundIllustration> GetSlotsForSky(SkyType sky)
     {
-        // Resolver la secuencia de estados: A=activo, B=destino, C=siguiente
-        int stateA = BlendClock.IsRunning ? BlendClock.StateA : 1;
-        int stateB = BlendClock.IsRunning ? BlendClock.StateB : NextStateIn(settings, stateA);
-        int stateC = NextStateIn(settings, stateB);
-
-        SetSlotDay  (sky, stateA);
-        SetSlotDusk (sky, stateB);
-        SetSlotNight(sky, stateC);
-
-        string region = BlendSettingsLoader.ActiveRegion;
-
-        LoadAndAssignSlot(scene, sky, stateA, region, settings,
-            slot => {
-                if (scene is RoofTopView rtv) rtv.daySky.illustrationName = slot;
-                else if (scene is AboveCloudsView acv) acv.daySky.illustrationName = slot;
-            });
-
-        LoadAndAssignSlot(scene, sky, stateB, region, settings,
-            slot => {
-                if (scene is RoofTopView rtv) rtv.duskSky.illustrationName = slot;
-                else if (scene is AboveCloudsView acv) acv.duskSky.illustrationName = slot;
-            });
-
-        LoadAndAssignSlot(scene, sky, stateC, region, settings,
-            slot => {
-                if (scene is RoofTopView rtv) rtv.nightSky.illustrationName = slot;
-                else if (scene is AboveCloudsView acv) acv.nightSky.illustrationName = slot;
-            });
+        if (sky == SkyType.ACV) return _rcSlotsACV;
+        if (sky == SkyType.RTV) return _rcSlotsRTV;
+        if (sky == SkyType.PSV) return _rcSlotsPSV;
+        return null;
     }
 
-    private static void LoadAndAssignSlot(BackgroundScene scene, SkyType sky,
-        int state, string region, BlendSettings settings,
-        System.Action<string> assign)
+    private static void ForceSunShader(List<BackgroundScene.Simple2DBackgroundIllustration> sunSlots, RoomCamera cam)
     {
-        string file = settings.GetBkgFileForState(state, sky);
-        if (string.IsNullOrEmpty(file)) return;
-        string name = System.IO.Path.GetFileNameWithoutExtension(file);
-        // El atlas ya fue precargado en OnRegionChanged via BlendSkyAtlasCache.PreloadRegion.
-        BlendSkyAtlasCache.Register(region, name);
-        assign(name);
+        if (sunSlots == null || cam?.spriteLeasers == null) return;
+        var additiveShader = cam.game.rainWorld.Shaders["BackgroundAdditive"];
+        foreach (var slot in sunSlots)
+        {
+            foreach (var sl in cam.spriteLeasers)
+            {
+                if (sl.drawableObject == slot && sl.sprites != null && sl.sprites.Length > 0)
+                    sl.sprites[0].shader = additiveShader;
+            }
+        }
     }
 
-    // Aplica alphas a los tres slots según el T actual del blend. El crossfade es unidireccional como en vanilla: duskSky (B) siempre alpha=1 — está debajo, siempre visible daySky (A) baja de 1→0 revelando duskSky nightSky (C) siempre alpha=0 — esperando para el próximo ciclo Esto evita el flash blanco que ocurre cuando ambos alphas suman <1.
-    private static void PreOrigForceSkyAlpha(
-        BackgroundScene.Simple2DBackgroundIllustration day,
-        BackgroundScene.Simple2DBackgroundIllustration dusk,
-        BackgroundScene.Simple2DBackgroundIllustration night,
-        SkyType sky = SkyType.None)
+    private static void PreApplySlotAlphas(List<BackgroundScene.Simple2DBackgroundIllustration> slots)
     {
-        if (day == null) return;
+        if (slots == null || slots.Count < 3) return;
+        if (slots == _rcSlotsPSVFog || slots == _rcSlotsPSVSun) return;
 
         if (_active && _externalT)
         {
-            // Blend activo normal
             float t = _forcedT;
-            day.alpha   = 1f - t;
-            dusk.alpha  = 1f;
-            night.alpha = 0f;
-            // Mantener savedAlphas actualizados para el frame de transición
-            _savedDayAlpha   = day.alpha;
-            _savedDuskAlpha  = 1f;
-            _savedNightAlpha = 0f;
-            _hasSavedAlphas  = true;
+            slots[0].alpha = 1f - t;
+            slots[1].alpha = 1f;
+            slots[2].alpha = 0f;
         }
         else if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending)
         {
-            int slotDay = sky != SkyType.None ? GetSlotDay(sky) : -1;
-            if (slotDay != BlendClock.StateA)
-            {
-                if (_hasSavedAlphas)
-                {
-                    day.alpha   = _savedDayAlpha;
-                    dusk.alpha  = _savedDuskAlpha;
-                    night.alpha = _savedNightAlpha;
-                }
-                else
-                {
-                    day.alpha   = 0f;
-                    dusk.alpha  = 1f;
-                    night.alpha = 0f;
-                }
-            }
-            else
-            {
-                float t = BlendClock.SubPhaseLocalT;
-                day.alpha   = 1f - t;
-                dusk.alpha  = 1f;
-                night.alpha = 0f;
-                _savedDayAlpha   = day.alpha;
-                _savedDuskAlpha  = 1f;
-                _savedNightAlpha = 0f;
-                _hasSavedAlphas  = true;
-            }
+            float t = BlendClock.SubPhaseLocalT;
+            slots[0].alpha = 1f - t;
+            slots[1].alpha = 1f;
+            slots[2].alpha = 0f;
         }
-        else if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Done)
+        else if (_hasSavedAlphas && _detachedThisFrame)
         {
-            int slotDay = sky != SkyType.None ? GetSlotDay(sky) : -1;
-            // En Phase.Done el blend terminó: los slots apuntan al estado B completado.
-            bool slotsMatchB = slotDay == BlendClock.StateB;
-            if (slotsMatchB)
-            {
-                // Slots correctos para Done: mostrar estado B estático (daySky visible).
-                day.alpha   = 1f;
-                dusk.alpha  = 1f;
-                night.alpha = 0f;
-                _savedDayAlpha   = 1f;
-                _savedDuskAlpha  = 1f;
-                _savedNightAlpha = 0f;
-                _hasSavedAlphas  = true;
-            }
-            else if (_hasSavedAlphas)
-            {
-                // Slots aún no sincronizados a B — usar savedAlphas del último frame activo.
-                day.alpha   = _savedDayAlpha;
-                dusk.alpha  = _savedDuskAlpha;
-                night.alpha = _savedNightAlpha;
-            }
-            else
-            {
-                day.alpha   = 0f;
-                dusk.alpha  = 1f;
-                night.alpha = 0f;
-            }
-        }
-        else if (_hasSavedAlphas && (_exitedManagedRoomLastFrame || _detachedThisFrame))
-        {
-            day.alpha   = _savedDayAlpha;
-            dusk.alpha  = _savedDuskAlpha;
-            night.alpha = _savedNightAlpha;
-        }
-        else if (_hasSavedAlphas && BlendClock.IsRunning && sky != SkyType.None
-                 && GetSlotDay(sky) > 0 && GetSlotDay(sky) != BlendClock.StateA)
-        {
-            day.alpha   = 0f;
-            dusk.alpha  = 1f;
-            night.alpha = 0f;
-        }
-    }
-
-    private static void ApplySkyAlphas(
-        BackgroundScene.Simple2DBackgroundIllustration day,
-        BackgroundScene.Simple2DBackgroundIllustration dusk,
-        BackgroundScene.Simple2DBackgroundIllustration night)
-    {
-        if (_active && _externalT)
-        {
-            // Blend activo normal.
-            float t = _forcedT;
-            day.alpha   = 1f - t;
-            dusk.alpha  = 1f;
-            night.alpha = 0f;
-            // Guardar alphas en tiempo real para usarlos al hacer Detach.
-            _savedDayAlpha   = day.alpha;
-            _savedDuskAlpha  = dusk.alpha;
-            _savedNightAlpha = night.alpha;
-            _hasSavedAlphas  = true;
-        }
-        else if (_exitedManagedRoomLastFrame || _detachedThisFrame)
-        {
-            // Frames de SALIDA: la cámara acaba de salir de la sala.
-            if (_hasSavedAlphas)
-            {
-                day.alpha   = _savedDayAlpha;
-                dusk.alpha  = _savedDuskAlpha;
-                night.alpha = _savedNightAlpha;
-            }
-            // Si no hay alphas guardados (idle), mantener los valores actuales tal cual.
-        }
-        else if (_moveCameraThisFrame && BlendClock.IsRunning &&
-                 BlendClock.CurrentPhase == BlendClock.Phase.Blending)
-        {
-            // de este frame, antes de que SubPhase→1 pudiera avanzar el clock.
-            float t = _entryFrameT >= 0f ? _entryFrameT : BlendClock.SubPhaseLocalT;
-            day.alpha   = 1f - t;
-            dusk.alpha  = 1f;
-            night.alpha = 0f;
+            slots[0].alpha = _savedDayAlpha;
+            slots[1].alpha = _savedDuskAlpha;
+            slots[2].alpha = _savedNightAlpha;
         }
         else
         {
-            // Idle genuino: mostrar solo daySky (estado A).
-            day.alpha   = 1f;
-            dusk.alpha  = 1f;
-            night.alpha = 0f;
-            // Guardar alphas del estado idle también, por si el jugador sale desde aquí.
-            _savedDayAlpha   = 1f;
-            _savedDuskAlpha  = 1f;
-            _savedNightAlpha = 0f;
-            _hasSavedAlphas  = true;
+            slots[0].alpha = 1f;
+            slots[1].alpha = 0f;
+            slots[2].alpha = 0f;
+        }
+
+        _savedDayAlpha = slots[0].alpha;
+        _savedDuskAlpha = slots[1].alpha;
+        _savedNightAlpha = slots[2].alpha;
+        _hasSavedAlphas = true;
+    }
+
+    private static void UpdatePsvSlots(int stateA, int stateB, int stateC, RoomCamera cam)
+    {
+        var settings = BlendSettingsLoader.Active;
+        if (settings == null) return;
+
+        var skySlots = _rcSlotsPSV;
+        if (skySlots != null && skySlots.Count >= 3)
+        {
+            string fileA = settings.GetBkgFileForState(stateA, ViewType.PSV);
+            string fileB = settings.GetBkgFileForState(stateB, ViewType.PSV);
+            string fileC = settings.GetBkgFileForState(stateC, ViewType.PSV);
+
+            if (!string.IsNullOrEmpty(fileA) && skySlots[0].illustrationName != Path.GetFileNameWithoutExtension(fileA))
+                RefreshSlotSprite(skySlots[0], Path.GetFileNameWithoutExtension(fileA), cam);
+            if (!string.IsNullOrEmpty(fileB) && skySlots[1].illustrationName != Path.GetFileNameWithoutExtension(fileB))
+                RefreshSlotSprite(skySlots[1], Path.GetFileNameWithoutExtension(fileB), cam);
+            if (!string.IsNullOrEmpty(fileC) && skySlots[2].illustrationName != Path.GetFileNameWithoutExtension(fileC))
+                RefreshSlotSprite(skySlots[2], Path.GetFileNameWithoutExtension(fileC), cam);
+        }
+
+        var fogSlots = _rcSlotsPSVFog;
+        if (fogSlots != null && fogSlots.Count >= 3)
+        {
+            string fogA = settings.GetBkgFogForState(stateA);
+            string fogB = settings.GetBkgFogForState(stateB);
+            string fogC = settings.GetBkgFogForState(stateC);
+
+            if (!string.IsNullOrEmpty(fogA) && fogSlots[0].illustrationName != Path.GetFileNameWithoutExtension(fogA))
+                RefreshSlotSprite(fogSlots[0], Path.GetFileNameWithoutExtension(fogA), cam);
+            if (!string.IsNullOrEmpty(fogB) && fogSlots[1].illustrationName != Path.GetFileNameWithoutExtension(fogB))
+                RefreshSlotSprite(fogSlots[1], Path.GetFileNameWithoutExtension(fogB), cam);
+            if (!string.IsNullOrEmpty(fogC) && fogSlots[2].illustrationName != Path.GetFileNameWithoutExtension(fogC))
+                RefreshSlotSprite(fogSlots[2], Path.GetFileNameWithoutExtension(fogC), cam);
+        }
+
+        var sunSlots = _rcSlotsPSVSun;
+        if (sunSlots != null && sunSlots.Count >= 3)
+        {
+            string sunA = settings.GetBkgSunForState(stateA);
+            string sunB = settings.GetBkgSunForState(stateB);
+            string sunC = settings.GetBkgSunForState(stateC);
+
+            if (!string.IsNullOrEmpty(sunA) && sunSlots[0].illustrationName != Path.GetFileNameWithoutExtension(sunA))
+                RefreshSlotSprite(sunSlots[0], Path.GetFileNameWithoutExtension(sunA), cam);
+            if (!string.IsNullOrEmpty(sunB) && sunSlots[1].illustrationName != Path.GetFileNameWithoutExtension(sunB))
+                RefreshSlotSprite(sunSlots[1], Path.GetFileNameWithoutExtension(sunB), cam);
+            if (!string.IsNullOrEmpty(sunC) && sunSlots[2].illustrationName != Path.GetFileNameWithoutExtension(sunC))
+                RefreshSlotSprite(sunSlots[2], Path.GetFileNameWithoutExtension(sunC), cam);
         }
     }
 
-    // Rota los slots al avanzar la sub-fase: B pasa a ser A, C pasa a ser B, el nuevo C se calcula de la secuencia. Cambia illustrationName en el slot correspondiente y recrea su FSprite via el patrón de SaintsJourneyIllustration.
-    public static void RotateSkySlots()
+    private static int _lastApplyFrame = -1;
+    private static float _lastAppliedT = -1f;
+
+    private static void ApplyPsvAlphas(float t, bool isBlending)
     {
-        // La sincronización real ocurre en AttachWithExternalT via SyncSkySlots.
+        bool isManualMode = _active && _externalT;
+        
+        if (!isManualMode && Time.frameCount == _lastApplyFrame) 
+            return;
+        
+        var allSlots = new[] { _rcSlotsPSV, _rcSlotsPSVFog, _rcSlotsPSVSun };
+        
+        foreach (var slots in allSlots)
+        {
+            if (slots == null || slots.Count < 3) continue;
+            
+            float alphaDay, alphaDusk, alphaNight;
+            
+            if (isBlending)
+            {
+                if (slots == _rcSlotsPSV)
+                {
+                    alphaDay = 1f - t;
+                    alphaDusk = 1f;
+                    alphaNight = 0f;
+                }
+                else
+                {
+                    alphaDay = 1f - t;
+                    alphaDusk = t;
+                    alphaNight = 0f;
+                }
+            }
+            else
+            {
+                alphaDay = 1f;
+                alphaDusk = 0f;
+                alphaNight = 0f;
+            }
+            
+            slots[0].alpha = alphaDay;
+            slots[1].alpha = alphaDusk;
+            slots[2].alpha = alphaNight;
+        }
+        
+        _lastApplyFrame = Time.frameCount;
+        _lastAppliedT = t;
     }
 
-    // Cambia illustrationName del slot y recrea su FSprite si la cámara está disponible. Patrón de SaintsJourneyIllustration: RemoveAllSpritesFromContainer + InitiateSprites.
+    private static void UpdateRcSlots(SkyType sky, int stateA, int stateB, int stateC, RoomCamera forcedCam = null, Room targetRoom = null)
+    {
+        var slots = GetSlotsForSky(sky);
+        if (slots == null || slots.Count < 3) return;
 
+        string regionCode = null;
+        if (targetRoom != null)
+            regionCode = targetRoom.world?.region?.name?.ToUpperInvariant();
+        else if (_room != null)
+            regionCode = _room.world?.region?.name?.ToUpperInvariant();
+        
+        BlendSettings effectiveSettings = BlendSettingsLoader.Active;
+        if (effectiveSettings == null && !string.IsNullOrEmpty(regionCode))
+            effectiveSettings = BlendSettingsLoader.GetForRegion(regionCode);
+        
+        if (effectiveSettings == null) return;
+
+        var cam = forcedCam ?? _room?.game?.cameras?[0];
+        if (cam == null && targetRoom != null)
+            cam = targetRoom.game?.cameras?[0];
+
+        if (cam == null || (_room != null && cam.room != _room && (targetRoom == null || cam.room != targetRoom)))
+        {
+            _pendingSkySync = true;
+            _pendingSyncSky = sky == SkyType.ACV ? 0 : (sky == SkyType.RTV ? 1 : 2);
+            _pendingStateA = stateA;
+            _pendingStateB = stateB;
+            return;
+        }
+
+        ViewType view = sky == SkyType.ACV ? ViewType.ACV :
+                        sky == SkyType.RTV ? ViewType.RTV : ViewType.PSV;
+
+        string fileA = effectiveSettings.GetBkgFileForState(stateA, view);
+        string fileB = effectiveSettings.GetBkgFileForState(stateB, view);
+        string fileC = effectiveSettings.GetBkgFileForState(stateC, view);
+
+        if (!string.IsNullOrEmpty(fileA) && slots[0].illustrationName != Path.GetFileNameWithoutExtension(fileA))
+            RefreshSlotSprite(slots[0], Path.GetFileNameWithoutExtension(fileA), cam);
+        if (!string.IsNullOrEmpty(fileB) && slots[1].illustrationName != Path.GetFileNameWithoutExtension(fileB))
+            RefreshSlotSprite(slots[1], Path.GetFileNameWithoutExtension(fileB), cam);
+        if (!string.IsNullOrEmpty(fileC) && slots[2].illustrationName != Path.GetFileNameWithoutExtension(fileC))
+            RefreshSlotSprite(slots[2], Path.GetFileNameWithoutExtension(fileC), cam);
+
+        if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending)
+        {
+            float t = BlendClock.SubPhaseLocalT;
+            slots[0].alpha = 1f - t;
+            slots[1].alpha = 1f;
+            slots[2].alpha = 0f;
+        }
+        else
+        {
+            slots[0].alpha = 1f;
+            slots[1].alpha = 0f;
+            slots[2].alpha = 0f;
+        }
+
+        SetSlotDay(sky, stateA);
+        SetSlotDusk(sky, stateB);
+        SetSlotNight(sky, stateC);
+
+        if (sky == SkyType.PSV)
+        {
+            UpdatePsvSlots(stateA, stateB, stateC, cam);
+            ApplyPsvAlphas(BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending ? BlendClock.SubPhaseLocalT : 0f, BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending);
+        }
+
+        _pendingSkySync = false;
+    }
+
+    private static void ApplyRcSlotsAlpha(SkyType sky, float t, bool isBlending)
+    {
+        var slots = GetSlotsForSky(sky);
+        if (slots == null || slots.Count < 3) return;
+
+        if (isBlending)
+        {
+            slots[0].alpha = 1f - t;
+            slots[1].alpha = 1f;
+            slots[2].alpha = 0f;
+        }
+        else
+        {
+            slots[0].alpha = 1f;
+            slots[1].alpha = 0f;
+            slots[2].alpha = 0f;
+        }
+
+        if (sky == SkyType.PSV)
+            ApplyPsvAlphas(t, isBlending);
+    }
+
+    public static void SyncSkySlots(Room room, int stateA, int stateB)
+    {
+        if (room == null) return;
+        var settings = BlendSettingsLoader.Active;
+        if (settings == null) return;
+
+        string roomName = room.abstractRoom?.name;
+        if (roomName == null) return;
+
+        var skyType = GetViewFromLoadedSettings(room);
+        if (skyType == SkyType.None) return;
+
+        int stateC = NextStateIn(settings, stateB);
+        SetSlotDay(skyType, stateA);
+        SetSlotDusk(skyType, stateB);
+        SetSlotNight(skyType, stateC);
+
+        UpdateRcSlots(skyType, stateA, stateB, stateC, null, room);
+    }
+
+    public static void ApplySkyForState(int state, Room room)
+    {
+        if (room == null) return;
+        var settings = BlendSettingsLoader.Active;
+        if (settings == null) return;
+        string roomName = room.abstractRoom?.name;
+        if (roomName == null) return;
+
+        var skyType = GetViewFromLoadedSettings(room);
+        if (skyType == SkyType.None) return;
+        if (GetSlotDay(skyType) == state) return;
+
+        int stateB = NextStateIn(settings, state);
+        int stateC = NextStateIn(settings, stateB);
+
+        SetSlotDay(skyType, state);
+        SetSlotDusk(skyType, stateB);
+        SetSlotNight(skyType, stateC);
+
+        UpdateRcSlots(skyType, state, stateB, stateC, null, room);
+        ApplyRcSlotsAlpha(skyType, 0f, false);
+    }
+
+    public static void RotateSlotsOnIdle(Room room, int currentState)
+    {
+        if (room == null) return;
+        var settings = BlendSettingsLoader.Active;
+        if (settings == null) return;
+
+        string roomName = room.abstractRoom?.name;
+        if (roomName == null) return;
+
+        var skyType = GetViewFromLoadedSettings(room);
+        if (skyType == SkyType.None) return;
+
+        var slots = GetSlotsForSky(skyType);
+        if (slots == null || slots.Count < 3) return;
+        if (currentState == _lastIdleRotatedState) return;
+
+        int stateB = NextStateIn(settings, currentState);
+        int stateC = NextStateIn(settings, stateB);
+
+        ViewType view = skyType == SkyType.ACV ? ViewType.ACV
+                      : skyType == SkyType.RTV ? ViewType.RTV : ViewType.PSV;
+
+        string fileA = settings.GetBkgFileForState(currentState, view);
+        string fileB = settings.GetBkgFileForState(stateB, view);
+        string fileC = settings.GetBkgFileForState(stateC, view);
+
+        var cam = room.game?.cameras?[0];
+
+        if (!string.IsNullOrEmpty(fileA) && slots[0].illustrationName != fileA)
+            RefreshSlotSprite(slots[0], fileA, cam);
+        if (!string.IsNullOrEmpty(fileB) && slots[1].illustrationName != fileB)
+            RefreshSlotSprite(slots[1], fileB, cam);
+        if (!string.IsNullOrEmpty(fileC) && slots[2].illustrationName != fileC)
+            RefreshSlotSprite(slots[2], fileC, cam);
+
+        slots[0].alpha = 1f;
+        slots[1].alpha = 0f;
+        slots[2].alpha = 0f;
+
+        SetSlotDay(skyType, currentState);
+        SetSlotDusk(skyType, stateB);
+        SetSlotNight(skyType, stateC);
+
+        if (skyType == SkyType.PSV)
+        {
+            UpdatePsvSlots(currentState, stateB, stateC, cam);
+            ApplyPsvAlphas(0f, false);
+        }
+
+        _lastIdleRotatedState = currentState;
+    }
 
     /// <summary>
-    /// Intenta recrear el FSprite del slot con el nuevo nombre.
-    /// Devuelve true si encontró el spriteLeaser y recreó el sprite.
+    /// Siguiente estado en rotación cíclica intrínseca: 1→2→3→4→1.
+    /// No depende de secuencias configuradas en archivo.
+    /// </summary>
+    private static int NextStateIn(BlendSettings settings, int state)
+    {
+        if (settings == null || state < 1 || state > 4) return state;
+        return (state % 4) + 1;
+    }
+
     private static bool RefreshSlotSprite(
         BackgroundScene.Simple2DBackgroundIllustration slot,
-        string newName, RoomCamera cam, float initialAlpha = 0f)
+        string newName, RoomCamera cam)
     {
         if (slot.illustrationName == newName) return true;
+
+        float currentAlpha = slot.alpha;
+        string oldName = slot.illustrationName;
         slot.illustrationName = newName;
 
-        // Buscar el leaser en la cámara activa.
         var cameras = cam?.room?.game?.cameras
                    ?? slot.scene?.room?.game?.cameras;
         if (cameras == null) return false;
 
+        bool success = false;
         foreach (var anyCamera in cameras)
         {
             if (anyCamera?.spriteLeasers == null) continue;
@@ -247,161 +398,55 @@ public static partial class SettingsBlendController
                     if (container.GetChildAt(i) == oldSprite) { childIndex = i; break; }
 
                 var newSprite = new FSprite(newName, true);
-                newSprite.x = oldSprite.x; newSprite.y = oldSprite.y;
-                newSprite.shader = oldSprite.shader;
-                newSprite.alpha = initialAlpha;
+                newSprite.x = oldSprite.x;
+                newSprite.y = oldSprite.y;
+                bool isSunSlot = (_rcSlotsPSVSun != null && _rcSlotsPSVSun.Contains(slot));
+                newSprite.shader = isSunSlot
+                    ? cam.game.rainWorld.Shaders["BackgroundAdditive"]
+                    : oldSprite.shader;
+                newSprite.alpha = currentAlpha;
+
+                newSprite.UpdateLocalVertices();
+
                 oldSprite.RemoveFromContainer();
                 sLeaser.sprites[0] = newSprite;
+
                 if (childIndex >= 0 && childIndex <= container.GetChildCount())
                     container.AddChildAtIndex(newSprite, childIndex);
                 else
                     container.AddChild(newSprite);
-                return true;
+
+                success = true;
+                break;
             }
+            if (success) break;
         }
 
-        // No hay leaser — cámara en otra sala.
-        return false;
+        return success;
     }
 
-
-    // Sincroniza los tres slots de cielo (daySky/duskSky/nightSky) con el par stateA/stateB del blend actual. Corre en cada AttachWithExternalT. A diferencia de RotateSkySlots (que rota incrementalmente), este método calcula directamente desde los estados actuales — siempre correcto.
-    private static void SyncSkySlots(Room room, int stateA, int stateB)
+    public static void ClearAllSlots()
     {
-        var settings = BlendSettingsLoader.Active;
-        if (settings == null || room == null) return;
-        string roomName = room.abstractRoom?.name;
-        if (roomName == null) return;
+        _rcSlotsACV = null;
+        _acvScene = null;
+        _acvSlotDay = _acvSlotDusk = _acvSlotNight = -1;
 
-        SkyType sky = settings.GetSkyType(roomName);
-        if (sky == SkyType.None) return;
+        _rcSlotsRTV = null;
+        _rtvScene = null;
+        _rtvSlotDay = _rtvSlotDusk = _rtvSlotNight = -1;
 
-        // Verificar que tenemos la escena correcta para esta sala
-        if (sky == SkyType.RTV && (_rtvScene == null || _rtvScene.room?.abstractRoom?.name != roomName)) return;
-        if (sky == SkyType.ACV && (_acvScene == null || _acvScene.room?.abstractRoom?.name != roomName)) return;
+        _rcSlotsPSV = null;
+        _rcSlotsPSVFog = null;
+        _rcSlotsPSVSun = null;
+        _psvScene = null;
+        _psvSlotDay = _psvSlotDusk = _psvSlotNight = -1;
 
-        int stateC = NextStateIn(settings, stateB);
+        _rcSlotsStaticACV = null;
+        _rcSlotsStaticRTV = null;
+        _rcSlotsStaticPSV = null;
 
-        // Sin cambio — no hacer nada
-        if (GetSlotDay(sky) == stateA && GetSlotDusk(sky) == stateB && GetSlotNight(sky) == stateC) return;
-
-        string fileA = settings.GetBkgFileForState(stateA, sky);
-        string fileB = settings.GetBkgFileForState(stateB, sky);
-        string fileC = settings.GetBkgFileForState(stateC, sky);
-
-        var cam = room.game?.cameras?[0];
-
-        RoofTopView    rtv = sky == SkyType.RTV ? _rtvScene : null;
-        AboveCloudsView acv = sky == SkyType.ACV ? _acvScene : null;
-
-        if (GetSlotDay(sky) != stateA)
-        {
-            bool refreshed = true;
-            if (!string.IsNullOrEmpty(fileA))
-            {
-                if (rtv != null) refreshed &= RefreshSlotSprite(rtv.daySky, System.IO.Path.GetFileNameWithoutExtension(fileA), cam);
-                if (acv != null) refreshed &= RefreshSlotSprite(acv.daySky, System.IO.Path.GetFileNameWithoutExtension(fileA), cam);
-            }
-            float dayAlpha = 1f - (_entryFrameT >= 0f ? _entryFrameT : BlendClock.SubPhaseLocalT);
-            if (rtv != null) rtv.daySky.alpha = dayAlpha;
-            if (acv != null) acv.daySky.alpha = dayAlpha;
-            SetSlotDay(sky, stateA);
-            if (!refreshed) { _pendingSkySync = true; _pendingSkyStateA = stateA; _pendingSkyStateB = stateB; }
-        }
-        if (GetSlotDusk(sky) != stateB)
-        {
-            bool refreshed = true;
-            if (!string.IsNullOrEmpty(fileB))
-            {
-                if (rtv != null) refreshed &= RefreshSlotSprite(rtv.duskSky, System.IO.Path.GetFileNameWithoutExtension(fileB), cam);
-                if (acv != null) refreshed &= RefreshSlotSprite(acv.duskSky, System.IO.Path.GetFileNameWithoutExtension(fileB), cam);
-            }
-            if (rtv != null) rtv.duskSky.alpha = 1f;
-            if (acv != null) acv.duskSky.alpha = 1f;
-            SetSlotDusk(sky, stateB);
-            if (!refreshed) { _pendingSkySync = true; _pendingSkyStateA = stateA; _pendingSkyStateB = stateB; }
-        }
-        if (GetSlotNight(sky) != stateC)
-        {
-            bool refreshed = true;
-            if (!string.IsNullOrEmpty(fileC))
-            {
-                if (rtv != null) refreshed &= RefreshSlotSprite(rtv.nightSky, System.IO.Path.GetFileNameWithoutExtension(fileC), cam);
-                if (acv != null) refreshed &= RefreshSlotSprite(acv.nightSky, System.IO.Path.GetFileNameWithoutExtension(fileC), cam);
-            }
-            SetSlotNight(sky, stateC);
-            if (!refreshed) { _pendingSkySync = true; _pendingSkyStateA = stateA; _pendingSkyStateB = stateB; }
-        }
+        _lastIdleRotatedState = -1;
+        _hasSavedAlphas = false;
+        _pendingSkySync = false;
     }
-
-    // Aplica instantáneamente la imagen de cielo correspondiente a un estado. Llamar desde RCPanel al hacer swap (cambio instantáneo de estado).
-    public static void ApplySkyForState(int state, Room room)
-    {
-        if (room == null) return;
-        var settings = BlendSettingsLoader.Active;
-        if (settings == null) return;
-        string roomName = room.abstractRoom?.name;
-        if (roomName == null) return;
-
-        SkyType sky = settings.GetSkyType(roomName);
-        if (sky == SkyType.None) return;
-
-        string fileDay  = settings.GetBkgFileForState(state, sky);
-        if (string.IsNullOrEmpty(fileDay)) return;
-        string nameDay  = System.IO.Path.GetFileNameWithoutExtension(fileDay);
-
-        int stateB = NextStateIn(settings, state);
-        int stateC = NextStateIn(settings, stateB);
-        string fileDusk = settings.GetBkgFileForState(stateB, sky);
-        string nameDusk = string.IsNullOrEmpty(fileDusk) ? null
-            : System.IO.Path.GetFileNameWithoutExtension(fileDusk);
-
-        var cam = room.game?.cameras?[0];
-
-        if (sky == SkyType.RTV && _rtvScene != null)
-        {
-            bool r1 = RefreshSlotSprite(_rtvScene.daySky,  nameDay,  cam, 1f);
-            bool r2 = nameDusk != null ? RefreshSlotSprite(_rtvScene.duskSky, nameDusk, cam, 1f) : true;
-            _rtvScene.daySky.alpha   = 1f;
-            _rtvScene.duskSky.alpha  = 1f;
-            _rtvScene.nightSky.alpha = 0f;
-            if (!r1 || !r2) { _pendingSkySync = true; _pendingSkyStateA = state; _pendingSkyStateB = stateB; }
-        }
-        else if (sky == SkyType.ACV && _acvScene != null)
-        {
-            bool r1 = RefreshSlotSprite(_acvScene.daySky,  nameDay,  cam, 1f);
-            bool r2 = nameDusk != null ? RefreshSlotSprite(_acvScene.duskSky, nameDusk, cam, 1f) : true;
-            _acvScene.daySky.alpha   = 1f;
-            _acvScene.duskSky.alpha  = 1f;
-            _acvScene.nightSky.alpha = 0f;
-            if (!r1 || !r2) { _pendingSkySync = true; _pendingSkyStateA = state; _pendingSkyStateB = stateB; }
-        }
-
-        SetSlotDay  (sky, state);
-        SetSlotDusk (sky, stateB);
-        SetSlotNight(sky, stateC);
-    }
-    /// Si no hay secuencia declarada, devuelve el mismo estado.
-    /// </summary>
-    private static int NextStateIn(BlendSettings settings, int state)
-    {
-        if (settings == null || state < 1) return state;
-        // Buscar en sequences el estado que sigue a 'state'
-        foreach (var kv in settings.Sequences)
-        {
-            var seq = kv.Value;
-            int idx = seq.IndexOf(state);
-            if (idx >= 0)
-                return seq[(idx + 1) % seq.Count];
-        }
-        // Fallback: state+1 cíclico dentro del rango de bkg declarados
-        int max = 0;
-        foreach (var alias in settings.StateBkgAlias.Keys)
-            if (alias > max) max = alias;
-        if (max < 1) return state;
-        return (state % max) + 1;
-    }
-
-    // RoomCamera.DrawUpdate setea backgroundGraphic.color cada frame usando
-
 }

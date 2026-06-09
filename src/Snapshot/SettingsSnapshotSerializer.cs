@@ -4,8 +4,7 @@ using System.Text;
 
 namespace RainCycles.Snapshot;
 
-// SERIALIZACIÓN
-
+// Serialización a texto
 public partial class SettingsSnapshot
 {
     private static readonly CultureInfo SINV = CultureInfo.InvariantCulture;
@@ -17,9 +16,21 @@ public partial class SettingsSnapshot
         var sb = new StringBuilder();
         bool poWritten = false;
 
+        // PRIMERO: Escribir RC_TYPE si existe (antes que cualquier otra línea RC_*)
+        if (HasRcType && RcType != RcType.None)
+        {
+            string typeValue = RcType == RcType.Static ? "Static" : "Blend";
+            sb.AppendLine($"RC_TYPE: {typeValue}");
+        }
+
         foreach (string rawLine in lines)
         {
             string line = rawLine.TrimEnd('\r');
+
+            // Saltar líneas RC_TYPE, RC_VIEW, RC_TINT originales
+            // porque las vamos a reescribir con el orden correcto
+            if (line.StartsWith("RC_TYPE:") || line.StartsWith("RC_VIEW:") || line.StartsWith("RC_TINT:"))
+                continue;
 
             if (line.StartsWith("PlacedObjects: ") && !poWritten)
             {
@@ -43,17 +54,26 @@ public partial class SettingsSnapshot
             else if (line.StartsWith("Triggers: "))              sb.AppendLine("Triggers: " + Triggers);
             else if (line.StartsWith("AmbientSounds: "))         sb.AppendLine("AmbientSounds: " + AmbientSounds);
             else if (line.StartsWith("FadePalette: "))           sb.AppendLine(BuildFadePaletteLine());
-            else if (line.StartsWith("RC_TINT: "))
-            {
-                // Preservar/actualizar RC_TINT con los valores actuales del snapshot.
-                sb.AppendLine(BuildRcTintLine());
-            }
-            else                                                  sb.AppendLine(line);
+            else                                                sb.AppendLine(line);
         }
 
-        // Si RC_TINT no estaba en RawText (fue inyectado después de la carga),
-        if (!RawText.Contains("RC_TINT:"))
+        // DESPUÉS: Escribir RC_VIEW y RC_TINT si hay RC_TYPE
+        if (HasRcType && RcType != RcType.None)
+        {
+            if (ViewType != ViewType.None)
+            {
+                string viewValue = ViewType == ViewType.ACV ? "ACV" :
+                                   ViewType == ViewType.RTV ? "RTV" : "PSV";
+                sb.AppendLine($"RC_VIEW: {viewValue}");
+            }
             sb.AppendLine(BuildRcTintLine());
+        }
+        else if (!RawText.Contains("RC_TINT:"))
+        {
+            // Solo por compatibilidad con archivos antiguos que no tienen RC_TYPE
+            // pero ya existía RC_TINT. Normalmente esto no debería ocurrir.
+            sb.AppendLine(BuildRcTintLine());
+        }
 
         return sb.ToString();
     }
@@ -73,14 +93,13 @@ public partial class SettingsSnapshot
             if (kv.Key < patched.Count) patched[kv.Key] = PatchDecal(patched[kv.Key], kv.Value);
         foreach (var kv in LightIntensities)
             if (kv.Key < patched.Count) patched[kv.Key] = PatchLightIntensity(patched[kv.Key], kv.Value);
-        // LightBeams NO se parchean aquí — su alpha lo gestiona exclusivamente
-        return "PlacedObjects: " + string.Join(", ", patched.ToArray());
+        return "PlacedObjects: " + string.Join(", ", patched);
     }
 
     private static string PatchDecal(string obj, float[] ops)
     {
         string[] t = obj.Split('~');
-        int[] oi = new int[] { 12, 14, 16, 18 };
+        int[] oi = { 12, 14, 16, 18 };
         for (int i = 0; i < 4; i++)
             if (oi[i] < t.Length)
                 t[oi[i]] = ops[i].ToString("F7", SINV);
@@ -96,9 +115,7 @@ public partial class SettingsSnapshot
         string[] parts = header.Split('>');
         for (int i = parts.Length - 1; i >= 0; i--)
         {
-            float dummy;
-            if (float.TryParse(parts[i].TrimStart('<').Trim(),
-                System.Globalization.NumberStyles.Float, SINV, out dummy))
+            if (float.TryParse(parts[i].TrimStart('<').Trim(), NumberStyles.Float, SINV, out _))
             {
                 parts[i] = "<" + intensity.ToString("F7", SINV);
                 break;
@@ -118,11 +135,8 @@ public partial class SettingsSnapshot
         return $"RC_TINT: {mul} {atm} {cld}";
     }
 
-    private static string ColorToHex(UnityEngine.Color c)
+    private static string ColorToHex(Color c)
     {
-        int r = UnityEngine.Mathf.RoundToInt(c.r * 255f);
-        int g = UnityEngine.Mathf.RoundToInt(c.g * 255f);
-        int b = UnityEngine.Mathf.RoundToInt(c.b * 255f);
-        return $"#{r:X2}{g:X2}{b:X2}";
+        return $"#{Mathf.RoundToInt(c.r * 255f):X2}{Mathf.RoundToInt(c.g * 255f):X2}{Mathf.RoundToInt(c.b * 255f):X2}";
     }
 }

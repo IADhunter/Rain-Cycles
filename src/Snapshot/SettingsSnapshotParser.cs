@@ -3,10 +3,9 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using UnityEngine;
 
 namespace RainCycles.Snapshot;
-
-// PARSING
 
 public partial class SettingsSnapshot
 {
@@ -24,98 +23,74 @@ public partial class SettingsSnapshot
         foreach (string rawLine in raw.Split('\n'))
         {
             string line = rawLine.TrimEnd('\r');
-
             int sep = line.IndexOf(": ", StringComparison.Ordinal);
             if (sep < 0) continue;
 
             string key = line.Substring(0, sep);
             string val = line.Substring(sep + 2);
 
-            int iv; float fv;
+            if (key == "RC_TYPE")
+            {
+                snap.HasRcType = true;
+                snap.RcType = val.Trim().ToUpperInvariant() switch
+                {
+                    "STATIC" => RcType.Static,
+                    "BLEND" => RcType.Blend,
+                    _ => RcType.None
+                };
+                continue;
+            }
+
+            if (key == "RC_VIEW" && snap.HasRcType)
+            {
+                snap.ViewType = val.Trim().ToUpperInvariant() switch
+                {
+                    "ACV" => ViewType.ACV,
+                    "RTV" => ViewType.RTV,
+                    "PSV" => ViewType.PSV,
+                    _ => ViewType.None
+                };
+                continue;
+            }
+
+            if (key == "RC_TINT" && snap.HasRcType)
+            {
+                string[] hexes = val.Trim().Split(' ');
+                if (hexes.Length >= 1) snap.TintMultiply = ParseHexColor(hexes[0]);
+                if (hexes.Length >= 2) snap.TintAtmosphere = ParseHexColor(hexes[1]);
+                if (hexes.Length >= 3) snap.TintCloudAtmosphere = ParseHexColor(hexes[2]);
+                continue;
+            }
+
             switch (key)
             {
-                case "PlacedObjects":
-                    ParsePlacedObjectsContent(snap, val);
-                    break;
-
-                case "Palette":
-                    if (int.TryParse(val.Trim(), out iv)) { snap.Palette = iv; snap._hasPalette = true; }
-                    break;
-                case "Grime":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.Grime = fv; snap._hasGrime = true; }
-                    break;
-                case "Clouds":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.Clouds = fv; snap._hasClouds = true; }
-                    break;
-                case "CeilingDrips":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.CeilingDrips = fv; snap._hasCeilingDrips = true; }
-                    break;
-                case "BkgDroneVolume":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.BkgDroneVolume = fv; snap._hasBkgDroneVolume = true; }
-                    break;
-                case "RandomItemDensity":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.RandomItemDensity = fv; snap._hasRandomItemDensity = true; }
-                    break;
-                case "RandomItemSpearChance":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) { snap.RandomItemSpearChance = fv; snap._hasRandomItemSpearChance = true; }
-                    break;
-                case "WaterReflectionAlpha":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.WaterReflectionAlpha = fv;
-                    break;
-                case "EffectColorA":
-                    if (int.TryParse(val.Trim(), out iv)) { snap.EffectColorA = iv; snap._hasEffectColorA = true; }
-                    break;
-                case "EffectColorB":
-                    if (int.TryParse(val.Trim(), out iv)) { snap.EffectColorB = iv; snap._hasEffectColorB = true; }
-                    break;
-
-                case "DangerType":     snap.DangerType    = val.Trim(); break;
-                case "Template":       snap.Template      = val.Trim(); break;
-                case "Triggers":       snap.Triggers      = val.Trim(); break;
-                case "AmbientSounds":  snap.AmbientSounds = val.Trim(); break;
-
-                case "Effects":
-                {
-                    string sv = val.Trim();
-                    snap.Effects = sv;
-                    ParseEffectAmounts(snap, sv);
-                    break;
-                }
-
-                case "TerrainPalette":
-                    snap.TerrainPaletteName = val.Trim();
-                    snap._hasTerrainPalette = true;
-                    break;
-                case "TerrainWaves":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainWaves = fv;
-                    break;
-                case "TerrainLight":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainLight = fv;
-                    break;
-                case "TerrainGrain":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainGrain = fv;
-                    break;
-                case "TerrainDepth":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainDepth = fv;
-                    break;
-                case "TerrainSkyFade":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainSkyFade = fv;
-                    break;
-                case "TerrainEdgeRadius":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainEdgeRadius = fv;
-                    break;
-                case "TerrainGooHeight":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainGooHeight = fv;
-                    break;
-                case "TerrainStainAmount":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainStainAmount = fv;
-                    break;
-                case "TerrainStainBrightness":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainStainBrightness = fv;
-                    break;
-                case "TerrainStainHeight":
-                    if (float.TryParse(val.Trim(), NF, INV, out fv)) snap.TerrainStainHeight = fv;
-                    break;
+                case "PlacedObjects": ParsePlacedObjectsContent(snap, val); break;
+                case "Palette": if (int.TryParse(val.Trim(), out int p)) { snap.Palette = p; snap._hasPalette = true; } break;
+                case "Grime": if (float.TryParse(val.Trim(), NF, INV, out float g)) { snap.Grime = g; snap._hasGrime = true; } break;
+                case "Clouds": if (float.TryParse(val.Trim(), NF, INV, out float c)) { snap.Clouds = c; snap._hasClouds = true; } break;
+                case "CeilingDrips": if (float.TryParse(val.Trim(), NF, INV, out float cd)) { snap.CeilingDrips = cd; snap._hasCeilingDrips = true; } break;
+                case "BkgDroneVolume": if (float.TryParse(val.Trim(), NF, INV, out float bv)) { snap.BkgDroneVolume = bv; snap._hasBkgDroneVolume = true; } break;
+                case "RandomItemDensity": if (float.TryParse(val.Trim(), NF, INV, out float rd)) { snap.RandomItemDensity = rd; snap._hasRandomItemDensity = true; } break;
+                case "RandomItemSpearChance": if (float.TryParse(val.Trim(), NF, INV, out float rs)) { snap.RandomItemSpearChance = rs; snap._hasRandomItemSpearChance = true; } break;
+                case "WaterReflectionAlpha": if (float.TryParse(val.Trim(), NF, INV, out float wa)) snap.WaterReflectionAlpha = wa; break;
+                case "EffectColorA": if (int.TryParse(val.Trim(), out int eca)) { snap.EffectColorA = eca; snap._hasEffectColorA = true; } break;
+                case "EffectColorB": if (int.TryParse(val.Trim(), out int ecb)) { snap.EffectColorB = ecb; snap._hasEffectColorB = true; } break;
+                case "DangerType": snap.DangerType = val.Trim(); break;
+                case "Template": snap.Template = val.Trim(); break;
+                case "Triggers": snap.Triggers = val.Trim(); break;
+                case "AmbientSounds": snap.AmbientSounds = val.Trim(); break;
+                case "Effects": snap.Effects = val.Trim(); ParseEffectAmounts(snap, snap.Effects); break;
+                case "TerrainPalette": snap.TerrainPaletteName = val.Trim(); snap._hasTerrainPalette = true; break;
+                case "TerrainWaves": if (float.TryParse(val.Trim(), NF, INV, out float tw)) snap.TerrainWaves = tw; break;
+                case "TerrainLight": if (float.TryParse(val.Trim(), NF, INV, out float tl)) snap.TerrainLight = tl; break;
+                case "TerrainGrain": if (float.TryParse(val.Trim(), NF, INV, out float tg)) snap.TerrainGrain = tg; break;
+                case "TerrainDepth": if (float.TryParse(val.Trim(), NF, INV, out float td)) snap.TerrainDepth = td; break;
+                case "TerrainSkyFade": if (float.TryParse(val.Trim(), NF, INV, out float ts)) snap.TerrainSkyFade = ts; break;
+                case "TerrainEdgeRadius": if (float.TryParse(val.Trim(), NF, INV, out float te)) snap.TerrainEdgeRadius = te; break;
+                case "TerrainGooHeight": if (float.TryParse(val.Trim(), NF, INV, out float th)) snap.TerrainGooHeight = th; break;
+                case "TerrainStainAmount": if (float.TryParse(val.Trim(), NF, INV, out float ta)) snap.TerrainStainAmount = ta; break;
+                case "TerrainStainBrightness": if (float.TryParse(val.Trim(), NF, INV, out float tb)) snap.TerrainStainBrightness = tb; break;
+                case "TerrainStainHeight": if (float.TryParse(val.Trim(), NF, INV, out float tsh)) snap.TerrainStainHeight = tsh; break;
 
                 case "TerrainFadePalette":
                 {
@@ -126,11 +101,8 @@ public partial class SettingsSnapshot
                         snap._hasTerrainFadePalette = true;
                         var ops = new List<float>();
                         for (int i = 1; i < parts.Length; i++)
-                        {
-                            float op;
-                            if (float.TryParse(parts[i].Trim(), NF, INV, out op))
+                            if (float.TryParse(parts[i].Trim(), NF, INV, out float op))
                                 ops.Add(op);
-                        }
                         snap.TerrainFadeOpacities = ops.ToArray();
                     }
                     break;
@@ -139,241 +111,311 @@ public partial class SettingsSnapshot
                 case "FadePalette":
                 {
                     string[] parts = val.Trim().Split(',');
-                    int fpid;
-                    if (parts.Length >= 1 && int.TryParse(parts[0].Trim(), out fpid))
+                    if (parts.Length >= 1 && int.TryParse(parts[0].Trim(), out int fpid))
                     {
                         snap.FadePaletteID = fpid;
                         snap._hasFadePalette = true;
                         var ops = new List<float>();
                         for (int i = 1; i < parts.Length; i++)
-                        {
-                            float op;
-                            if (float.TryParse(parts[i].Trim(), NF, INV, out op))
+                            if (float.TryParse(parts[i].Trim(), NF, INV, out float op))
                                 ops.Add(op);
-                        }
                         snap.FadePaletteOpacities = ops.ToArray();
                     }
                     break;
                 }
-
-                // Campo propio del mod — Rain World ignora líneas que no reconoce.
-                case "RC_TINT":
-                {
-                    string[] hexes = val.Trim().Split(' ');
-                    if (hexes.Length >= 1) snap.TintMultiply        = ParseHexColor(hexes[0]);
-                    if (hexes.Length >= 2) snap.TintAtmosphere      = ParseHexColor(hexes[1]);
-                    if (hexes.Length >= 3) snap.TintCloudAtmosphere = ParseHexColor(hexes[2]);
-                    break;
-                }
             }
         }
+
         return snap;
     }
-
-    // ── Template fallback
 
     public static SettingsSnapshot FromFileWithTemplate(string path, string roomName)
     {
         var snap = FromFile(path);
-        FillFromTemplate(snap, roomName);
+        FillFromTemplate(snap, roomName, path);
         return snap;
     }
 
-    private static void FillFromTemplate(SettingsSnapshot snap, string roomName)
+    private static void FillFromTemplate(SettingsSnapshot snap, string roomName, string settingsPath)
     {
-        // Si el template es "NONE", no aplicar herencia
         if (snap.Template.ToUpper() == "NONE") return;
 
-        // Determinar el nombre del template a usar
-        string templateName;
-        bool useWildcard = false;
-        
-        if (string.IsNullOrEmpty(snap.Template))
-        {
-            // Si no hay template declarado, usar "outside" como default (comportamiento vanilla)
-            templateName = "outside";
-            useWildcard = true;  // Buscar cualquier template que contenga "outside"
-            RSPlugin.log.LogDebug($"[SettingsSnapshot] No template declared for {roomName}, using default 'outside' (wildcard)");
-        }
-        else
-        {
-            templateName = snap.Template.ToLower();
-            // Si el template contiene "_", tomar la parte después del último "_"
-            int lastUnderscore = templateName.LastIndexOf('_');
-            if (lastUnderscore >= 0)
-                templateName = templateName.Substring(lastUnderscore + 1);
-        }
-
-        // Extraer región del nombre de la sala (ej: "WPTA_F03" → "wpta")
         string region = roomName.Contains("_")
             ? roomName.Split('_')[0].ToLower()
             : roomName.ToLower();
 
-        string templatePath = null;
+        string settingsModDir = GetSettingsModDirectory(settingsPath, region);
+        string templateName;
 
-        // Si usamos wildcard, buscar cualquier archivo que contenga "outside"
-        if (useWildcard)
+        if (string.IsNullOrEmpty(snap.Template))
         {
-            string searchPattern = region + "_settingstemplate_*outside*.txt";
-            string modsRoot = Path.Combine(UnityEngine.Application.streamingAssetsPath, "mods");
-            
-            // Buscar en mods activos
-            for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+            templateName = GetFirstTemplateFromProperties(region, settingsModDir);
+            if (string.IsNullOrEmpty(templateName))
             {
-                string searchDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region);
-                if (Directory.Exists(searchDir))
-                {
-                    string[] matches = Directory.GetFiles(searchDir, searchPattern);
-                    if (matches.Length > 0)
-                    {
-                        templatePath = matches[0];
-                        break;
-                    }
-                }
+                RSPlugin.log.LogInfo($"[Template] {roomName}: sin template definido (sin línea en properties.txt)");
+                return;
             }
-            
-            // Buscar en StreamingAssets/mods/ (fallback para mods no registrados en BepInEx)
-            if (templatePath == null && Directory.Exists(modsRoot))
-            {
-                foreach (string found in Directory.GetFiles(modsRoot, searchPattern, SearchOption.AllDirectories))
-                {
-                    templatePath = found;
-                    break;
-                }
-            }
-            
-            // Buscar en vanilla
-            if (templatePath == null)
-            {
-                string vanillaDir = Path.Combine(UnityEngine.Application.streamingAssetsPath, "World", region);
-                if (Directory.Exists(vanillaDir))
-                {
-                    string[] matches = Directory.GetFiles(vanillaDir, searchPattern);
-                    if (matches.Length > 0)
-                        templatePath = matches[0];
-                }
-            }
+            RSPlugin.log.LogInfo($"[Template] {roomName}: aplicando template por defecto '{templateName}'");
         }
         else
         {
-            // Búsqueda normal con nombre exacto
-            string templateFile = region + "_settingstemplate_" + templateName + ".txt";
-            string templateRelative = Path.Combine("World", region, templateFile);
-
-            // Buscar en mods activos en orden inverso (mayor prioridad primero)
-            for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
-            {
-                string candidate = Path.Combine(ModManager.ActiveMods[i].path, templateRelative);
-                if (File.Exists(candidate)) { templatePath = candidate; break; }
-            }
-
-            // Fallback: buscar en todas las subcarpetas de StreamingAssets/mods/
-            if (templatePath == null)
-            {
-                string modsRoot = Path.Combine(UnityEngine.Application.streamingAssetsPath, "mods");
-                if (Directory.Exists(modsRoot))
-                {
-                    foreach (string found in Directory.GetFiles(modsRoot, templateFile, SearchOption.AllDirectories))
-                    { templatePath = found; break; }
-                }
-            }
-
-            // Fallback final: StreamingAssets base (vanilla)
-            if (templatePath == null)
-            {
-                string basePath = Path.Combine(UnityEngine.Application.streamingAssetsPath, templateRelative);
-                if (File.Exists(basePath)) templatePath = basePath;
-            }
+            templateName = snap.Template.ToLower();
+            int lastUnderscore = templateName.LastIndexOf('_');
+            if (lastUnderscore >= 0)
+                templateName = templateName.Substring(lastUnderscore + 1);
+            RSPlugin.log.LogInfo($"[Template] {roomName}: aplicando template específico '{templateName}'");
         }
 
+        string templatePath = ResolveTemplatePath(region, templateName, settingsModDir);
         if (templatePath == null || !File.Exists(templatePath))
         {
-            RSPlugin.log.LogDebug($"[SettingsSnapshot] Template not found: {(useWildcard ? "wildcard *outside*" : templateName)}");
+            RSPlugin.log.LogWarning($"[Template] {roomName}: template '{templateName}' no encontrado en región {region}");
             return;
         }
 
-        RSPlugin.log.LogDebug($"[SettingsSnapshot] Template found: {templatePath}");
-        
-        var tmpl = FromFile(templatePath);
+        RSPlugin.log.LogInfo($"[Template] {roomName}: cargando desde {Path.GetFileName(templatePath)}");
 
-        // Solo copiar valores que el snapshot original NO declaró explícitamente
-        if (!snap._hasPalette)               snap.Palette               = tmpl.Palette;
-        if (!snap._hasGrime)                 snap.Grime                 = tmpl.Grime;
-        if (!snap._hasClouds)                snap.Clouds                = tmpl.Clouds;
-        if (!snap._hasCeilingDrips)          snap.CeilingDrips          = tmpl.CeilingDrips;
-        if (!snap._hasBkgDroneVolume)        snap.BkgDroneVolume        = tmpl.BkgDroneVolume;
-        if (!snap._hasRandomItemDensity)     snap.RandomItemDensity     = tmpl.RandomItemDensity;
+        SettingsSnapshot tmpl;
+        if (!StaticTintManager.TryGetCachedPath(templatePath, out tmpl))
+            tmpl = FromFile(templatePath);
+
+        if (!snap._hasPalette) snap.Palette = tmpl.Palette;
+        if (!snap._hasGrime) snap.Grime = tmpl.Grime;
+        if (!snap._hasClouds) snap.Clouds = tmpl.Clouds;
+        if (!snap._hasCeilingDrips) snap.CeilingDrips = tmpl.CeilingDrips;
+        if (!snap._hasBkgDroneVolume) snap.BkgDroneVolume = tmpl.BkgDroneVolume;
+        if (!snap._hasRandomItemDensity) snap.RandomItemDensity = tmpl.RandomItemDensity;
         if (!snap._hasRandomItemSpearChance) snap.RandomItemSpearChance = tmpl.RandomItemSpearChance;
-        if (!snap._hasEffectColorA)          snap.EffectColorA          = tmpl.EffectColorA;
-        if (!snap._hasEffectColorB)          snap.EffectColorB          = tmpl.EffectColorB;
-        
-        if (!snap._hasFadePalette)
-        {
-            snap.FadePaletteID        = tmpl.FadePaletteID;
-            snap.FadePaletteOpacities = tmpl.FadePaletteOpacities;
-        }
+        if (!snap._hasEffectColorA) snap.EffectColorA = tmpl.EffectColorA;
+        if (!snap._hasEffectColorB) snap.EffectColorB = tmpl.EffectColorB;
+        if (!snap._hasFadePalette) { snap.FadePaletteID = tmpl.FadePaletteID; snap.FadePaletteOpacities = tmpl.FadePaletteOpacities; }
+        if (!snap._hasTerrainPalette) snap.TerrainPaletteName = tmpl.TerrainPaletteName;
+        if (!snap._hasTerrainFadePalette) { snap.TerrainFadePaletteName = tmpl.TerrainFadePaletteName; snap.TerrainFadeOpacities = tmpl.TerrainFadeOpacities; }
 
-        // Terrain palette y fade palette también heredan si no fueron declarados
-        if (!snap._hasTerrainPalette)
-        {
-            snap.TerrainPaletteName = tmpl.TerrainPaletteName;
-        }
-        if (!snap._hasTerrainFadePalette)
-        {
-            snap.TerrainFadePaletteName = tmpl.TerrainFadePaletteName;
-            snap.TerrainFadeOpacities   = tmpl.TerrainFadeOpacities;
-        }
+        if (snap.TerrainWaves == null) snap.TerrainWaves = tmpl.TerrainWaves;
+        if (snap.TerrainLight == null) snap.TerrainLight = tmpl.TerrainLight;
+        if (snap.TerrainGrain == null) snap.TerrainGrain = tmpl.TerrainGrain;
+        if (snap.TerrainDepth == null) snap.TerrainDepth = tmpl.TerrainDepth;
+        if (snap.TerrainSkyFade == null) snap.TerrainSkyFade = tmpl.TerrainSkyFade;
+        if (snap.TerrainEdgeRadius == null) snap.TerrainEdgeRadius = tmpl.TerrainEdgeRadius;
+        if (snap.TerrainGooHeight == null) snap.TerrainGooHeight = tmpl.TerrainGooHeight;
+        if (snap.TerrainStainAmount == null) snap.TerrainStainAmount = tmpl.TerrainStainAmount;
+        if (snap.TerrainStainBrightness == null) snap.TerrainStainBrightness = tmpl.TerrainStainBrightness;
+        if (snap.TerrainStainHeight == null) snap.TerrainStainHeight = tmpl.TerrainStainHeight;
 
-        // Terrain scalars (float? - null significa no declarado)
-        if (snap.TerrainWaves == null && tmpl.TerrainWaves != null)
-            snap.TerrainWaves = tmpl.TerrainWaves;
-        if (snap.TerrainLight == null && tmpl.TerrainLight != null)
-            snap.TerrainLight = tmpl.TerrainLight;
-        if (snap.TerrainGrain == null && tmpl.TerrainGrain != null)
-            snap.TerrainGrain = tmpl.TerrainGrain;
-        if (snap.TerrainDepth == null && tmpl.TerrainDepth != null)
-            snap.TerrainDepth = tmpl.TerrainDepth;
-        if (snap.TerrainSkyFade == null && tmpl.TerrainSkyFade != null)
-            snap.TerrainSkyFade = tmpl.TerrainSkyFade;
-        if (snap.TerrainEdgeRadius == null && tmpl.TerrainEdgeRadius != null)
-            snap.TerrainEdgeRadius = tmpl.TerrainEdgeRadius;
-        if (snap.TerrainGooHeight == null && tmpl.TerrainGooHeight != null)
-            snap.TerrainGooHeight = tmpl.TerrainGooHeight;
-        if (snap.TerrainStainAmount == null && tmpl.TerrainStainAmount != null)
-            snap.TerrainStainAmount = tmpl.TerrainStainAmount;
-        if (snap.TerrainStainBrightness == null && tmpl.TerrainStainBrightness != null)
-            snap.TerrainStainBrightness = tmpl.TerrainStainBrightness;
-        if (snap.TerrainStainHeight == null && tmpl.TerrainStainHeight != null)
-            snap.TerrainStainHeight = tmpl.TerrainStainHeight;
-
-        // Efectos escalares (sentinel -1 = no declarado)
-        if (snap.EffectDarkness < 0f && tmpl.EffectDarkness >= 0f)
-            snap.EffectDarkness = tmpl.EffectDarkness;
-        if (snap.EffectBrightness < 0f && tmpl.EffectBrightness >= 0f)
-            snap.EffectBrightness = tmpl.EffectBrightness;
-        if (snap.EffectContrast < 0f && tmpl.EffectContrast >= 0f)
-            snap.EffectContrast = tmpl.EffectContrast;
-        if (snap.EffectDesaturation < 0f && tmpl.EffectDesaturation >= 0f)
-            snap.EffectDesaturation = tmpl.EffectDesaturation;
-        if (snap.EffectHue < 0f && tmpl.EffectHue >= 0f)
-            snap.EffectHue = tmpl.EffectHue;
-        if (snap.EffectDarkenLights < 0f && tmpl.EffectDarkenLights >= 0f)
-            snap.EffectDarkenLights = tmpl.EffectDarkenLights;
-        if (snap.EffectFog < 0f && tmpl.EffectFog >= 0f)
-            snap.EffectFog = tmpl.EffectFog;
-        if (snap.EffectSkyBloom < 0f && tmpl.EffectSkyBloom >= 0f)
-            snap.EffectSkyBloom = tmpl.EffectSkyBloom;
-        if (snap.EffectSkyAndLightBloom < 0f && tmpl.EffectSkyAndLightBloom >= 0f)
-            snap.EffectSkyAndLightBloom = tmpl.EffectSkyAndLightBloom;
-        if (snap.EffectLightBurn < 0f && tmpl.EffectLightBurn >= 0f)
-            snap.EffectLightBurn = tmpl.EffectLightBurn;
-        if (snap.EffectBloom < 0f && tmpl.EffectBloom >= 0f)
-            snap.EffectBloom = tmpl.EffectBloom;
-        if (snap.EffectSurfaceSandstorm < 0f && tmpl.EffectSurfaceSandstorm >= 0f)
-            snap.EffectSurfaceSandstorm = tmpl.EffectSurfaceSandstorm;
+        FillEffectFromTemplate(snap, tmpl);
     }
 
-    // ── PlacedObjects
+    private static string GetFirstTemplateFromProperties(string region, string settingsModDir)
+    {
+        try
+        {
+            string upperRegion = region.ToUpperInvariant();
+
+            if (!string.IsNullOrEmpty(settingsModDir))
+            {
+                string modRoot = GetModRoot(settingsModDir);
+                if (!string.IsNullOrEmpty(modRoot))
+                {
+                    string candidate = Path.Combine(modRoot, "World", upperRegion, "properties.txt");
+                    if (File.Exists(candidate))
+                    {
+                        string first = ParseFirstTemplate(candidate);
+                        if (first != null)
+                        {
+                            RSPlugin.log.LogInfo($"[Template] {region}: primer template desde mod settings: {first}");
+                            return first;
+                        }
+                    }
+                }
+            }
+
+            for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+            {
+                if (ModManager.ActiveMods[i] == null) continue;
+                string candidate = Path.Combine(ModManager.ActiveMods[i].path, "World", upperRegion, "properties.txt");
+                if (File.Exists(candidate))
+                {
+                    string first = ParseFirstTemplate(candidate);
+                    if (first != null)
+                    {
+                        RSPlugin.log.LogInfo($"[Template] {region}: primer template desde mod {ModManager.ActiveMods[i].id}: {first}");
+                        return first;
+                    }
+                }
+            }
+
+            string vanillaPath = Path.Combine(Application.streamingAssetsPath, "World", upperRegion, "properties.txt");
+            if (File.Exists(vanillaPath))
+            {
+                string first = ParseFirstTemplate(vanillaPath);
+                if (first != null)
+                {
+                    RSPlugin.log.LogInfo($"[Template] {region}: primer template desde vanilla: {first}");
+                    return first;
+                }
+            }
+            
+            RSPlugin.log.LogInfo($"[Template] {region}: sin línea 'Room Setting Templates:' en properties.txt");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            RSPlugin.log.LogWarning($"[Template] {region}: error al leer properties.txt: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static string ParseFirstTemplate(string propertiesPath)
+    {
+        try
+        {
+            foreach (string rawLine in File.ReadAllLines(propertiesPath, Encoding.UTF8))
+            {
+                string line = rawLine.Trim();
+                if (!line.StartsWith("Room Setting Templates:")) continue;
+                int sep = line.IndexOf(':');
+                if (sep < 0) continue;
+                string templatesLine = line.Substring(sep + 1).Trim();
+                string[] templates = templatesLine.Split(',');
+                
+                var templateList = new List<string>();
+                foreach (string t in templates)
+                {
+                    string clean = t.Trim();
+                    if (!string.IsNullOrEmpty(clean))
+                        templateList.Add(clean);
+                }
+                
+                if (templateList.Count > 0)
+                {
+                    RSPlugin.log.LogInfo($"[Template] {Path.GetFileName(propertiesPath)}: templates disponibles = {string.Join(", ", templateList)}");
+                    return templateList[0];
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            RSPlugin.log.LogWarning($"[Template] Error al parsear {Path.GetFileName(propertiesPath)}: {ex.Message}");
+        }
+        return null;
+    }
+
+    private static string ResolveTemplatePath(string region, string templateName, string settingsModDir)
+    {
+        // Buscar ignorando mayúsculas/minúsculas
+        string templateFile = $"{region}_settingstemplate_{templateName}.txt";
+        
+        if (!string.IsNullOrEmpty(settingsModDir) && Directory.Exists(settingsModDir))
+        {
+            // Búsqueda exacta primero
+            string candidate = Path.Combine(settingsModDir, templateFile);
+            if (File.Exists(candidate)) return candidate;
+            
+            // Búsqueda con ignore case
+            foreach (string file in Directory.GetFiles(settingsModDir, "*.txt"))
+            {
+                if (string.Equals(Path.GetFileName(file), templateFile, StringComparison.OrdinalIgnoreCase))
+                    return file;
+            }
+        }
+
+        string templateRelative = Path.Combine("World", region, templateFile);
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            if (ModManager.ActiveMods[i] == null) continue;
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, templateRelative);
+            if (File.Exists(candidate)) return candidate;
+            
+            // Búsqueda con ignore case en mods
+            string modDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region);
+            if (Directory.Exists(modDir))
+            {
+                foreach (string file in Directory.GetFiles(modDir, "*.txt"))
+                {
+                    if (string.Equals(Path.GetFileName(file), templateFile, StringComparison.OrdinalIgnoreCase))
+                        return file;
+                }
+            }
+        }
+
+        string basePath = Path.Combine(Application.streamingAssetsPath, templateRelative);
+        if (File.Exists(basePath)) return basePath;
+        
+        // Búsqueda con ignore case en vanilla
+        string vanillaDir = Path.Combine(Application.streamingAssetsPath, "World", region);
+        if (Directory.Exists(vanillaDir))
+        {
+            foreach (string file in Directory.GetFiles(vanillaDir, "*.txt"))
+            {
+                if (string.Equals(Path.GetFileName(file), templateFile, StringComparison.OrdinalIgnoreCase))
+                    return file;
+            }
+        }
+        
+        return null;
+    }
+
+    private static void FillEffectFromTemplate(SettingsSnapshot snap, SettingsSnapshot tmpl)
+    {
+        if (snap.EffectDarkness < 0f && tmpl.EffectDarkness >= 0f) snap.EffectDarkness = tmpl.EffectDarkness;
+        if (snap.EffectBrightness < 0f && tmpl.EffectBrightness >= 0f) snap.EffectBrightness = tmpl.EffectBrightness;
+        if (snap.EffectContrast < 0f && tmpl.EffectContrast >= 0f) snap.EffectContrast = tmpl.EffectContrast;
+        if (snap.EffectDesaturation < 0f && tmpl.EffectDesaturation >= 0f) snap.EffectDesaturation = tmpl.EffectDesaturation;
+        if (snap.EffectHue < 0f && tmpl.EffectHue >= 0f) snap.EffectHue = tmpl.EffectHue;
+        if (snap.EffectDarkenLights < 0f && tmpl.EffectDarkenLights >= 0f) snap.EffectDarkenLights = tmpl.EffectDarkenLights;
+        if (snap.EffectFog < 0f && tmpl.EffectFog >= 0f) snap.EffectFog = tmpl.EffectFog;
+        if (snap.EffectSkyBloom < 0f && tmpl.EffectSkyBloom >= 0f) snap.EffectSkyBloom = tmpl.EffectSkyBloom;
+        if (snap.EffectSkyAndLightBloom < 0f && tmpl.EffectSkyAndLightBloom >= 0f) snap.EffectSkyAndLightBloom = tmpl.EffectSkyAndLightBloom;
+        if (snap.EffectLightBurn < 0f && tmpl.EffectLightBurn >= 0f) snap.EffectLightBurn = tmpl.EffectLightBurn;
+        if (snap.EffectBloom < 0f && tmpl.EffectBloom >= 0f) snap.EffectBloom = tmpl.EffectBloom;
+        if (snap.EffectSurfaceSandstorm < 0f && tmpl.EffectSurfaceSandstorm >= 0f) snap.EffectSurfaceSandstorm = tmpl.EffectSurfaceSandstorm;
+
+        if (tmpl.ModifyEffectColorA_Hue.HasValue && !snap.ModifyEffectColorA_Hue.HasValue)
+            snap.ModifyEffectColorA_Hue = tmpl.ModifyEffectColorA_Hue;
+        if (tmpl.ModifyEffectColorA_Saturation.HasValue && !snap.ModifyEffectColorA_Saturation.HasValue)
+            snap.ModifyEffectColorA_Saturation = tmpl.ModifyEffectColorA_Saturation;
+        if (tmpl.ModifyEffectColorA_Value.HasValue && !snap.ModifyEffectColorA_Value.HasValue)
+            snap.ModifyEffectColorA_Value = tmpl.ModifyEffectColorA_Value;
+        if (tmpl.ModifyEffectColorB_Hue.HasValue && !snap.ModifyEffectColorB_Hue.HasValue)
+            snap.ModifyEffectColorB_Hue = tmpl.ModifyEffectColorB_Hue;
+        if (tmpl.ModifyEffectColorB_Saturation.HasValue && !snap.ModifyEffectColorB_Saturation.HasValue)
+            snap.ModifyEffectColorB_Saturation = tmpl.ModifyEffectColorB_Saturation;
+        if (tmpl.ModifyEffectColorB_Value.HasValue && !snap.ModifyEffectColorB_Value.HasValue)
+            snap.ModifyEffectColorB_Value = tmpl.ModifyEffectColorB_Value;
+
+        if (!string.IsNullOrEmpty(tmpl.Effects))
+        {
+            if (string.IsNullOrEmpty(snap.Effects))
+            {
+                snap.Effects = tmpl.Effects;
+                ParseEffectAmounts(snap, tmpl.Effects);
+            }
+            else
+            {
+                var existingNames = new HashSet<string>();
+                foreach (string entry in snap.Effects.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string name = entry.Trim().Split('-')[0];
+                    if (!string.IsNullOrEmpty(name)) existingNames.Add(name);
+                }
+
+                var toAdd = new List<string>();
+                foreach (string entry in tmpl.Effects.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string name = entry.Trim().Split('-')[0];
+                    if (!string.IsNullOrEmpty(name) && !existingNames.Contains(name))
+                        toAdd.Add(entry.Trim());
+                }
+
+                if (toAdd.Count > 0)
+                {
+                    snap.Effects = snap.Effects.TrimEnd(' ', ',') + ", " + string.Join(", ", toAdd);
+                    ParseEffectAmounts(snap, snap.Effects);
+                }
+            }
+        }
+    }
 
     private static void ParsePlacedObjectsContent(SettingsSnapshot snap, string content)
     {
@@ -390,7 +432,7 @@ public partial class SettingsSnapshot
             {
                 case "CustomDecal": ExtractDecalOpacities(snap, idx, obj); break;
                 case "LightSource": ExtractLightIntensity(snap, idx, obj); break;
-                case "LightBeam":   ExtractLightBeam(snap, idx, obj);      break;
+                case "LightBeam": ExtractLightBeam(snap, idx, obj); break;
             }
         }
     }
@@ -421,48 +463,30 @@ public partial class SettingsSnapshot
     private static void ExtractDecalOpacities(SettingsSnapshot snap, int idx, string obj)
     {
         string[] t = obj.Split('~');
-        int[] oi = new int[] { 12, 14, 16, 18 };
+        int[] oi = { 12, 14, 16, 18 };
         float[] ops = new float[4];
         bool any = false;
         for (int i = 0; i < 4; i++)
-        {
-            float v;
-            if (oi[i] < t.Length && float.TryParse(t[oi[i]].Trim(), NF, INV, out v))
-            { ops[i] = v; any = true; }
-        }
+            if (oi[i] < t.Length && float.TryParse(t[oi[i]].Trim(), NF, INV, out ops[i])) any = true;
         if (any) snap.DecalOpacities[idx] = ops;
     }
 
     private static void ExtractLightIntensity(SettingsSnapshot snap, int idx, string obj)
     {
-        // Formato: LightSource><posX><posY><ALPHA~Environment~panelOffX~panelOffY~...
         int tildePos = obj.IndexOf('~');
         string header = tildePos >= 0 ? obj.Substring(0, tildePos) : obj;
         string[] parts = header.Split('>');
 
-        // parts[3] es la posición fija del alpha. Iterar de atrás es frágil porque
-        const int ALPHA_PART_INDEX = 3;
-        if (parts.Length > ALPHA_PART_INDEX)
+        if (parts.Length > 3 && float.TryParse(parts[3].TrimStart('<').Trim(), NF, INV, out float v))
         {
-            float v;
-            if (float.TryParse(parts[ALPHA_PART_INDEX].TrimStart('<').Trim(), NF, INV, out v))
-            {
-                snap.LightIntensities[idx] = v;
-                return;
-            }
+            snap.LightIntensities[idx] = v;
+            return;
         }
 
-        // Fallback defensivo: si el header tiene menos partes de lo esperado
         for (int i = parts.Length - 1; i >= 0; i--)
         {
-            string p = parts[i].TrimStart('<').Trim();
-            float v;
-            if (float.TryParse(p, NF, INV, out v))
+            if (float.TryParse(parts[i].TrimStart('<').Trim(), NF, INV, out v))
             {
-                RSPlugin.log.LogWarning(
-                    $"[SettingsSnapshot] LightSource idx={idx}: parts[{ALPHA_PART_INDEX}] " +
-                    $"no existe o no es float (header='{header}'). " +
-                    $"Fallback heurístico → v={v}. Revisar formato del archivo.");
                 snap.LightIntensities[idx] = v;
                 return;
             }
@@ -473,54 +497,124 @@ public partial class SettingsSnapshot
     {
         string[] t = obj.Split('~');
         var d = new LightBeamData();
-        float v;
-        if (8  < t.Length && float.TryParse(t[8].Trim(),  NF, INV, out v)) d.Opacity = v;
-        if (9  < t.Length && float.TryParse(t[9].Trim(),  NF, INV, out v)) d.ColorA  = v;
-        if (10 < t.Length && float.TryParse(t[10].Trim(), NF, INV, out v)) d.ColorB  = v;
+        if (8 < t.Length && float.TryParse(t[8].Trim(), NF, INV, out float v)) d.Opacity = v;
+        if (9 < t.Length && float.TryParse(t[9].Trim(), NF, INV, out v)) d.ColorA = v;
+        if (10 < t.Length && float.TryParse(t[10].Trim(), NF, INV, out v)) d.ColorB = v;
         snap.LightBeams[idx] = d;
     }
 
-    // Parsea la línea de Effects y extrae los amounts de los efectos escalares.
     private static void ParseEffectAmounts(SettingsSnapshot snap, string effectsLine)
     {
-        string[] entries = effectsLine.Split(new[] { ", " }, System.StringSplitOptions.RemoveEmptyEntries);
-        foreach (string entry in entries)
+        foreach (string entry in effectsLine.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries))
         {
             string[] parts = entry.Trim().Split('-');
             if (parts.Length < 2) continue;
-            float amount;
-            if (!float.TryParse(parts[1].Trim(), NF, INV, out amount)) continue;
 
-            switch (parts[0].Trim())
+            string effectName = parts[0].Trim();
+            string valuesStr = parts[1].Trim();
+
+            if (effectName == "ModifyEffectColorA")
             {
-                case "Darkness":          snap.EffectDarkness        = amount; break;
-                case "Brightness":        snap.EffectBrightness      = amount; break;
-                case "Contrast":          snap.EffectContrast        = amount; break;
-                case "Desaturation":      snap.EffectDesaturation    = amount; break;
-                case "Hue":               snap.EffectHue             = amount; break;
-                case "DarkenLights":      snap.EffectDarkenLights    = amount; break;
-                case "Fog":               snap.EffectFog             = amount; break;
-                case "SkyBloom":          snap.EffectSkyBloom        = amount; break;
-                case "SkyAndLightBloom":  snap.EffectSkyAndLightBloom = amount; break;
-                case "LightBurn":         snap.EffectLightBurn       = amount; break;
-                case "Bloom":             snap.EffectBloom           = amount; break;
-                case "SurfaceSandstorm":  snap.EffectSurfaceSandstorm = amount; break;
+                string[] valueParts = valuesStr.Split(',');
+                if (valueParts.Length >= 1 && float.TryParse(valueParts[0].Trim(), NF, INV, out float h))
+                    snap.ModifyEffectColorA_Hue = h;
+                if (valueParts.Length >= 2 && float.TryParse(valueParts[1].Trim(), NF, INV, out float s))
+                    snap.ModifyEffectColorA_Saturation = s;
+                if (valueParts.Length >= 3 && float.TryParse(valueParts[2].Trim(), NF, INV, out float v))
+                    snap.ModifyEffectColorA_Value = v;
+                continue;
+            }
+
+            if (effectName == "ModifyEffectColorB")
+            {
+                string[] valueParts = valuesStr.Split(',');
+                if (valueParts.Length >= 1 && float.TryParse(valueParts[0].Trim(), NF, INV, out float h))
+                    snap.ModifyEffectColorB_Hue = h;
+                if (valueParts.Length >= 2 && float.TryParse(valueParts[1].Trim(), NF, INV, out float s))
+                    snap.ModifyEffectColorB_Saturation = s;
+                if (valueParts.Length >= 3 && float.TryParse(valueParts[2].Trim(), NF, INV, out float v))
+                    snap.ModifyEffectColorB_Value = v;
+                continue;
+            }
+
+            if (!float.TryParse(valuesStr, NF, INV, out float amount)) continue;
+
+            switch (effectName)
+            {
+                case "Darkness": snap.EffectDarkness = amount; break;
+                case "Brightness": snap.EffectBrightness = amount; break;
+                case "Contrast": snap.EffectContrast = amount; break;
+                case "Desaturation": snap.EffectDesaturation = amount; break;
+                case "Hue": snap.EffectHue = amount; break;
+                case "DarkenLights": snap.EffectDarkenLights = amount; break;
+                case "Fog": snap.EffectFog = amount; break;
+                case "SkyBloom": snap.EffectSkyBloom = amount; break;
+                case "SkyAndLightBloom": snap.EffectSkyAndLightBloom = amount; break;
+                case "LightBurn": snap.EffectLightBurn = amount; break;
+                case "Bloom": snap.EffectBloom = amount; break;
+                case "SurfaceSandstorm": snap.EffectSurfaceSandstorm = amount; break;
             }
         }
     }
 
-    // Parsea un color hexadecimal #RRGGBB o RRGGBB → Color, null si falla.
-    private static UnityEngine.Color? ParseHexColor(string hex)
+    private static Color? ParseHexColor(string hex)
     {
         hex = hex.Trim().TrimStart('#');
         if (hex.Length != 6) return null;
         try
         {
-            byte r = System.Convert.ToByte(hex.Substring(0, 2), 16);
-            byte g = System.Convert.ToByte(hex.Substring(2, 2), 16);
-            byte b = System.Convert.ToByte(hex.Substring(4, 2), 16);
-            return new UnityEngine.Color(r / 255f, g / 255f, b / 255f);
+            return new Color(
+                Convert.ToByte(hex.Substring(0, 2), 16) / 255f,
+                Convert.ToByte(hex.Substring(2, 2), 16) / 255f,
+                Convert.ToByte(hex.Substring(4, 2), 16) / 255f);
         }
         catch { return null; }
+    }
+
+    private static string GetModRoot(string folder)
+    {
+        if (string.IsNullOrEmpty(folder)) return null;
+        string dir = folder;
+        while (!string.IsNullOrEmpty(dir))
+        {
+            string parent = Path.GetDirectoryName(dir);
+            if (string.IsNullOrEmpty(parent)) break;
+            if (Path.GetFileName(parent).Equals("mods", StringComparison.OrdinalIgnoreCase))
+                return dir;
+            dir = parent;
+        }
+        return null;
+    }
+
+    private static string GetSettingsModDirectory(string settingsPath, string region)
+    {
+        if (!string.IsNullOrEmpty(settingsPath))
+        {
+            string dir = Path.GetDirectoryName(settingsPath);
+            while (!string.IsNullOrEmpty(dir))
+            {
+                if (Path.GetFileName(dir).Equals("World", StringComparison.OrdinalIgnoreCase))
+                {
+                    string regionDir = Path.Combine(dir, region);
+                    if (Directory.Exists(regionDir)) return regionDir;
+                    string regionRoomsDir = Path.Combine(dir, region + "-Rooms");
+                    if (Directory.Exists(regionRoomsDir)) return regionRoomsDir;
+                    break;
+                }
+                dir = Path.GetDirectoryName(dir);
+            }
+        }
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            if (ModManager.ActiveMods[i] == null) continue;
+            string regionRoomsDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region + "-Rooms");
+            if (Directory.Exists(regionRoomsDir))
+            {
+                string regionDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region);
+                return Directory.Exists(regionDir) ? regionDir : regionRoomsDir;
+            }
+        }
+        return null;
     }
 }

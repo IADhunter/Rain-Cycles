@@ -4,15 +4,14 @@ using UnityEngine;
 
 namespace RainCycles.Core;
 
-// Resuelve rutas de archivos settings_N.txt por sala y estado. También incluye el hook de RoomSettings.ctor que rota el settings cargado según el número de ciclo actual.
-// Modo lineal:   stateNumber = (cycle % n) + 1
-// Modo aleatorio: seed dispersa con primo → rompe correlación entre cycles consecutivos
+// Resuelve rutas de settings_N.txt y rota el archivo cargado según el ciclo.
 public static class StateFileResolver
 {
-    // Ciclo congelado al inicio de la partida → no cambia hasta el siguiente ciclo real.
-    // Evita que OnRoomSettingsCtor rote al settings_{N+1} en los frames finales de hibernación.
     private static int  _frozenCycle    = 0;
     private static bool _hasFrozenCycle = false;
+    
+    // Estado actual del ciclo (1..4)
+    private static int _currentCycleState = 1;
 
     public static void Init()
     {
@@ -22,17 +21,13 @@ public static class StateFileResolver
         On.RainWorldGame.ShutDownProcess += OnGameShutDown;
     }
 
-    // Congela el ciclo cuando arranca la partida
     private static void OnGameCtor(On.RainWorldGame.orig_ctor orig, RainWorldGame self, ProcessManager manager)
     {
         orig(self, manager);
         _frozenCycle    = self.GetStorySession?.saveState?.cycleNumber ?? 0;
         _hasFrozenCycle = true;
-        RSPlugin.log.LogDebug($"[StateFileResolver] Cycle frozen at {_frozenCycle}.");
     }
 
-    // Avanzar el ciclo congelado DESPUÉS de orig() → los frames finales usan el ciclo viejo
-    // Guard: Win() puede llamarse múltiples veces por sesión; solo avanzamos una vez.
     private static bool _cycleAdvancedThisSession = false;
 
     private static void OnGameWin(On.RainWorldGame.orig_Win orig, RainWorldGame self, bool mal, bool warp)
@@ -42,7 +37,6 @@ public static class StateFileResolver
         {
             _cycleAdvancedThisSession = true;
             _frozenCycle = self.GetStorySession?.saveState?.cycleNumber ?? _frozenCycle;
-            RSPlugin.log.LogInfo($"[StateFileResolver] Cycle advanced to {_frozenCycle} post-win.");
         }
     }
 
@@ -51,14 +45,9 @@ public static class StateFileResolver
         orig(self);
         _hasFrozenCycle = false;
         _cycleAdvancedThisSession = false;
+        _currentCycleState = 1;
     }
 
-    // ── Hook de rotación por ciclo ────────────────────────────────────────
-    // Cuando el juego construye un RoomSettings, interceptamos y reemplazamos
-    // self.filePath con el settings_N.txt correspondiente al ciclo actual.
-    // Así cada ciclo el juego carga un settings distinto automáticamente.
-    // Bloqueado durante transición de Win → evita que Load() recargue fade palette
-    // mientras la sala todavía es visible.
     private static bool _blockLoad = false;
     public static void SetBlockLoad(bool value) => _blockLoad = value;
 
@@ -77,49 +66,46 @@ public static class StateFileResolver
 
         int cycle = _hasFrozenCycle ? _frozenCycle : session.saveState.cycleNumber;
         string rainStatePath = GetRainStateFilePath(name, cycle);
-        if (rainStatePath != null)
-        {
-            self.filePath = rainStatePath;
-            self.Load((SlugcatStats.Timeline)null);
-            // RoomSettings.Load no limpia terrainFadePalette si el settings no lo declara.
-            var snap = RainCycles.Snapshot.SettingsSnapshot.FromFile(rainStatePath);
-            if (!snap._hasTerrainFadePalette)
-                self.terrainFadePalette = null;
-        }
+        if (rainStatePath == null) return;
+
+        self.filePath = rainStatePath;
+        self.Load((SlugcatStats.Timeline)null);
+
+        var snap = SettingsSnapshot.FromFile(rainStatePath);
+        if (!snap._hasTerrainFadePalette)
+            self.terrainFadePalette = null;
     }
 
     // ── API pública ───────────────────────────────────────────────────────
 
-    // Devuelve el path del settings_N.txt que corresponde al ciclo dado.
-    // Modo lineal:   (cycle % n) + 1
-    // Modo aleatorio: seed = cycle dispersado con primo → distribucion uniforme sin correlacion entre cycles consecutivos
+    /// <summary>
+    /// Devuelve el estado actual del ciclo (1..4).
+    /// </summary>
+    public static int GetCurrentCycleState() => _currentCycleState;
+
+    /// <summary>
+    /// Establece manualmente el estado actual del ciclo.
+    /// Usado por BlendSettingsLoader al cargar una región.
+    /// </summary>
+    public static void SetCurrentCycleState(int state)
+    {
+        _currentCycleState = state;
+        RSPlugin.log.LogDebug($"[StateFileResolver] Estado manual establecido: {state}");
+    }
+
     public static string GetRainStateFilePath(string roomName, int cycle)
     {
-        int n = CountRainStateFiles(roomName);
-        if (n == 0) return null;
+        // Usar el estado actual (ya calculado por LoadRegion)
+        int stateNumber = _currentCycleState;
+        
+        RSPlugin.log.LogDebug($"[StateFileResolver] Usando estado {stateNumber} para sala {roomName} (ciclo {cycle})");
 
-        int stateNumber;
-        if (RSPlugin.randomCycles != null && RSPlugin.randomCycles.Value)
-        {
-            // Multiplicar por un primo grande dispersa los bits de seeds consecutivas,
-            // eliminando la correlacion que produce System.Random con seeds 84,85,86...
-            int seed = unchecked(cycle * 1000003);
-            stateNumber = new System.Random(seed).Next(1, n + 1);
-        }
-        else
-        {
-            stateNumber = (cycle % n) + 1;
-        }
-
-        RSPlugin.log.LogDebug($"[StateFileResolver] cycle={cycle} n={n} state={stateNumber} random={RSPlugin.randomCycles?.Value}");
         return FindFileInRainCycles(roomName, stateNumber);
     }
 
-    // Devuelve el path de settings_N.txt para el número de estado dado. Busca recursivamente en subcarpetas de RainCycles. Null si no existe.
     public static string GetRainStateSettingsFile(string roomName, int number)
         => FindFileInRainCycles(roomName, number);
 
-    // Cuenta cuántos settings_N.txt existen para una sala (consecutivos desde 1). Busca recursivamente en subcarpetas de RainCycles.
     public static int CountRainStateFiles(string roomName)
     {
         int count = 0;
@@ -128,8 +114,30 @@ public static class StateFileResolver
         return count;
     }
 
-    // Busca {roomName}_settings_{number}.txt en la carpeta RainCycles y cualquier subcarpeta.
-    // Devuelve la primera coincidencia, o null si no existe.
+    public static int GetStateFromPath(string path, string roomName = null)
+    {
+        if (string.IsNullOrEmpty(path)) return -1;
+        string fileName = Path.GetFileNameWithoutExtension(path);
+        int idx = fileName.ToLowerInvariant().LastIndexOf("_settings_");
+        if (idx < 0) return -1;
+        string numStr = fileName.Substring(idx + "_settings_".Length);
+        return int.TryParse(numStr, out int n) ? n : -1;
+    }
+
+    internal static string CreateNewRainStateFile(string name, int buttonCount, Room room)
+    {
+        string dir = BuildDirectoryPath(name);
+        if (!Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+
+        string filePath = Path.Combine(dir, $"{name}_settings_{buttonCount}.txt");
+        room.roomSettings.filePath = filePath;
+        room.roomSettings.Save();
+        return filePath;
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+
     private static string FindFileInRainCycles(string roomName, int number)
     {
         string fileName = $"{roomName}_settings_{number}.txt";
@@ -146,40 +154,11 @@ public static class StateFileResolver
         return null;
     }
 
-    // Extrae el número de estado de un path. Ejemplo: "uw_h01_settings_2.txt" → 2. Devuelve -1 si falla.
-    public static int GetStateFromPath(string path, string roomName)
-    {
-        if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(roomName)) return -1;
-        string fileName = Path.GetFileNameWithoutExtension(path);
-        int idx = fileName.ToLowerInvariant().LastIndexOf("_settings_");
-        if (idx < 0) return -1;
-        string numStr = fileName.Substring(idx + "_settings_".Length);
-        return int.TryParse(numStr, out int n) ? n : -1;
-    }
-
-    // Crea un nuevo settings_N.txt copiando el roomSettings actual de la sala. Usado por RCPanel al añadir un nuevo estado desde DevTools.
-    internal static string CreateNewRainStateFile(string name, int buttonCount, Room room)
-    {
-        string dir = BuildDirectoryPath(name);
-        if (!Directory.Exists(dir))
-            Directory.CreateDirectory(dir);
-
-        string filePath = Path.Combine(dir, $"{name}_settings_{buttonCount}.txt");
-        room.roomSettings.filePath = filePath;
-        room.roomSettings.Save();
-        return filePath;
-    }
-
-    // ── Helpers privados ──────────────────────────────────────────────────
-
-    // Resuelve la carpeta RainCycles para una sala recorriendo el stack de mods activos.
-    // No usa AssetManager.ResolveFilePath para evitar mergedmods.
     private static string BuildDirectoryPath(string roomName)
     {
         string regionCode   = Regex.Split(roomName, "_")[0].ToUpperInvariant();
         string regionFolder = Path.Combine("World", regionCode + "-Rooms", "RainCycles");
 
-        // Buscar en mods activos en orden inverso (mayor prioridad primero)
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
             string candidate = Path.Combine(ModManager.ActiveMods[i].path, regionFolder);
@@ -187,7 +166,6 @@ public static class StateFileResolver
                 return candidate;
         }
 
-        // Fallback: StreamingAssets base
         return Path.Combine(Application.streamingAssetsPath, regionFolder);
     }
 }

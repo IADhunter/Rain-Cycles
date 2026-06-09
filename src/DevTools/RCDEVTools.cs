@@ -19,16 +19,16 @@ public class RCDEVTools
     {
         orig(self, owner, IDstring, parentNode, name);
 
-        if (owner != null)
+        if (owner != null && owner.room != null)
         {
-            string roomName = owner.room?.abstractRoom?.name;
+            string roomName = owner.room.abstractRoom?.name;
             if (!string.IsNullOrEmpty(roomName))
             {
                 BlendSettingsWriter.EnsureFileExists(roomName);
-                BlendSettingsWriter.UpdateSequences(roomName);
+                // UpdateSequences eliminado — las secuencias son intrínsecas
             }
 
-            self.subNodes.Add(new RCPanel(owner, "RC_Panel", self, new Vector2(790, 460f), new Vector2(220f, 175f), "Rain Cycles"));
+            self.subNodes.Add(new RCPanel(owner, "RC_Panel", self, new Vector2(790, 460f), new Vector2(215f, 215f), "Rain Cycles"));
         }
     }
 }

@@ -1,11 +1,16 @@
 using DevInterface;
+using UnityEngine;
+using System.IO;
 
 namespace FilesSetting;
 
 public class SelectButton : Button
 {
     private bool isSelected;
-    public SelectButton(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos, float width, string text, bool isSelected) : base(owner, IDstring, parentNode, pos, width, text)
+
+    public SelectButton(DevUI owner, string IDstring, DevUINode parentNode,
+                        Vector2 pos, float width, string text, bool isSelected)
+        : base(owner, IDstring, parentNode, pos, width, text)
     {
         this.isSelected = isSelected;
         SetSelected();
@@ -20,18 +25,14 @@ public class SelectButton : Button
     public override void Clicked()
     {
         base.Clicked();
-        
         if (!isSelected)
         {
             if (parentNode != null)
             {
-                // Who care about performance if we have few buttons
                 foreach (var node in parentNode.subNodes)
                 {
                     if (node is SelectButton otherButton && otherButton != this)
-                    {
                         otherButton.Deselect();
-                    }
                 }
             }
             isSelected = true;
@@ -50,73 +51,27 @@ public class SelectButton : Button
         isSelected = true;
         if (parentNode != null)
         {
-            // Who care about performance if we have few buttons
             foreach (var node in parentNode.subNodes)
             {
                 if (node is SelectButton otherButton && otherButton != this)
-                {
                     otherButton.Deselect();
-                }
             }
         }
-        isSelected = true;
         SetSelected();
     }
 
     private void SetSelected()
     {
-        if (isSelected)
-            this.colorA = new Color(0.2f, 0.6f, 0.2f);
-        else
-            this.colorA = new Color(1f, 1f, 1f);
+        this.colorA = isSelected ? new Color(0.2f, 0.6f, 0.2f) : new Color(1f, 1f, 1f);
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// ROOM TOGGLE BUTTON
-// Botón que indica si la sala actual está registrada en blend_settings.txt.
-// Verde = registrada, blanco = no registrada.
-// ════════════════════════════════════════════════════════════════════════
-public class RoomToggleButton : Button
-{
-    private static readonly Color COLOR_REGISTERED   = new Color(0.2f, 0.7f, 0.3f);  // verde
-    private static readonly Color COLOR_UNREGISTERED = new Color(1f,   1f,   1f);     // blanco
+// ──────────────────────────────────────────────────────────────────────────
 
-    private bool _isRegistered;
-
-    public RoomToggleButton(DevUI owner, string IDstring, DevUINode parentNode,
-                            Vector2 pos, float width, bool isRegistered)
-        : base(owner, IDstring, parentNode, pos, width,
-               isRegistered ? "Room: ON" : "Room: OFF")
-    {
-        _isRegistered = isRegistered;
-        UpdateVisual();
-    }
-
-    public void SetRegistered(bool registered)
-    {
-        _isRegistered = registered;
-        this.Text     = registered ? "Room: ON" : "Room: OFF";
-        UpdateVisual();
-    }
-
-    private void UpdateVisual()
-    {
-        this.colorA = _isRegistered ? COLOR_REGISTERED : COLOR_UNREGISTERED;
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════════
-// MODE BUTTON
-// Botón de selección de modo (Loop/Cycle/EndCycle/Custom).
-// Verde = modo activo, blanco = inactivo.
-// Mutuamente excluyente con otros ModeButton del mismo panel —
-// la exclusión la gestiona RCPanel en Signal, no el botón mismo.
-// ════════════════════════════════════════════════════════════════════════
 public class ModeButton : Button
 {
     private static readonly Color COLOR_ACTIVE   = new Color(0.2f, 0.7f, 0.3f);
-    private static readonly Color COLOR_INACTIVE = new Color(1f,   1f,   1f);
+    private static readonly Color COLOR_INACTIVE = new Color(1f, 1f, 1f);
 
     public readonly BlendMode Mode;
     private bool _isActive;
@@ -125,7 +80,7 @@ public class ModeButton : Button
                       Vector2 pos, float width, BlendMode mode, bool isActive)
         : base(owner, IDstring, parentNode, pos, width, ModeLabel(mode))
     {
-        Mode      = mode;
+        Mode = mode;
         _isActive = isActive;
         UpdateVisual();
     }
@@ -146,24 +101,19 @@ public class ModeButton : Button
         switch (mode)
         {
             case BlendMode.Loop:     return "Loop";
+            case BlendMode.EndCycle: return "Rain";
             case BlendMode.Cycle:    return "Cycle";
-            case BlendMode.EndCycle: return "EndCyc";
-            case BlendMode.Custom:   return "Custom";
             default:                 return mode.ToString();
         }
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// EDIT MODE BUTTON
-// Toggle global que suspende el clock y habilita los sliders para edición
-// manual libre, independientemente del modo configurado.
-// Verde = Edit Mode activo, blanco = modo automático normal.
-// ════════════════════════════════════════════════════════════════════════
+// ──────────────────────────────────────────────────────────────────────────
+
 public class EditModeButton : Button
 {
-    private static readonly Color COLOR_ON  = new Color(0.2f, 0.7f, 0.3f);  // verde
-    private static readonly Color COLOR_OFF = new Color(1f,   1f,   1f);     // blanco
+    private static readonly Color COLOR_ON  = new Color(0.2f, 0.7f, 0.3f);
+    private static readonly Color COLOR_OFF = new Color(1f, 1f, 1f);
 
     public EditModeButton(DevUI owner, string IDstring, DevUINode parentNode,
                           Vector2 pos, float width)
@@ -191,29 +141,22 @@ public class EditModeButton : Button
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// SKY TYPE BUTTON
-// Botón toggle que asigna o quita el tipo de cielo (RTV/ACV) a la sala.
-// Verde = tipo activo (escrito en [ROOMS] para esta sala).
-// Blanco = inactivo.
-// Mutuamente exclusivo con el otro SkyTypeButton del mismo panel:
-// si se activa ACV, RTV se desactiva automáticamente y viceversa.
-// Si se pulsa el botón ya activo, el sufijo se elimina (→ None).
-// ════════════════════════════════════════════════════════════════════════
+// ──────────────────────────────────────────────────────────────────────────
+
 public class SkyTypeButton : Button
 {
     private static readonly Color COLOR_ACTIVE   = new Color(0.2f, 0.7f, 0.3f);
-    private static readonly Color COLOR_INACTIVE = new Color(1f,   1f,   1f);
+    private static readonly Color COLOR_INACTIVE = new Color(1f, 1f, 1f);
 
-    public readonly SkyType Type;
+    public readonly ViewType Type;
     private string _roomName;
 
     public SkyTypeButton(DevUI owner, string IDstring, DevUINode parentNode,
-                         Vector2 pos, float width, SkyType type, string roomName)
+                         Vector2 pos, float width, ViewType type, string roomName)
         : base(owner, IDstring, parentNode, pos, width,
-               type == SkyType.ACV ? "ACV" : "RTV")
+               type == ViewType.ACV ? "ACV" : (type == ViewType.RTV ? "RTV" : "PSV"))
     {
-        Type      = type;
+        Type = type;
         _roomName = roomName;
         UpdateVisual();
     }
@@ -224,18 +167,96 @@ public class SkyTypeButton : Button
         UpdateVisual();
     }
 
-    /// <summary>Fuerza el refresco visual sin lógica de click.</summary>
-    public void Refresh(SkyType currentSky)
+    public void Refresh(ViewType currentView)
     {
-        this.colorA = currentSky == Type ? COLOR_ACTIVE : COLOR_INACTIVE;
+        this.colorA = currentView == Type ? COLOR_ACTIVE : COLOR_INACTIVE;
     }
 
     private void UpdateVisual()
     {
-        var settings = BlendSettingsLoader.Active;
-        SkyType current = settings != null
-            ? settings.GetSkyType(_roomName)
-            : SkyType.None;
-        this.colorA = current == Type ? COLOR_ACTIVE : COLOR_INACTIVE;
+        Room room = null;
+        var devUI = this.owner as DevUI;
+        if (devUI?.room != null)
+            room = devUI.room;
+
+        if (room != null)
+        {
+            string currentPath = room.roomSettings?.filePath;
+            if (!string.IsNullOrEmpty(currentPath) && File.Exists(currentPath))
+            {
+                var snap = SettingsSnapshot.FromFile(currentPath);
+                this.colorA = snap.ViewType == Type ? COLOR_ACTIVE : COLOR_INACTIVE;
+                return;
+            }
+        }
+
+        this.colorA = COLOR_INACTIVE;
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// RC_TYPE Button - Actualizado para leer el estado real del archivo
+// ──────────────────────────────────────────────────────────────────────────
+
+public class RcTypeButton : Button
+{
+    private static readonly Color COLOR_ACTIVE   = new Color(0.2f, 0.7f, 0.3f);
+    private static readonly Color COLOR_INACTIVE = new Color(1f, 1f, 1f);
+
+    public readonly RcType Type;
+    private bool _isActive;
+
+    public RcTypeButton(DevUI owner, string IDstring, DevUINode parentNode,
+                        Vector2 pos, float width, string text, bool isActive)
+        : base(owner, IDstring, parentNode, pos, width, text)
+    {
+        Type = text.ToUpperInvariant() switch
+        {
+            "STATIC" => RcType.Static,
+            "BLEND" => RcType.Blend,
+            _ => RcType.None  // Vanilla
+        };
+        _isActive = isActive;
+        UpdateVisual();
+    }
+
+    public void SetActive(bool active)
+    {
+        _isActive = active;
+        UpdateVisual();
+    }
+
+    public override void Update()
+    {
+        base.Update();
+        UpdateVisual();
+    }
+
+    private void UpdateVisual()
+    {
+        // Leer el RC_TYPE real del archivo cargado, igual que hace SkyTypeButton
+        Room room = null;
+        var devUI = this.owner as DevUI;
+        if (devUI?.room != null)
+            room = devUI.room;
+
+        RcType currentRcType = RcType.None;
+
+        if (room != null)
+        {
+            string currentPath = room.roomSettings?.filePath;
+            if (!string.IsNullOrEmpty(currentPath) && File.Exists(currentPath))
+            {
+                var snap = SettingsSnapshot.FromFile(currentPath);
+                if (snap != null && snap.HasRcType)
+                    currentRcType = snap.RcType;
+            }
+        }
+
+        bool shouldBeActive = (Type == RcType.Static && currentRcType == RcType.Static) ||
+                              (Type == RcType.Blend && currentRcType == RcType.Blend) ||
+                              (Type == RcType.None && currentRcType == RcType.None);
+
+        this.colorA = shouldBeActive ? COLOR_ACTIVE : COLOR_INACTIVE;
     }
 }

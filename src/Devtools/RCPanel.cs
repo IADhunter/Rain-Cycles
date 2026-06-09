@@ -1,330 +1,470 @@
 using System;
 using System.Linq;
+using System.IO;
+using System.Collections.Generic;
 using DevInterface;
 using UnityEngine;
+using RainCycles.Snapshot;
+using RainCycles.Patches;
+using RainCycles.Core;
 
 namespace FilesSetting;
 
 public class RCPanel : Panel, IDevUISignals
 {
-    private const float BUTTON_WIDTH   = 30f;
+    private class TabArrowButton : ArrowButton
+    {
+        private RCPanel _panel;
+        private int _direction;
+
+        public TabArrowButton(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos, float rotation, int direction, RCPanel panel)
+            : base(owner, IDstring, parentNode, pos, rotation)
+        {
+            _direction = direction;
+            _panel = panel;
+        }
+
+        public override void Clicked()
+        {
+            if (_panel != null)
+            {
+                _panel.SwitchTab(_panel.CurrentTab + _direction);
+            }
+        }
+    }
+
+    private const float BUTTON_WIDTH = 30f;
     private const float BUTTON_SPACING = 5f;
-    private const float MARGIN         = 5f;
+    private const float MARGIN = 5f;
+    private const float ROW_A_Y = 170f;
+    private const float SLIDER_Y = 145f;
+    private const float TOP_ROW_Y = 5f;
+    private const float EDIT_BTN_X = 5f;
+    private const float EDIT_BTN_W = 30f;
+    private const float ACTIVE_FILE_X = 40f;
+    private const float ACTIVE_FILE_WIDTH = 170f;
 
-    private const float ROW_A_Y       = 155f;
-    private const float MODE_ROW_Y    = 135f;
-    private const float ROW_B_Y       = 115f;
-    private const float SLIDER_A_Y    = 95f;
-    private const float SLIDER_B_Y    = 75f;
-    private const float REGION_ROW_Y  = 35f;
-    private const float ACTIVE_FILE_Y = 18f;
-    private const float MODE_BTN_W    = 46f;
-    private const float SKY_BTN_W     = 30f;
-    private const float EDIT_BTN_W    = 40f;
+    private int _currentTab = 0;
+    private ArrowButton _prevTabButton;
+    private ArrowButton _nextTabButton;
 
-    public static int buttonSelectedA = 1;
-    public static int buttonSelectedB = 2;
+    private List<SelectButton> _stateButtons = new List<SelectButton>();
+    private Button _plusButton;
+    private Button _minusButton;
+    private BlendSlider _blendSlider;
+    private DevUILabel _activeFileLabel;
+    private EditModeButton _editModeButton;
+
+    private RectangularDevUINode _currentContent;
+
+    public static int ButtonSelectedA = 1;
+    public DevUI Owner => owner;
+    public Room CurrentRoom => owner.room;
+    public string CurrentRoomName => owner.room?.abstractRoom?.name;
+    public int CurrentTab => _currentTab;
+
+    private List<(int from, int to)> _phases = null;
 
     public RCPanel(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos, Vector2 size, string title)
         : base(owner, IDstring, parentNode, pos, size, title)
     {
-        bool isArena  = owner.room?.game?.IsArenaSession == true;
-        string roomName0 = owner.room?.abstractRoom?.name;
-        int n     = isArena
-            ? ArenaStateResolver.CountSettingsFiles(roomName0)
-            : StateFileResolver.CountRainStateFiles(roomName0);
-        int cycle = owner.room?.game?.GetStorySession?.saveState?.cycleNumber ?? 0;
-        buttonSelectedA = n > 0 ? (cycle % n) + 1 : 1;
-        buttonSelectedB = n > 1 ? (buttonSelectedA % n) + 1 : buttonSelectedA;
+        RSPlugin.log.LogInfo("[RCPanel] Constructor iniciado");
 
-        for (int i = 1; i <= n; i++)
-            subNodes.Add(new SelectButton(owner, $"RCA_{i}", this,
-                new Vector2(MARGIN, ROW_A_Y), BUTTON_WIDTH, i.ToString(), false));
-        subNodes.Add(new Button(owner, "RC_Plus", this,
-            new Vector2(MARGIN, ROW_A_Y), BUTTON_WIDTH, "+"));
+        string currentFilePath = owner.room?.roomSettings?.filePath;
+        int currentState = StateFileResolver.GetStateFromPath(currentFilePath, CurrentRoomName);
+        ButtonSelectedA = currentState >= 1 ? currentState : 1;
 
-        if (n >= 2)
-        {
-            for (int i = 1; i <= n; i++)
-                subNodes.Add(new SelectButton(owner, $"RCB_{i}", this,
-                    new Vector2(MARGIN, ROW_B_Y), BUTTON_WIDTH, i.ToString(), false));
+        CreateCommonElements();
+        SwitchTab(0);
 
-            var cs = BlendSettingsLoader.Active;
-            bool isLoop = cs == null || cs.Mode == BlendMode.Loop || cs.Mode == BlendMode.Custom;
-
-            // Slider A — locked in Loop/Custom, active in Cycle/EndCycle
-            var sA = new BlendSlider(owner, "RC_BlendSlider", this, new Vector2(MARGIN, SLIDER_A_Y));
-            if (isLoop) sA.SetLocked(true);
-            subNodes.Add(sA);
-
-            // Slider B — active in Loop/Custom, locked in Cycle/EndCycle
-            var sB = new BlendSlider(owner, "RC_BlendSliderB", this, new Vector2(MARGIN, SLIDER_B_Y));
-            if (!isLoop) sB.SetLocked(true);
-            subNodes.Add(sB);
-        }
-
-        string active = System.IO.Path.GetFileName(owner.room.roomSettings.filePath ?? "");
-        subNodes.Add(new DevUILabel(owner, "RC_ActiveFile", this,
-            new Vector2(MARGIN, ACTIVE_FILE_Y), (int)size.x - (int)MARGIN * 2, active));
-
-        var mode = BlendSettingsLoader.Active?.Mode ?? BlendMode.Loop;
-        BlendMode[] modes = { BlendMode.Loop, BlendMode.Cycle, BlendMode.EndCycle, BlendMode.Custom };
-        for (int i = 0; i < modes.Length; i++)
-            subNodes.Add(new ModeButton(owner, $"RC_Mode_{modes[i]}", this,
-                new Vector2(MARGIN + i * (MODE_BTN_W + BUTTON_SPACING), MODE_ROW_Y),
-                MODE_BTN_W, modes[i], modes[i] == mode));
-
-        string roomName = owner.room?.abstractRoom?.name ?? "";
-
-        // Fila Edit / ACV / RTV — tres botones en la misma fila
-        float editX = MARGIN;
-        float acvX  = MARGIN + EDIT_BTN_W + BUTTON_SPACING;
-        float rtvX  = acvX + SKY_BTN_W + BUTTON_SPACING;
-
-        subNodes.Add(new EditModeButton(owner, "RC_EditMode", this,
-            new Vector2(editX, REGION_ROW_Y + 22f), EDIT_BTN_W));
-
-        var currentSky = BlendSettingsWriter.GetSkyType(roomName);
-        subNodes.Add(new SkyTypeButton(owner, "RC_Sky_ACV", this,
-            new Vector2(acvX, REGION_ROW_Y + 22f), SKY_BTN_W, SkyType.ACV, roomName));
-        subNodes.Add(new SkyTypeButton(owner, "RC_Sky_RTV", this,
-            new Vector2(rtvX, REGION_ROW_Y + 22f), SKY_BTN_W, SkyType.RTV, roomName));
-
-        bool reg = owner.room?.game?.IsArenaSession == true
-            ? ArenaStateResolver.IsLevelRegistered(owner.room?.abstractRoom?.name)
-            : BlendSettingsWriter.IsRoomRegistered(owner.room?.abstractRoom?.name);
-        subNodes.Add(new RoomToggleButton(owner, "RC_ToggleRoom", this,
-            new Vector2(MARGIN, REGION_ROW_Y), size.x - MARGIN * 2, reg));
-
-        ReorganizeButtons();
+        RSPlugin.log.LogInfo($"[RCPanel] Constructor finalizado - Tab={_currentTab}, State={ButtonSelectedA}");
     }
 
-    public void Signal(DevUISignalType type, DevUINode sender, string message)
+    private void CreateCommonElements()
     {
-        if (type != DevUISignalType.ButtonClick) return;
+        _prevTabButton = new TabArrowButton(owner, "RC_PrevTab", this, 
+            new Vector2(size.x - 42f, size.y - 20f), 270f, -1, this);
+        _nextTabButton = new TabArrowButton(owner, "RC_NextTab", this, 
+            new Vector2(size.x - 21f, size.y - 20f), 90f, 1, this);
+        subNodes.Add(_prevTabButton);
+        subNodes.Add(_nextTabButton);
+    }
 
-        if (sender.IDstring == "RC_Plus")
+    private void CreateRoomViewElements()
+    {
+        DestroyRoomViewElements();
+        
+        if (_editModeButton == null)
         {
-            int cnt = subNodes.Count(n => n.IDstring.StartsWith("RCA_")) + 1;
-            subNodes.Add(new SelectButton(owner, $"RCA_{cnt}", this,
-                new Vector2(MARGIN, ROW_A_Y), BUTTON_WIDTH, cnt.ToString(), false));
-            subNodes.Add(new SelectButton(owner, $"RCB_{cnt}", this,
-                new Vector2(MARGIN, ROW_B_Y), BUTTON_WIDTH, cnt.ToString(), false));
-            StateFileResolver.CreateNewRainStateFile(owner.room?.abstractRoom?.name, cnt, owner.room);
-            ReorganizeButtons();
-            return;
+            _editModeButton = new EditModeButton(owner, "RC_EditMode", this,
+                new Vector2(EDIT_BTN_X, TOP_ROW_Y), EDIT_BTN_W);
+            subNodes.Add(_editModeButton);
+        }
+        
+        if (_activeFileLabel == null)
+        {
+            string active = Path.GetFileName(owner.room.roomSettings.filePath ?? "");
+            _activeFileLabel = new DevUILabel(owner, "RC_ActiveFile", this,
+                new Vector2(ACTIVE_FILE_X, TOP_ROW_Y), ACTIVE_FILE_WIDTH, active);
+            subNodes.Add(_activeFileLabel);
+        }
+        
+        RebuildStateButtons();
+    }
+
+    private void DestroyRoomViewElements()
+    {
+        foreach (var btn in _stateButtons)
+        {
+            btn.ClearSprites();
+            subNodes.Remove(btn);
+        }
+        _stateButtons.Clear();
+
+        if (_plusButton != null)
+        {
+            _plusButton.ClearSprites();
+            subNodes.Remove(_plusButton);
+            _plusButton = null;
+        }
+        if (_minusButton != null)
+        {
+            _minusButton.ClearSprites();
+            subNodes.Remove(_minusButton);
+            _minusButton = null;
+        }
+        if (_blendSlider != null)
+        {
+            _blendSlider.ClearSprites();
+            subNodes.Remove(_blendSlider);
+            _blendSlider = null;
+        }
+        if (_activeFileLabel != null)
+        {
+            _activeFileLabel.ClearSprites();
+            subNodes.Remove(_activeFileLabel);
+            _activeFileLabel = null;
+        }
+        if (_editModeButton != null)
+        {
+            _editModeButton.ClearSprites();
+            subNodes.Remove(_editModeButton);
+            _editModeButton = null;
+        }
+    }
+
+    public void RebuildStateButtons()
+    {
+        foreach (var btn in _stateButtons)
+        {
+            btn.ClearSprites();
+            subNodes.Remove(btn);
+        }
+        if (_plusButton != null)
+        {
+            _plusButton.ClearSprites();
+            subNodes.Remove(_plusButton);
+        }
+        if (_minusButton != null)
+        {
+            _minusButton.ClearSprites();
+            subNodes.Remove(_minusButton);
+        }
+        _stateButtons.Clear();
+
+        bool isArena = owner.room?.game?.IsArenaSession == true;
+        int fileCount = isArena ? ArenaStateResolver.CountSettingsFiles(CurrentRoomName)
+                                : StateFileResolver.CountRainStateFiles(CurrentRoomName);
+
+        for (int i = 1; i <= fileCount; i++)
+        {
+            bool isSelected = (i == ButtonSelectedA);
+            var btn = new SelectButton(owner, $"RCA_{i}", this,
+                new Vector2(MARGIN, ROW_A_Y), BUTTON_WIDTH, i.ToString(), isSelected);
+            subNodes.Add(btn);
+            _stateButtons.Add(btn);
+            if (isSelected) btn.Select();
         }
 
-        if (sender.IDstring.StartsWith("RCA_"))
+        _plusButton = new Button(owner, "RC_Plus", this, new Vector2(MARGIN, ROW_A_Y), 30f, "   +");
+        _minusButton = new Button(owner, "RC_Minus", this, new Vector2(MARGIN, ROW_A_Y), 30f, "    -");
+        subNodes.Add(_plusButton);
+        subNodes.Add(_minusButton);
+
+        if (fileCount >= 2 && _blendSlider == null)
         {
-            int sel = int.Parse(sender.IDstring.Split('_')[1]);
-            string path = ResolveSettingsFile(owner.room?.abstractRoom?.name, sel);
-            if (path == null) return;
-
-            if (SettingsBlendController.IsActive) { SettingsBlendController.Detach(); BlendSlider.Reset(); }
-
-            string rcTint = SettingsBlendController.ExtractRcTintLine(path);
-            owner.room.roomSettings.filePath = path;
-            owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
-            // RoomSettings.Load no limpia terrainFadePalette si el settings no lo declara.
-            var snapTerrain = SettingsSnapshot.FromFile(path);
-            if (!snapTerrain._hasTerrainFadePalette)
-                owner.room.roomSettings.terrainFadePalette = null;
-            var c0 = owner.room.game.cameras[0];
-            c0.ApplyEffectColorsToAllPaletteTextures(base.RoomSettings.EffectColorA, base.RoomSettings.EffectColorB);
-            c0.ChangeMainPalette(base.RoomSettings.Palette);
-            if (base.RoomSettings.fadePalette != null)
-                c0.ChangeFadePalette(base.RoomSettings.fadePalette.palette,
-                    base.RoomSettings.fadePalette.fades[c0.currentCameraPosition]);
-            c0.ApplyFade();
-            if (owner.room.roomSettings?.TerrainPalette != null)
-                c0.ReloadTerrainPalette();
-
-            var snap = SettingsSnapshot.FromFileWithTemplate(path, owner.room.abstractRoom.name);
-            SettingsBlendController.SetActiveSnapshot(snap);
-            Color mul, atm;
-            RoomEffectsApplier.CalcBackgroundColors(c0, out mul, out atm);
-            Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, mul);
-            Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, atm);
-
-            RoomEffectsApplier.ApplyDecalsFromSnapshot(owner.room, path);
-            RoomEffectsApplier.ApplyLightSourcesFromSnapshot(owner.room, path);
-            RoomEffectsApplier.ApplyLightBeamsFromSnapshot(owner.room, path);
-            Shader.SetGlobalFloat(RainWorld.ShadPropGrime, base.RoomSettings.Grime);
-            SettingsBlendController.ApplySkyForState(sel, owner.room);
-
-            owner.room.roomSettings.Save();
-            owner.room.roomSettings.filePath = path;
-            SettingsBlendController.ReappendRcTint(path, rcTint);
-            UpdateLabel(path);
-            buttonSelectedA = sel;
-            foreach (var node in subNodes) node.Refresh();
-            parentNode?.Refresh();
-            return;
+            _blendSlider = new BlendSlider(owner, "RC_BlendSlider", this, new Vector2(MARGIN, SLIDER_Y));
+            subNodes.Add(_blendSlider);
+        }
+        else if (fileCount < 2 && _blendSlider != null)
+        {
+            _blendSlider.ClearSprites();
+            subNodes.Remove(_blendSlider);
+            _blendSlider = null;
         }
 
-        if (sender.IDstring.StartsWith("RC_Mode_") && sender is ModeButton mb)
-        {
-            string room = owner.room?.abstractRoom?.name;
-            foreach (var node in subNodes) if (node is ModeButton m) m.SetActive(m == mb);
-            BlendSettingsWriter.SetMode(room, mb.Mode);
+        ReorganizeStateButtons();
+    }
 
-            bool nowLoop = mb.Mode == BlendMode.Loop || mb.Mode == BlendMode.Custom;
-            foreach (var node in subNodes)
-                if (node is BlendSlider bs)
+    private void ReorganizeStateButtons()
+    {
+        int bpr = Math.Max(1, (int)((size.x - 2 * MARGIN + BUTTON_SPACING) / (BUTTON_WIDTH + BUTTON_SPACING)));
+
+        for (int i = 0; i < _stateButtons.Count; i++)
+        {
+            _stateButtons[i].Move(new Vector2(
+                MARGIN + (i % bpr) * (BUTTON_WIDTH + BUTTON_SPACING),
+                ROW_A_Y - (i / bpr) * (BUTTON_WIDTH + BUTTON_SPACING)));
+        }
+
+        int t = _stateButtons.Count;
+        if (_plusButton != null)
+        {
+            _plusButton.Move(new Vector2(
+                MARGIN + (t % bpr) * (BUTTON_WIDTH + BUTTON_SPACING),
+                ROW_A_Y - (t / bpr) * (BUTTON_WIDTH + BUTTON_SPACING)));
+        }
+        t++;
+        if (_minusButton != null)
+        {
+            _minusButton.Move(new Vector2(
+                MARGIN + (t % bpr) * (BUTTON_WIDTH + BUTTON_SPACING),
+                ROW_A_Y - (t / bpr) * (BUTTON_WIDTH + BUTTON_SPACING)));
+        }
+    }
+
+    private void ClearContent()
+    {
+        if (_currentContent != null)
+        {
+            _currentContent.ClearSprites();
+            subNodes.Remove(_currentContent);
+            _currentContent = null;
+        }
+    }
+
+    private void UpdateTitle()
+    {
+        string tabName = _currentTab == 0 ? "Room" : (_currentTab == 1 ? "View" : "Region");
+        Title = $"Rain Cycles: {tabName}";
+    }
+
+    public void SwitchTab(int newTab)
+    {
+        if (newTab < 0) newTab = 2;
+        if (newTab > 2) newTab = 0;
+
+        _currentTab = newTab;
+        ClearContent();
+
+        if (_currentTab == 2)
+        {
+            DestroyRoomViewElements();
+        }
+        else
+        {
+            CreateRoomViewElements();
+        }
+
+        switch (_currentTab)
+        {
+            case 0:
+                _currentContent = new RCPanel_RoomPage(this);
+                break;
+            case 1:
+                _currentContent = new RCPanel_ViewPage(this);
+                break;
+            case 2:
+                _currentContent = new RCPanel_RegionPage(this);
+                break;
+        }
+
+        if (_currentContent != null)
+        {
+            _currentContent.IDstring = "RC_PageContent";
+            subNodes.Add(_currentContent);
+        }
+
+        UpdateTitle();
+        Refresh();
+    }
+
+    public string ResolveSettingsFile(int n)
+    {
+        if (owner.room?.game?.IsArenaSession == true)
+            return ArenaStateResolver.GetSettingsPath(CurrentRoomName, n);
+        return StateFileResolver.GetRainStateSettingsFile(CurrentRoomName, n);
+    }
+
+    public void ApplyStateA()
+    {
+        string path = ResolveSettingsFile(ButtonSelectedA);
+        if (path == null) return;
+        
+        owner.room.roomSettings.filePath = path;
+        owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
+
+        var snapCheck = SettingsSnapshot.FromFile(path);
+        if (!snapCheck._hasTerrainFadePalette)
+            owner.room.roomSettings.terrainFadePalette = null;
+
+        var c0 = owner.room.game.cameras[0];
+        c0.ApplyEffectColorsToAllPaletteTextures(owner.room.roomSettings.EffectColorA, owner.room.roomSettings.EffectColorB);
+        c0.ChangeMainPalette(owner.room.roomSettings.Palette);
+        if (owner.room.roomSettings.fadePalette != null)
+            c0.ChangeFadePalette(owner.room.roomSettings.fadePalette.palette,
+                owner.room.roomSettings.fadePalette.fades[c0.currentCameraPosition]);
+        c0.ApplyFade();
+        if (owner.room.roomSettings?.TerrainPalette != null)
+            c0.ReloadTerrainPalette();
+
+        ApplyTintsFromSnapshot(snapCheck);
+        if (snapCheck.TintCloudAtmosphere.HasValue)
+            SettingsBlendController.SetLastAtmosphereColor(snapCheck.TintCloudAtmosphere.Value);
+
+        RoomEffectsApplier.ApplyDecalsFromSnapshot(owner.room, path);
+        RoomEffectsApplier.ApplyLightSourcesFromSnapshot(owner.room, path);
+        RoomEffectsApplier.ApplyLightBeamsFromSnapshot(owner.room, path);
+        Shader.SetGlobalFloat(RainWorld.ShadPropGrime, owner.room.roomSettings.Grime);
+        SettingsBlendController.ApplySkyForState(ButtonSelectedA, owner.room);
+        
+        if (_activeFileLabel != null)
+            _activeFileLabel.Text = Path.GetFileName(path ?? "");
+    }
+
+    public void ApplyTintsFromSnapshot(SettingsSnapshot snap)
+    {
+        if (snap.TintMultiply.HasValue)
+        {
+            var c = snap.TintMultiply.Value;
+            Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, new Vector4(c.r, c.g, c.b, 1f));
+        }
+        if (snap.TintAtmosphere.HasValue)
+        {
+            var c = snap.TintAtmosphere.Value;
+            Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, new Vector4(c.r, c.g, c.b, 1f));
+        }
+        if (snap.TintCloudAtmosphere.HasValue)
+        {
+            for (int i = 0; i < owner.room.updateList.Count; i++)
+            {
+                if (owner.room.updateList[i] is AboveCloudsView acv)
                 {
-                    if (bs.IDstring == "RC_BlendSlider")  bs.SetLocked(nowLoop);
-                    if (bs.IDstring == "RC_BlendSliderB") bs.SetLocked(!nowLoop);
+                    acv.atmosphereColor = snap.TintCloudAtmosphere.Value;
+                    break;
                 }
-
-            SettingsBlendController.ResetFull();
-            if (BlendClock.IsRunning) BlendClock.Stop();
-            if (nowLoop) BlendClock.Start(buttonSelectedA);
-            RSPlugin.log.LogInfo($"[RCPanel] Mode → {mb.Mode}");
-            return;
-        }
-
-        if (sender.IDstring == "RC_ToggleRoom")
-        {
-            string room = owner.room?.abstractRoom?.name;
-            bool now = owner.room?.game?.IsArenaSession == true
-                ? ArenaStateResolver.ToggleLevel(room)
-                : BlendSettingsWriter.ToggleRoom(room);
-            (subNodes.FirstOrDefault(n => n.IDstring == "RC_ToggleRoom") as RoomToggleButton)?.SetRegistered(now);
-            return;
-        }
-
-        if (sender.IDstring == "RC_Sky_ACV" || sender.IDstring == "RC_Sky_RTV")
-        {
-            string room = owner.room?.abstractRoom?.name;
-            SkyType clicked = sender.IDstring == "RC_Sky_ACV" ? SkyType.ACV : SkyType.RTV;
-            SkyType current = BlendSettingsWriter.GetSkyType(room);
-
-            // Si ya está activo → quitar (None). Si no → poner este tipo.
-            SkyType next = current == clicked ? SkyType.None : clicked;
-            BlendSettingsWriter.SetSkyType(room, next);
-
-            // Refrescar ambos botones
-            foreach (var node in subNodes)
-                if (node is SkyTypeButton sb) sb.Refresh(next);
-            return;
-        }
-
-        if (sender.IDstring.StartsWith("RCB_"))
-        {
-            buttonSelectedB = int.Parse(sender.IDstring.Split('_')[1]);
-            if (!Mathf.Approximately(BlendSlider.BlendFactor, 0f))  BuildAndActivateA();
-            if (!Mathf.Approximately(BlendSlider.BlendFactorB, 0f)) BuildAndActivateB();
-            foreach (var node in subNodes) node.Refresh();
+            }
         }
     }
 
-    // ── Manual blend ─────────────────────────────────────────────────────
-    // Slider A — used for Cycle / EndCycle (linear, 0→1)
-    // Slider B — used for Loop / Custom (global 0→1 across flat sequence)
-    //            0→0.5 = first half, 0.5→1 = second half
-    //            The midpoint (0.5) is the anchor state.
+    // ═════════════════════════════════════════════════════════════════════
+    // BLEND MANUAL - SLIDER (SECUENCIAS INTRÍNSECAS)
+    // ═════════════════════════════════════════════════════════════════════
 
-    // Phase lists are built from the flat sequence the same way BlendClock does:
-    // we read LoopLane data, concatenate to [1,2,3,4,1], and derive transitions.
-
-    private System.Collections.Generic.List<(int from, int to)> _phasesA = null;
-    // Full phase list for the entire flat sequence (used by slider B)
-    private System.Collections.Generic.List<(int from, int to)> _phasesFlat = null;
-
-    // ── Slider A (Cycle/EndCycle) ─────────────────────────────────────────
-
-    public void OnSliderAStarted()
+    public void OnSliderStarted()
     {
-        _phasesA = null;
+        RSPlugin.log.LogDebug($"[RCPanel] OnSliderStarted called");
+        _phases = null;
         SettingsBlendController.ClearPendingOrigin();
-        BuildAndActivateA();
-    }
-
-    public void OnSliderAMoved(float t)
-    {
-        ApplyPhased(t, ref _phasesA, buildFn: BuildAndActivateA);
-    }
-
-    private void BuildAndActivateA()
-    {
-        var s = BlendSettingsLoader.Active;
-        _phasesA = BuildPhaseList(buttonSelectedA, buttonSelectedB, s, useLaneB: false);
-        if (_phasesA != null && _phasesA.Count > 0) ActivatePhase(_phasesA[0]);
-    }
-
-    // ── Slider B (Loop/Custom) ────────────────────────────────────────────
-
-    public void OnSliderBStarted()
-    {
-        _phasesFlat = null;
-        SettingsBlendController.ClearPendingOrigin();
-        BuildFlatPhases();
-        if (_phasesFlat != null && _phasesFlat.Count > 0) ActivatePhase(_phasesFlat[0]);
-    }
-
-    public void OnSliderBMoved(float t)
-    {
-        if (_phasesFlat == null) { BuildFlatPhases(); if (_phasesFlat == null) return; }
-        ApplyPhased(t, ref _phasesFlat, buildFn: BuildFlatPhases);
-    }
-
-    // Builds the phase list for the full flat sequence [1,2,3,4,1] → [(1,2),(2,3),(3,4),(4,1)]
-    private void BuildFlatPhases()
-    {
-        var s = BlendSettingsLoader.Active;
-        var flat = BuildFlatSequence(s, buttonSelectedA);
-        if (flat == null || flat.Count < 2) { _phasesFlat = new System.Collections.Generic.List<(int,int)>(); return; }
-        _phasesFlat = new System.Collections.Generic.List<(int, int)>();
-        for (int i = 0; i < flat.Count - 1; i++) _phasesFlat.Add((flat[i], flat[i + 1]));
-    }
-
-    // Reads LoopLane data and builds the concatenated flat sequence.
-    // Mirrors exactly what BlendClock.BuildFlatLoop does.
-    private static System.Collections.Generic.List<int> BuildFlatSequence(BlendSettings s, int resolved)
-    {
-        if (s == null) return null;
-        var laneData = s.GetLoopLane(resolved);
-        if (laneData.HasValue && laneData.Value.IsValid)
+        BuildPhases();
+        if (_phases != null && _phases.Count > 0)
         {
-            var ld = laneData.Value;
-            System.Collections.Generic.List<int> first, second;
-            if (ld.LaneA.Count > 0 && ld.LaneA[0] == resolved) { first = ld.LaneA; second = ld.LaneB; }
-            else if (ld.LaneB.Count > 0 && ld.LaneB[0] == resolved) { first = ld.LaneB; second = ld.LaneA; }
-            else { first = ld.LaneA; second = ld.LaneB; }
-            var flat = new System.Collections.Generic.List<int>(first);
-            for (int i = 1; i < second.Count; i++) flat.Add(second[i]);
-            return flat;
+            RSPlugin.log.LogDebug($"[RCPanel] OnSliderStarted: {_phases.Count} phases built, activating first");
+            ActivatePhase(_phases[0]);
         }
-        // No lane block: use base sequence + close the loop
-        var seq = s.GetSequenceFor(resolved);
-        if (seq == null || seq.Count < 2) return null;
-        var r = new System.Collections.Generic.List<int>(seq);
-        if (r[r.Count - 1] != resolved) r.Add(resolved);
-        return r;
+        else
+        {
+            RSPlugin.log.LogWarning($"[RCPanel] OnSliderStarted: NO phases built!");
+        }
     }
 
-    // ── Shared phase application ──────────────────────────────────────────
-
-    private void ApplyPhased(float globalT,
-        ref System.Collections.Generic.List<(int from, int to)> phases,
-        System.Action buildFn)
+    public void OnSliderMoved(float t)
     {
-        string room = owner.room?.abstractRoom?.name;
-        if (phases == null || phases.Count == 0) { buildFn(); if (phases == null) return; }
+        RSPlugin.log.LogDebug($"[RCPanel] OnSliderMoved: t={t:F3}");
+        
+        if (_phases == null || _phases.Count == 0)
+        {
+            RSPlugin.log.LogWarning($"[RCPanel] OnSliderMoved: _phases is null or empty, rebuilding");
+            BuildPhases();
+            if (_phases == null || _phases.Count == 0)
+            {
+                RSPlugin.log.LogWarning($"[RCPanel] OnSliderMoved: still no phases, returning");
+                return;
+            }
+        }
 
-        int   cnt  = phases.Count;
+        int cnt = _phases.Count;
         float size = 1f / cnt;
-        int   idx  = Mathf.Min(Mathf.FloorToInt(globalT / size), cnt - 1);
-        float locT = Mathf.Clamp01((globalT - idx * size) / size);
+        int idx = Mathf.Min(Mathf.FloorToInt(t / size), cnt - 1);
+        float locT = Mathf.Clamp01((t - idx * size) / size);
 
-        var phase = phases[idx];
+        var phase = _phases[idx];
+        RSPlugin.log.LogDebug($"[RCPanel] OnSliderMoved: phase {idx+1}/{cnt}, from={phase.from} to={phase.to}, locT={locT:F3}");
+
+        string room = owner.room?.abstractRoom?.name;
         string pA = StateFileResolver.GetRainStateSettingsFile(room, phase.from);
 
         if (!SettingsBlendController.IsActive || SettingsBlendController.CurrentPathA != pA)
+        {
+            RSPlugin.log.LogDebug($"[RCPanel] OnSliderMoved: activating phase {phase.from}->{phase.to}");
             ActivatePhase(phase);
+        }
 
         SettingsBlendController.SetExternalT(locT);
+    }
+
+    private void BuildPhases()
+    {
+        var s = BlendSettingsLoader.Active;
+        BlendMode mode = s?.Mode ?? BlendMode.Loop;
+
+        if (mode == BlendMode.Loop)
+            BuildLoopPhases();
+        else
+            BuildLinearPhases();
+    }
+
+    private void BuildLoopPhases()
+    {
+        // Mismo patrón que BlendClock.BuildLoopSequence: LoopLane intrínseco
+        int initial = ButtonSelectedA;
+        
+        // Lane A: [N, N+1, N+2]
+        var laneA = new List<int>();
+        for (int i = 0; i < 3; i++)
+            laneA.Add(((initial - 1 + i) % 4) + 1);
+        
+        // Lane B: [N+2, N+3, N]
+        var laneB = new List<int>();
+        for (int i = 2; i < 5; i++)
+            laneB.Add(((initial - 1 + i) % 4) + 1);
+        
+        // Flatten: A completa + B sin primer elemento (anclaje)
+        var flat = new List<int>(laneA);
+        for (int i = 1; i < laneB.Count; i++)
+            flat.Add(laneB[i]);
+        
+        // CERRAR EL CICLO: añadir estado inicial al final para que 100% = inicio
+        // flat = [4,1,2,3] → [4,1,2,3,4]
+        if (flat[flat.Count - 1] != initial)
+            flat.Add(initial);
+        
+        _phases = new List<(int, int)>();
+        for (int i = 0; i < flat.Count - 1; i++)
+            _phases.Add((flat[i], flat[i + 1]));
+    }
+
+    private void BuildLinearPhases()
+    {
+        // Cycle/EndCycle/Custom: secuencia de 3 estados [N, N+1, N+2]
+        int initial = ButtonSelectedA;
+        var seq = new List<int>();
+        for (int i = 0; i < 3; i++)
+            seq.Add(((initial - 1 + i) % 4) + 1);
+        
+        _phases = new List<(int, int)>();
+        for (int i = 0; i < seq.Count - 1; i++)
+            _phases.Add((seq[i], seq[i + 1]));
     }
 
     private void ActivatePhase((int from, int to) phase)
@@ -332,131 +472,121 @@ public class RCPanel : Panel, IDevUISignals
         string room = owner.room?.abstractRoom?.name;
         string pA = StateFileResolver.GetRainStateSettingsFile(room, phase.from);
         string pB = StateFileResolver.GetRainStateSettingsFile(room, phase.to);
+        
+        RSPlugin.log.LogDebug($"[RCPanel] ActivatePhase: from={phase.from} to={phase.to}, pA={pA}, pB={pB}");
+        
         if (pA != null && pB != null && phase.from != phase.to)
-            SettingsBlendController.AttachWithExternalT(owner.room, pA, pB);
-    }
-
-    private void BuildAndActivateB()
-    {
-        BuildFlatPhases();
-        if (_phasesFlat != null && _phasesFlat.Count > 0) ActivatePhase(_phasesFlat[0]);
+        {
+            RSPlugin.log.LogDebug($"[RCPanel] ActivatePhase: calling AttachWithExternalT");
+            SettingsBlendController.AttachWithExternalT(owner.room, pA, pB, isAuto: false);
+        }
+        else
+        {
+            RSPlugin.log.LogWarning($"[RCPanel] ActivatePhase: missing paths! pA={pA != null}, pB={pB != null}, sameState={phase.from == phase.to}");
+        }
     }
 
     public void ResetRelaySystem()
     {
-        _phasesA = _phasesFlat = null;
+        RSPlugin.log.LogDebug($"[RCPanel] ResetRelaySystem called");
+        _phases = null;
         SettingsBlendController.Detach();
         ApplyStateA();
         BlendSlider.Reset();
-        foreach (var node in subNodes) if (node is BlendSlider bs) bs.SetDisplayT(0f);
+        if (_blendSlider != null)
+            _blendSlider.SetDisplayT(0f);
     }
 
-    private static System.Collections.Generic.List<(int from, int to)> BuildPhaseList(
-        int stateA, int stateB, BlendSettings s, bool useLaneB)
+    public void Signal(DevUISignalType type, DevUINode sender, string message)
     {
-        var phases = new System.Collections.Generic.List<(int, int)>();
-        if (stateA == stateB) return phases;
-        System.Collections.Generic.List<int> seq = null;
-        if (s != null)
+        if (type != DevUISignalType.ButtonClick) return;
+
+        if (sender.IDstring.StartsWith("RCA_"))
         {
-            if (useLaneB)
+            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+
+            int sel = int.Parse(sender.IDstring.Split('_')[1]);
+            string path = ResolveSettingsFile(sel);
+            if (path == null) return;
+
+            if (SettingsBlendController.IsActive) { SettingsBlendController.Detach(); if (_blendSlider != null) BlendSlider.Reset(); }
+
+            owner.room.roomSettings.filePath = path;
+            owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
+
+            var snapTerrain = SettingsSnapshot.FromFile(path);
+            if (!snapTerrain._hasTerrainFadePalette)
+                owner.room.roomSettings.terrainFadePalette = null;
+
+            var c0 = owner.room.game.cameras[0];
+            c0.ChangeMainPalette(owner.room.roomSettings.Palette);
+            if (owner.room.roomSettings.fadePalette != null)
+                c0.ChangeFadePalette(owner.room.roomSettings.fadePalette.palette,
+                    owner.room.roomSettings.fadePalette.fades[c0.currentCameraPosition]);
+            c0.ApplyFade();
+            if (owner.room.roomSettings?.TerrainPalette != null)
+                c0.ReloadTerrainPalette();
+
+            var snapTint = SettingsSnapshot.FromFileWithTemplate(path, CurrentRoomName);
+            SettingsBlendController.SetActiveSnapshot(snapTint);
+            ApplyTintsFromSnapshot(snapTint);
+
+            if (snapTint.TintCloudAtmosphere.HasValue)
+                SettingsBlendController.SetLastAtmosphereColor(snapTint.TintCloudAtmosphere.Value);
+
+            RoomEffectsApplier.ApplyDecalsFromSnapshot(owner.room, path);
+            RoomEffectsApplier.ApplyLightSourcesFromSnapshot(owner.room, path);
+            RoomEffectsApplier.ApplyLightBeamsFromSnapshot(owner.room, path);
+            Shader.SetGlobalFloat(RainWorld.ShadPropGrime, owner.room.roomSettings.Grime);
+            SettingsBlendController.ApplySkyForState(sel, owner.room);
+
+            if (_activeFileLabel != null)
+                _activeFileLabel.Text = Path.GetFileName(path ?? "");
+            ButtonSelectedA = sel;
+
+            foreach (var node in subNodes) node.Refresh();
+            parentNode?.Refresh();
+            return;
+        }
+
+        if (sender.IDstring == "RC_Plus")
+        {
+            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+
+            int cnt = _stateButtons.Count + 1;
+            var newBtn = new SelectButton(owner, $"RCA_{cnt}", this,
+                new Vector2(MARGIN, ROW_A_Y), BUTTON_WIDTH, cnt.ToString(), false);
+            _stateButtons.Add(newBtn);
+            subNodes.Add(newBtn);
+            StateFileResolver.CreateNewRainStateFile(CurrentRoomName, cnt, owner.room);
+
+            if (cnt == 2 && _blendSlider == null)
             {
-                foreach (var kv in s.LoopLanes)
-                    if (kv.Value.IsValid && kv.Value.LaneB.Contains(stateA)) { seq = kv.Value.LaneB; break; }
+                _blendSlider = new BlendSlider(owner, "RC_BlendSlider", this, new Vector2(MARGIN, SLIDER_Y));
+                subNodes.Add(_blendSlider);
             }
-            else seq = s.GetSequenceFor(stateA);
-        }
-        if (seq != null && seq.Count >= 2)
-        {
-            int ia = seq.IndexOf(stateA), ib = seq.IndexOf(stateB);
-            if (ia >= 0 && ib > ia) { for (int i = ia; i < ib; i++) phases.Add((seq[i], seq[i+1])); return phases; }
-        }
-        phases.Add((stateA, stateB));
-        return phases;
-    }
 
-    // ── Layout & helpers ──────────────────────────────────────────────────
-
-    private void ReorganizeButtons()
-    {
-        var bA  = subNodes.Where(n => n.IDstring.StartsWith("RCA_")).ToList();
-        var bB  = subNodes.Where(n => n.IDstring.StartsWith("RCB_")).ToList();
-        var plus = subNodes.FirstOrDefault(n => n.IDstring == "RC_Plus");
-
-        int bpr = Math.Max(1, (int)((this.size.x - 2*MARGIN + BUTTON_SPACING) / (BUTTON_WIDTH + BUTTON_SPACING)));
-
-        for (int i = 0; i < bA.Count; i++)
-        {
-            (bA[i] as PositionedDevUINode).Move(new Vector2(
-                MARGIN + (i%bpr)*(BUTTON_WIDTH+BUTTON_SPACING),
-                ROW_A_Y - (i/bpr)*(BUTTON_WIDTH+BUTTON_SPACING)));
-            if (i+1 == buttonSelectedA) (bA[i] as SelectButton).Select();
+            ReorganizeStateButtons();
+            return;
         }
-        for (int i = 0; i < bB.Count; i++)
+
+        if (sender.IDstring == "RC_Minus")
         {
-            (bB[i] as PositionedDevUINode).Move(new Vector2(
-                MARGIN + (i%bpr)*(BUTTON_WIDTH+BUTTON_SPACING),
-                ROW_B_Y - (i/bpr)*(BUTTON_WIDTH+BUTTON_SPACING)));
-            if (i+1 == buttonSelectedB) (bB[i] as SelectButton).Select();
-        }
-        if (plus != null)
-        {
-            int t = bA.Count;
-            (plus as PositionedDevUINode).Move(new Vector2(
-                MARGIN + (t%bpr)*(BUTTON_WIDTH+BUTTON_SPACING),
-                ROW_A_Y - (t/bpr)*(BUTTON_WIDTH+BUTTON_SPACING)));
+            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+
+            string path = ResolveSettingsFile(ButtonSelectedA);
+            if (path != null && File.Exists(path))
+                File.Delete(path);
+
+            ButtonSelectedA = 1;
+            RebuildStateButtons();
+            ApplyStateA();
+            return;
         }
     }
 
-    private void UpdateLabel(string path)
+    public override void Update()
     {
-        var lbl = subNodes.FirstOrDefault(n => n.IDstring == "RC_ActiveFile") as DevUILabel;
-        if (lbl != null) lbl.Text = System.IO.Path.GetFileName(path ?? "");
-    }
-
-    // Resuelve el path de un settings_N.txt usando el resolver correcto según sesión.
-    private string ResolveSettingsFile(string roomName, int n)
-    {
-        if (owner.room?.game?.IsArenaSession == true)
-            return ArenaStateResolver.GetSettingsPath(roomName, n);
-        return StateFileResolver.GetRainStateSettingsFile(roomName, n);
-    }
-
-    public void ApplyStateA()
-    {
-        string path = ResolveSettingsFile(owner.room?.abstractRoom?.name, buttonSelectedA);
-        if (path == null) return;
-        owner.room.roomSettings.filePath = path;
-        owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
-
-        // RoomSettings.Load no limpia terrainFadePalette si el settings no lo declara.
-        // Verificar via snapshot si realmente está declarado — si no, limpiar.
-        var snapCheck = RainCycles.Snapshot.SettingsSnapshot.FromFile(path);
-        if (!snapCheck._hasTerrainFadePalette)
-        {
-            owner.room.roomSettings.terrainFadePalette = null;
-            RSPlugin.log.LogDebug($"[ApplyStateA] Cleared terrainFadePalette for state {buttonSelectedA}");
-        }
-        else
-        {
-            RSPlugin.log.LogDebug($"[ApplyStateA] Keeping terrainFadePalette='{snapCheck.TerrainFadePaletteName}' for state {buttonSelectedA}");
-        }
-        var c0 = owner.room.game.cameras[0];
-        c0.ApplyEffectColorsToAllPaletteTextures(base.RoomSettings.EffectColorA, base.RoomSettings.EffectColorB);
-        c0.ChangeMainPalette(base.RoomSettings.Palette);
-        if (base.RoomSettings.fadePalette != null)
-            c0.ChangeFadePalette(base.RoomSettings.fadePalette.palette,
-                base.RoomSettings.fadePalette.fades[c0.currentCameraPosition]);
-        c0.ApplyFade();
-        // Actualizar terrain palette si la sala tiene una declarada
-        if (owner.room.roomSettings?.TerrainPalette != null)
-            c0.ReloadTerrainPalette();
-        RoomEffectsApplier.ApplyDecalsFromSnapshot(owner.room, path);
-        RoomEffectsApplier.ApplyLightSourcesFromSnapshot(owner.room, path);
-        RoomEffectsApplier.ApplyLightBeamsFromSnapshot(owner.room, path);
-        Shader.SetGlobalFloat(RainWorld.ShadPropGrime, base.RoomSettings.Grime);
-        // Actualizar cielo instantáneamente al estado seleccionado
-        SettingsBlendController.ApplySkyForState(buttonSelectedA, owner.room);
-        UpdateLabel(path);
+        base.Update();
     }
 }
