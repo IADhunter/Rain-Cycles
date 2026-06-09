@@ -139,3 +139,5 @@ Accessible from the developer menu (Default key: `O`). It includes:
 ---
 > [!NOTE]
 > This project is currently under active development. Features and documentation are subject to change.
+
+made with assistance from Deepseek AI ヾ(•ω•`)o
