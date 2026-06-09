@@ -106,6 +106,9 @@ public class EditableFloatField : PositionedDevUINode
     
     private void StartEditing()
     {
+        // Bloquear si EditMode está apagado
+        if (!BlendClock.EditMode) return;
+        
         _isEditing = true;
         _cursorAlpha = 1f;
         _cursorPos = _editText.Length;
@@ -359,6 +362,9 @@ public class ModSelectPanel : Panel, IDevUISignals
     {
         if (type != DevUISignalType.ButtonClick) return;
         
+        // Bloquear si EditMode está apagado
+        if (!BlendClock.EditMode) return;
+        
         if (sender.IDstring == "RC_ModScroll_Prev")
         {
             _scrollOffset = Math.Max(0, _scrollOffset - _visibleItems);
@@ -486,6 +492,9 @@ public class ImageSelectPanel : Panel, IDevUISignals
     public void Signal(DevUISignalType type, DevUINode sender, string message)
     {
         if (type != DevUISignalType.ButtonClick) return;
+        
+        // Bloquear si EditMode está apagado
+        if (!BlendClock.EditMode) return;
         
         if (sender.IDstring == "RC_ImageScroll_Prev")
         {

@@ -26,7 +26,7 @@ public static partial class SettingsBlendController
     private static int _manualStateB = 2;
 
     // ── Nueva variable para distinguir auto vs manual ──
-    private static bool _isAutoBlend = false;  // true = automático (clock), false = manual (slider)
+    private static bool _isAutoBlend = false;
 
     private static int   _pendingSyncSky   = -1;
     private static int   _pendingStateA    = -1;
@@ -84,7 +84,7 @@ public static partial class SettingsBlendController
 
     // ── Propiedades públicas ──────────────────────────────────────────
     public static bool IsExternalT => _externalT;
-    public static bool IsAutoBlend => _isAutoBlend;  // NUEVA: true = automático (clock), false = manual (slider)
+    public static bool IsAutoBlend => _isAutoBlend;
     public static int ManualStateA => _manualStateA;
     public static int ManualStateB => _manualStateB;
     public static SettingsSnapshot ManualSnapA => _snapA;
@@ -262,7 +262,6 @@ public static partial class SettingsBlendController
     {
         _manualStateA = stateA;
         _manualStateB = stateB;
-        RSPlugin.log.LogDebug($"[SettingsBlendController] Manual states updated: A={stateA}, B={stateB}");
     }
     
     // ── Nuevos métodos para refresco post-guardado ──────────────────────
@@ -273,8 +272,6 @@ public static partial class SettingsBlendController
     public static void RefreshActiveSnapshots()
     {
         if (!_active || _room == null) return;
-        
-        RSPlugin.log.LogDebug($"[SettingsBlendController] RefreshActiveSnapshots: room={_room.abstractRoom?.name}");
         
         // Recargar snapshots desde disco (caché invalidada previamente)
         string roomName = _room.abstractRoom?.name;
@@ -314,7 +311,6 @@ public static partial class SettingsBlendController
     public static void ForceRefreshSkySlots()
     {
         _forceSkyRefresh = true;
-        RSPlugin.log.LogDebug("[SettingsBlendController] ForceRefreshSkySlots: marcado para próximo ciclo");
     }
     
     /// <summary>
@@ -328,7 +324,6 @@ public static partial class SettingsBlendController
         
         if (_room != null && BlendClock.IsRunning)
         {
-            RSPlugin.log.LogDebug("[SettingsBlendController] Procesando refresco de sky slots");
             SyncSkySlots(_room, BlendClock.StateA, BlendClock.StateB);
         }
     }

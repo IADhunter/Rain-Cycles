@@ -7,12 +7,6 @@ public static partial class SettingsBlendController
 {
     private static void OnDevUIUpdate(On.DevInterface.DevUI.orig_Update orig, DevInterface.DevUI self)
     {
-
-    if (SettingsBlendController.IsActive && SettingsBlendController.IsExternalT)
-    {
-        RSPlugin.log.LogDebug($"[OnDevUIUpdate] ExternalT active, BlendFactor={BlendSlider.BlendFactor:F3}, _forcedT={_forcedT:F3}");
-    }
-
         orig(self);
 
         var cam = self.game?.cameras?[0];

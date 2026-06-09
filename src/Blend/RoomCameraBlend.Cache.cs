@@ -32,7 +32,6 @@ public static partial class RoomCameraExtensions
         On.Room.Unloaded += OnRoomUnloaded;
         
         _preloadHooksInitialized = true;
-        RSPlugin.log.LogInfo("[Cache] Hooks de precarga inicializados");
     }
     
     public static void TerminatePreloadHooks()
@@ -43,7 +42,6 @@ public static partial class RoomCameraExtensions
         On.Room.Unloaded -= OnRoomUnloaded;
         
         _preloadHooksInitialized = false;
-        RSPlugin.log.LogInfo("[Cache] Hooks de precarga terminados");
     }
     
     private static void OnRoomLoaded(On.Room.orig_Loaded orig, Room self)
@@ -57,7 +55,6 @@ public static partial class RoomCameraExtensions
         
         if (!SettingsBlendController.IsBlendRoom(self)) return;
         
-        RSPlugin.log.LogInfo($"[Cache] Precargando estados de sala {roomName}");
         PreloadRoomStates(roomName);
     }
     
@@ -100,7 +97,6 @@ public static partial class RoomCameraExtensions
     internal static void ClearAllCaches()
     {
         _stateCache.Clear();
-        RSPlugin.log.LogInfo("[Cache] Todos los caches limpiados");
     }
     
     private static void GetOrLoadState(string roomName, int state, SettingsSnapshot snap,

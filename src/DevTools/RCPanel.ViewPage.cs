@@ -24,8 +24,8 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
     private const float TINT_BTN_WIDTH = 40f;
     private const float TINT_BTN_SPACING = 5f;
     private const float TINT_MULTIPLY_X = 5f;
-    private const float TINT_ATMOSPHERE_X = TINT_MULTIPLY_X + TINT_BTN_WIDTH + TINT_BTN_SPACING;  // 54f
-    private const float TINT_CLOUD_X = TINT_ATMOSPHERE_X + TINT_BTN_WIDTH + TINT_BTN_SPACING;      // 104f
+    private const float TINT_ATMOSPHERE_X = TINT_MULTIPLY_X + TINT_BTN_WIDTH + TINT_BTN_SPACING;
+    private const float TINT_CLOUD_X = TINT_ATMOSPHERE_X + TINT_BTN_WIDTH + TINT_BTN_SPACING;
 
     private const float HSV_SLIDER_X = 5f;
     private const float HSV_SLIDER_Y = 56f;
@@ -158,6 +158,9 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 
     private void SetViewType(int delta)
     {
+        // Bloquear si EditMode está apagado
+        if (!BlendClock.EditMode) return;
+        
         _viewTypeIndex += delta;
         if (_viewTypeIndex < 0) _viewTypeIndex = _viewTypes.Length - 1;
         if (_viewTypeIndex >= _viewTypes.Length) _viewTypeIndex = 0;
@@ -173,6 +176,9 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 
     private void SaveCurrentColor()
     {
+        // Bloquear si EditMode está apagado
+        if (!BlendClock.EditMode) return;
+        
         var roomSettings = ParentPanel.CurrentRoom?.roomSettings;
         if (roomSettings == null) return;
         
@@ -180,15 +186,12 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         {
             case 0:
                 roomSettings.SetTintMultiply(_currentColor);
-                RSPlugin.log.LogDebug($"[ViewPage] TintMultiply guardado en RoomSettings: {_currentColor}");
                 break;
             case 1:
                 roomSettings.SetTintAtmosphere(_currentColor);
-                RSPlugin.log.LogDebug($"[ViewPage] TintAtmosphere guardado en RoomSettings: {_currentColor}");
                 break;
             case 2:
                 roomSettings.SetTintCloudAtmosphere(_currentColor);
-                RSPlugin.log.LogDebug($"[ViewPage] TintCloudAtmosphere guardado en RoomSettings: {_currentColor}");
                 
                 // === MISMO PATRÓN QUE EL BLEND ===
                 // 1. Actualizar la fuente de verdad
@@ -206,7 +209,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
                         if (ParentPanel.CurrentRoom.updateList[i] is AboveCloudsView acv)
                         {
                             acv.atmosphereColor = _currentColor;
-                            RSPlugin.log.LogDebug($"[ViewPage] TintCloudAtmosphere aplicado a ACV: {_currentColor}");
                             break;
                         }
                     }
@@ -282,6 +284,9 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
     // porque el Color que viaja puede haber perdido H si S=0 o V=0
     private void OnColorEditorChanged(Color color)
     {
+        // Bloquear si EditMode está apagado
+        if (!BlendClock.EditMode) return;
+        
         _currentColor = color;
         
         // Sincronizar hue al picker para que el gradiente cambie independientemente de S/V
@@ -294,6 +299,9 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 
     private void OnFreeColorSelected(Color color)
     {
+        // Bloquear si EditMode está apagado
+        if (!BlendClock.EditMode) return;
+        
         _currentColor = color;
         _colorEditor.SetColor(_currentColor);
         UpdateColorPreview();
@@ -302,6 +310,9 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 
     private void OnColorPickerClicked()
     {
+        // Bloquear si EditMode está apagado
+        if (!BlendClock.EditMode) return;
+        
         if (ScreenColorPicker.IsActive)
         {
             ScreenColorPicker.Stop(false);
@@ -344,6 +355,9 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
     public void Signal(DevUISignalType type, DevUINode sender, string message)
     {
         if (type != DevUISignalType.ButtonClick) return;
+        
+        // Bloquear todo si EditMode está apagado (excepto el botón de EditMode que está en otro panel)
+        if (!BlendClock.EditMode) return;
         
         if (sender.IDstring == "RC_ViewType_Prev")
         {

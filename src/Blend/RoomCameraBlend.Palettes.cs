@@ -15,11 +15,6 @@ public static partial class RoomCameraExtensions
         (2 * 32) + 30, (2 * 32) + 31, (3 * 32) + 30, (3 * 32) + 31
     };
 
-    private static int _blendProcessCount = 0;
-    private static int _lastLoggedFrame = 0;
-    private static float _accumulatedBlendMs = 0f;
-    private static int _accumulatedFrames = 0;
-
     public static void SetBlendActive(this RoomCamera cam, string roomName)
     {
         if (cam == null) return;
@@ -39,24 +34,13 @@ public static partial class RoomCameraExtensions
 
     public static void UpdateBlendPalette(this RoomCamera cam, float forcedT = -1f)
     {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        
-        if (cam == null) { sw.Stop(); return; }
-
-        if (Time.frameCount - _lastLoggedFrame >= 60)
-        {
-            _lastLoggedFrame = Time.frameCount;
-            RSPlugin.log.LogInfo($"[PERF] UpdateBlendPalette llamado {_blendProcessCount} veces en últimos 60 frames");
-            _blendProcessCount = 0;
-        }
-        _blendProcessCount++;
+        if (cam == null) return;
 
         if (!ShouldHaveBlendActive(cam))
         {
             var existing = GetBlendData(cam);
             if (existing != null && existing.isBlendActive)
                 existing.isBlendActive = false;
-            sw.Stop();
             return;
         }
 
@@ -70,7 +54,7 @@ public static partial class RoomCameraExtensions
         }
 
         string roomName = data.roomName ?? cam.room?.abstractRoom?.name;
-        if (string.IsNullOrEmpty(roomName)) { sw.Stop(); return; }
+        if (string.IsNullOrEmpty(roomName)) return;
 
         // ====================================================================
         // DETECTAR MODO MANUAL (SLIDER) - Cuando el blend es controlado por DevTools
@@ -92,12 +76,9 @@ public static partial class RoomCameraExtensions
             t = forcedT >= 0f ? forcedT : SettingsBlendController.ForcedT;
             isIdle = (stateA == stateB);
             
-                RSPlugin.log.LogDebug($"[UpdateBlendPalette] Manual mode - stateA={stateA}, stateB={stateB}, t={t:F3}, forcedParam={forcedT:F3}, controllerForced={SettingsBlendController.ForcedT:F3}");
             // Usar snapshots ya precargados en el controlador (AttachWithExternalT los cargó)
             snapA = SettingsBlendController.ManualSnapA;
             snapB = SettingsBlendController.ManualSnapB;
-            
-            RSPlugin.log.LogDebug($"[Blend] Manual mode: A={stateA} B={stateB} t={t:F3}");
         }
         else
         {
@@ -150,7 +131,7 @@ public static partial class RoomCameraExtensions
         }
         else
         {
-            if (snapA == null || snapB == null) { sw.Stop(); return; }
+            if (snapA == null || snapB == null) return;
 
             GetOrLoadState(roomName, stateA, snapA, out data.mainPixelsA, out data.fadePixelsA, 
                 out data.lastFadePaletteA, out _);
@@ -179,17 +160,6 @@ public static partial class RoomCameraExtensions
         cam.ApplyFade();
         cam.ApplyPalette();
         cam.lastFadeCoord = cam.fadeCoord;
-        
-        sw.Stop();
-        _accumulatedBlendMs += (float)sw.Elapsed.TotalMilliseconds;
-        _accumulatedFrames++;
-        
-        if (_accumulatedFrames >= 60)
-        {
-            RSPlugin.log.LogInfo($"[PERF-DETAIL] UpdateBlendPalette avg: {_accumulatedBlendMs / _accumulatedFrames:F3}ms");
-            _accumulatedBlendMs = 0f;
-            _accumulatedFrames = 0;
-        }
     }
 
     private static Color32[] BuildFullPalette(RoomCamera cam, CameraBlendData data, SettingsSnapshot snap)

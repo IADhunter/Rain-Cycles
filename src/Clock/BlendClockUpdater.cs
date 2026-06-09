@@ -153,43 +153,28 @@ public static class BlendClockUpdater
         }
 
         // ============================================================
-        // BLEND CLOCK STARTUP - CON LOGS
+        // BLEND CLOCK STARTUP
         // ============================================================
         if (!isArena && !_winHandledThisSession && !BlendClock.IsRunning && !BlendClock.EditMode && !_startFailed)
         {
             var s = BlendSettingsLoader.Active;
             
-            RSPlugin.log.LogInfo($"[DEBUG] === BlendClock Startup Check ===");
-            RSPlugin.log.LogInfo($"[DEBUG] s is null? {s == null}");
-            if (s != null)
-            {
-                RSPlugin.log.LogInfo($"[DEBUG] s.Clock = {s.Clock}");
-                RSPlugin.log.LogInfo($"[DEBUG] s.Mode = {s.Mode}");
-                RSPlugin.log.LogInfo($"[DEBUG] s.IdleTime = {s.IdleTime}");
-                RSPlugin.log.LogInfo($"[DEBUG] s.Duration = {s.Duration}");
-            }
-            RSPlugin.log.LogInfo($"[DEBUG] _winHandledThisSession = {_winHandledThisSession}");
-            RSPlugin.log.LogInfo($"[DEBUG] _startFailed = {_startFailed}");
-            RSPlugin.log.LogInfo($"[DEBUG] _lastRegion = {_lastRegion}");
-            
             if (s != null && s.Clock)
             {
-                RSPlugin.log.LogInfo($"[DEBUG] Starting BlendClock for region {_lastRegion}");
+                RSPlugin.log.LogInfo($"[BlendClock] Starting for region {_lastRegion}");
                 int initialState = ResolveInitial(s);
                 BlendClock.Start(_lastRegion, initialState);
-                RSPlugin.log.LogInfo($"[DEBUG] BlendClock.Start called, IsRunning={BlendClock.IsRunning}");
 
                 if (!BlendClock.IsRunning)
                 {
                     _startFailed = true;
-                    RSPlugin.log.LogWarning($"[DEBUG] BlendClock.Start failed, _startFailed set to true");
+                    RSPlugin.log.LogWarning($"[BlendClock] Start failed for region {_lastRegion}");
                 }
                 else
                 {
                     if (_savedState.IsRunning && _savedState.Mode == s.Mode)
                         BlendClock.RestoreState(_savedState);
                     _savedState = default;
-                    RSPlugin.log.LogInfo($"[DEBUG] BlendClock is running successfully");
                 }
             }
             else if (s != null && !s.Clock && self.cameras?[0]?.room != null)
@@ -221,7 +206,7 @@ public static class BlendClockUpdater
         }
 
         // ============================================================
-        // NUEVO: Procesar refresco pendiente de sky slots (post-guardado)
+        // Procesar refresco pendiente de sky slots (post-guardado)
         // ============================================================
         SettingsBlendController.ProcessPendingSkyRefresh();
 
@@ -234,6 +219,7 @@ public static class BlendClockUpdater
         var page = game.devUI?.activePage;
         if (page == null) return;
 
+        // No logs necesarios - función silenciosa
         BlendSlider slider = null;
         foreach (var node in page.subNodes)
         {
@@ -246,8 +232,6 @@ public static class BlendClockUpdater
                 break;
             }
         }
-
-        if (slider == null) return;
     }
 
     private static void UpdateCameras(RainWorldGame game)
@@ -303,7 +287,7 @@ public static class BlendClockUpdater
             {
                 if (SettingsBlendController.IsActive && SettingsBlendController.IsExternalT && !SettingsBlendController.IsAutoBlend)
                 {
-                    RSPlugin.log.LogDebug($"[UpdateCameras] Skipping idle force - Manual mode active for room {room}");
+                    // Modo manual activo - silencioso
                     if (SettingsBlendController.ActiveRoom == cam.room)
                     {
                         cam.UpdateBlendPalette();
@@ -317,7 +301,6 @@ public static class BlendClockUpdater
                 {
                     if (!SettingsBlendController.IsActive || SettingsBlendController.CurrentPathA != path)
                         SettingsBlendController.AttachWithExternalT(cam.room, path, path, isAuto: true);
-                    RSPlugin.log.LogDebug($"[UpdateCameras] Forcing t=0 for room {room}, finalState={finalState}");
                     SettingsBlendController.SetExternalT(0f);
                 }
             }
@@ -373,40 +356,25 @@ public static class BlendClockUpdater
     private static void UpdateSliders(RainWorldGame game)
     {
         var page = game.devUI?.activePage;
-        if (page == null) 
-        {
-            RSPlugin.log.LogDebug("[UpdateSliders] No activePage");
-            return;
-        }
+        if (page == null) return;
 
         BlendSlider slider = null;
         foreach (var node in page.subNodes)
         {
             if (node is RCPanel panel)
             {
-                RSPlugin.log.LogDebug("[UpdateSliders] Found RCPanel");
                 foreach (var sub in panel.subNodes)
                 {
-                    if (sub is BlendSlider bs) 
-                    { 
-                        slider = bs; 
-                        RSPlugin.log.LogDebug("[UpdateSliders] Found BlendSlider");
-                        break; 
-                    }
+                    if (sub is BlendSlider bs) { slider = bs; break; }
                 }
                 break;
             }
         }
 
-        if (slider == null) 
-        {
-            RSPlugin.log.LogDebug("[UpdateSliders] No BlendSlider found");
-            return;
-        }
+        if (slider == null) return;
         
         if (SettingsBlendController.IsActive && SettingsBlendController.IsExternalT && !SettingsBlendController.IsAutoBlend)
         {
-            RSPlugin.log.LogDebug($"[UpdateSliders] Manual mode active, skipping. BlendClock.T={BlendClock.T:F3}");
             return;
         }
         
@@ -414,13 +382,10 @@ public static class BlendClockUpdater
         {
             if (BlendClock.IsRunning)
             {
-                float currentT = BlendClock.T;
-                RSPlugin.log.LogDebug($"[UpdateSliders] Auto mode - updating slider to T={currentT:F3}, Phase={BlendClock.CurrentPhase}");
-                slider.SetDisplayT(currentT);
+                slider.SetDisplayT(BlendClock.T);
             }
             else
             {
-                RSPlugin.log.LogDebug("[UpdateSliders] No blend running, setting to 0");
                 slider.SetDisplayT(0f);
             }
         }
@@ -454,7 +419,7 @@ public static class BlendClockUpdater
         var s = BlendSettingsLoader.Active;
         if (s == null || s.Mode != BlendMode.EndCycle || BlendClock.EditMode || BlendClock.IsRunning) return;
 
-        RSPlugin.log.LogInfo("[BlendClockUpdater] Death rain → EndCycle trigger.");
+        RSPlugin.log.LogInfo("[BlendClock] Death rain triggered EndCycle");
         BlendClock.Start(_lastRegion, ResolveInitial(s));
     }
 

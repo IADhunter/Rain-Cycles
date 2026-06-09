@@ -309,7 +309,6 @@ public class FreeColorPicker : PositionedDevUINode
             {
                 float s = (float)x / (sizeInt - 1);
                 float v = (float)y / (sizeInt - 1);
-                // La esquina superior derecha (x=max, y=max) siempre usa _hue puro
                 Color color = Color.HSVToRGB(_hue, s, v);
                 _gradientTexture.SetPixel(x, y, color);
             }
@@ -325,7 +324,6 @@ public class FreeColorPicker : PositionedDevUINode
         _bgTexture.SetTexture(_gradientTexture);
         _textureDirty = false;
         
-        // Traer cursor al frente
         if (_cursorSprite != null)
         {
             _cursorSprite.RemoveFromContainer();
@@ -333,26 +331,22 @@ public class FreeColorPicker : PositionedDevUINode
         }
     }
     
-    // Llamado desde el slider H de ColorEditor. Solo cambia el tono del gradiente.
     public void SetHue(float hue01)
     {
         _hue = Mathf.Clamp01(hue01);
         _textureDirty = true;
         UpdateTexture();
         
-        // Recalcular color con S/V actuales del cursor
         _currentColor = Color.HSVToRGB(_hue, _saturation, _value);
         UpdateCursorPosition(_saturation, _value);
     }
     
-    // Llamado cuando llega un Color desde fuera (cambio de tinte, hex, etc.)
     public void SetColor(Color color)
     {
         Color.RGBToHSV(color, out float h, out float s, out float v);
         _saturation = s;
         _value = v;
         
-        // Solo adoptamos H del color si es cromático. Si no, preservamos el nuestro.
         if (s > 0.001f && v > 0.001f)
             _hue = h;
         
@@ -362,7 +356,6 @@ public class FreeColorPicker : PositionedDevUINode
         UpdateTexture();
     }
     
-    // Para sincronización directa HSV si es necesario
     public void SetHSV(float h, float s, float v)
     {
         _hue = Mathf.Clamp01(h);
@@ -480,8 +473,6 @@ public static class ScreenColorPicker
         _floatingPreview.SetColor(Color.white);
         
         On.RainWorld.Update += OnUpdate;
-        
-        RSPlugin.log.LogInfo("[ScreenColorPicker] Activado - Haz clic para seleccionar color");
     }
     
     public static void Stop(bool applyColor)
@@ -502,11 +493,6 @@ public static class ScreenColorPicker
         if (applyColor && _onColorSelected != null)
         {
             _onColorSelected(_currentColor);
-            RSPlugin.log.LogInfo($"[ScreenColorPicker] Color seleccionado: {_currentColor}");
-        }
-        else
-        {
-            RSPlugin.log.LogInfo("[ScreenColorPicker] Cancelado");
         }
         
         _onColorSelected = null;

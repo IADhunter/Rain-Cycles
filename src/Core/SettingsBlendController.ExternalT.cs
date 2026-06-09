@@ -1,5 +1,4 @@
 using UnityEngine;
-using System.Diagnostics;
 using RainCycles.Settings;
 using RainCycles.Snapshot;
 using RainCycles.Clock;
@@ -72,7 +71,6 @@ public static partial class SettingsBlendController
             
             if (stateA > 0) _manualStateA = stateA;
             if (stateB > 0) _manualStateB = stateB;
-            RSPlugin.log.LogDebug($"[AttachWithExternalT] isAuto={isAuto}, states set: A={_manualStateA}, B={_manualStateB}");
 
             if (stateA > 0 && stateB > 0)
                 SyncSkySlots(room, stateA, stateB);
@@ -136,16 +134,6 @@ public static partial class SettingsBlendController
     {
         if (!_active || !_externalT) return;
         
-        float delta = t - _forcedT;
-        if (Mathf.Abs(delta) > 0.0001f && Mathf.Abs(delta) < 0.005f)
-        {
-            RSPlugin.log.LogDebug($"[SetExternalT] Micro-movement: {_forcedT:F4} → {t:F4} (delta={delta:F4})");
-        }
-        else if (Mathf.Abs(delta) > 0.001f)
-        {
-            RSPlugin.log.LogDebug($"[SetExternalT] Called with t={t:F3}, _forcedT={_forcedT:F3}, delta={delta:F3}, isAuto={_isAutoBlend}");
-        }
-        
         _forcedT = t;
 
         if (_moveCameraThisFrame && _entryFrameT < 0f)
@@ -163,17 +151,11 @@ public static partial class SettingsBlendController
             }
         }
 
-        float lastT = _lastT;
         _lastT = t;
         
         ApplyBlend(t);
 
         if (_acvScene != null)
             _acvScene.atmosphereColor = _lastAtmosphereColor;
-        
-        if (lastT >= 0f && Mathf.Abs(t - lastT) < 0.005f && Mathf.Abs(t - lastT) > 0.0001f)
-        {
-            RSPlugin.log.LogDebug($"[SetExternalT] Previously throttled! delta={t - lastT:F4} would have been ignored.");
-        }
     }
 }

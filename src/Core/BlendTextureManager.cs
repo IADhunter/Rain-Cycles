@@ -1,6 +1,5 @@
 using System;
 using UnityEngine;
-using System.Diagnostics;
 
 namespace RainCycles.Core;
 
@@ -126,8 +125,6 @@ internal static class BlendTextureManager
     internal static void Load(RoomCamera cam, SettingsSnapshot snapA, SettingsSnapshot snapB,
                               SettingsSnapshot snapOrigin = null, bool applyFade = true)
     {
-        var swTotal = Stopwatch.StartNew();
-
         Destroy();
 
         var rs = cam.room?.roomSettings;
@@ -143,24 +140,20 @@ internal static class BlendTextureManager
         var    savedTerrainFade = rs?.terrainFadePalette;
 
         // snapA: hornear paleta + fade con sus EffectColors
-        var swSnapA = Stopwatch.StartNew();
         cam.ChangeBothPalettes(snapA.Palette,
             snapA._hasFadePalette ? snapA.FadePaletteID : snapA.Palette, 0f);
         TexA_s1  = Copy(cam.fadeTexA);
         TexB_s1  = Copy(cam.fadeTexB);
         PxA_s1   = TexA_s1?.GetPixels32();
         PxB_s1   = TexB_s1?.GetPixels32();
-        swSnapA.Stop();
 
         // snapB: hornear paleta + fade con sus EffectColors
-        var swSnapB = Stopwatch.StartNew();
         cam.ChangeBothPalettes(snapB.Palette,
             snapB._hasFadePalette ? snapB.FadePaletteID : snapB.Palette, 0f);
         TexA_s2  = Copy(cam.fadeTexA);
         TexB_s2  = Copy(cam.fadeTexB);
         PxA_s2   = TexA_s2?.GetPixels32();
         PxB_s2   = TexB_s2?.GetPixels32();
-        swSnapB.Stop();
 
         // Restaurar la paleta real de la cámara
         cam.ChangeBothPalettes(realPalette, realFadePal, realFadeBlend);
@@ -176,11 +169,6 @@ internal static class BlendTextureManager
         Ready = true;
 
         LoadTerrainTextures(snapA, snapB);
-
-        swTotal.Stop();
-        RSPlugin.log.LogDebug(
-            $"[PERF] BlendTextureManager.Load TOTAL={swTotal.Elapsed.TotalMilliseconds:F2}ms | " +
-            $"snapA={swSnapA.Elapsed.TotalMilliseconds:F2}ms snapB={swSnapB.Elapsed.TotalMilliseconds:F2}ms");
     }
 
     internal static void MixPalettes(RoomCamera cam, float t)

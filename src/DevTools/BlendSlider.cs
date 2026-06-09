@@ -27,9 +27,6 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
     private bool _wasMoving = false;
     private bool _locked    = false;
     private RCPanel _panel;
-    
-    // Para debugging del throttling
-    private float _lastReportedT = -1f;
 
     public BlendSlider(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos)
         : base(owner, IDstring, parentNode, pos)
@@ -93,13 +90,12 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
         if (locked) SetDisplayT(0f);
     }
 
-public void SetDisplayT(float t)
-{
-    RSPlugin.log.LogDebug($"[BlendSlider] SetDisplayT: t={t:F3}, old BlendFactor={BlendFactor:F3}");
-    BlendFactor = t;
-    RefreshLabel();
-    Refresh();
-}
+    public void SetDisplayT(float t)
+    {
+        BlendFactor = t;
+        RefreshLabel();
+        Refresh();
+    }
 
     public void SetExternalT(float t)
     {
@@ -146,52 +142,30 @@ public void SetDisplayT(float t)
         if (!_dragging) return;
 
         float newT = Mathf.Clamp01((mPos.x - sliderStartX) / (SLIDER_WIDTH - NUB_WIDTH));
-        
-        // ================================================================
-        // CAMBIO CRÍTICO: Siempre actualizar durante el drag,
-        // incluso si el cambio es mínimo (ej: 0.250 → 0.249)
-        // ================================================================
-        
-        // Loggear cambios muy pequeños para debugging
-        if (Mathf.Abs(newT - BlendFactor) < 0.005f && Mathf.Abs(newT - _lastReportedT) > 0.001f)
-        {
-            RSPlugin.log.LogDebug($"[BlendSlider] Micro-movement: {BlendFactor:F4} → {newT:F4} (delta={newT - BlendFactor:F4})");
-            _lastReportedT = newT;
-        }
-        else if (Mathf.Abs(newT - BlendFactor) > 0.01f)
-        {
-            RSPlugin.log.LogDebug($"[BlendSlider] Normal movement: {BlendFactor:F3} → {newT:F3}");
-        }
 
         // Iniciar la fase si es la primera vez que se mueve desde 0
         if (!_wasMoving && newT > 0f) 
             _panel?.OnSliderStarted();
         
-        bool wasMovingPrev = _wasMoving;
         BlendFactor = newT;
         _label.Text = Mathf.RoundToInt(newT * 100f) + "%";
         _wasMoving = newT > 0f;
         
-        // CRÍTICO: Siempre llamar a OnSliderMoved durante el drag,
-        // no solo cuando wasMovingPrev es true.
-        // Esto garantiza que incluso movimientos lentos disparen actualizaciones.
         _panel?.OnSliderMoved(newT);
         
-        // Forzar actualización visual inmediata
         Refresh();
     }
 
-public override void Refresh()
-{
-    base.Refresh();
-    float sliderStartX = SliderStartX;
-    float nubX = sliderStartX + BlendFactor * (SLIDER_WIDTH - NUB_WIDTH);
-    RSPlugin.log.LogDebug($"[BlendSlider] Refresh: BlendFactor={BlendFactor:F3}, nubX={nubX:F1}, sliderStartX={sliderStartX:F1}");
-    
-    MoveSprite(0, new Vector2(sliderStartX, absPos.y));
-    MoveSprite(1, new Vector2(sliderStartX, absPos.y + 7f));
-    MoveSprite(2, new Vector2(nubX, absPos.y));
-}
+    public override void Refresh()
+    {
+        base.Refresh();
+        float sliderStartX = SliderStartX;
+        float nubX = sliderStartX + BlendFactor * (SLIDER_WIDTH - NUB_WIDTH);
+        
+        MoveSprite(0, new Vector2(sliderStartX, absPos.y));
+        MoveSprite(1, new Vector2(sliderStartX, absPos.y + 7f));
+        MoveSprite(2, new Vector2(nubX, absPos.y));
+    }
 
     public static void Reset() { BlendFactor = 0f; }
 }

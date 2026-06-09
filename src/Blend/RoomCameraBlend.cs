@@ -82,8 +82,6 @@ public static partial class RoomCameraExtensions
         ClearEffectData(cam);
 
         cam.paletteBlend = 0f;
-
-        RSPlugin.log.LogDebug($"[RoomCameraExt] ClearBlendSnapshots: cam={cam.cameraNumber}");
     }
 
     private static bool ShouldHaveBlendActive(RoomCamera cam)
@@ -110,7 +108,7 @@ public static partial class RoomCameraExtensions
         return data;
     }
 
-        // ═════════════════════════════════════════════════════════════════════
+    // ═════════════════════════════════════════════════════════════════════
     //  LIGHT SOURCE COLOR INTERPOLATION - Para luces Environment durante blend
     // ═════════════════════════════════════════════════════════════════════
 

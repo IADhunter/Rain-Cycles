@@ -90,15 +90,12 @@ public static class StateFileResolver
     public static void SetCurrentCycleState(int state)
     {
         _currentCycleState = state;
-        RSPlugin.log.LogDebug($"[StateFileResolver] Estado manual establecido: {state}");
     }
 
     public static string GetRainStateFilePath(string roomName, int cycle)
     {
         // Usar el estado actual (ya calculado por LoadRegion)
         int stateNumber = _currentCycleState;
-        
-        RSPlugin.log.LogDebug($"[StateFileResolver] Usando estado {stateNumber} para sala {roomName} (ciclo {cycle})");
 
         return FindFileInRainCycles(roomName, stateNumber);
     }

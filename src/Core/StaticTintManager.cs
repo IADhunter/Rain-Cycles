@@ -88,11 +88,7 @@ public static class StaticTintManager
     public static void InvalidateCache(string filePath)
     {
         if (string.IsNullOrEmpty(filePath)) return;
-        
-        if (_snapCache.Remove(filePath))
-        {
-            RSPlugin.log.LogDebug($"[StaticTintManager] Caché invalidada: {System.IO.Path.GetFileName(filePath)}");
-        }
+        _snapCache.Remove(filePath);
     }
 
     /// <summary>
@@ -100,9 +96,7 @@ public static class StaticTintManager
     /// </summary>
     public static void InvalidateAllCache()
     {
-        int count = _snapCache.Count;
         _snapCache.Clear();
-        RSPlugin.log.LogDebug($"[StaticTintManager] Caché completa invalidada: {count} entradas eliminadas");
     }
 
     // ── Aplicación ──────────────────────────────────────────────────────

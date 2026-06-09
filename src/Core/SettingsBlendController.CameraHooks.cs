@@ -1,6 +1,5 @@
 using UnityEngine;
 using System.Collections.Generic;
-using System.Diagnostics;
 using RainCycles.Settings;
 using RainCycles.Snapshot;
 using RainCycles.Sky;
@@ -36,18 +35,14 @@ public static partial class SettingsBlendController
 
         if (prevWasManaged && !nextIsManaged)
         {
-            RSPlugin.log.LogDebug($"[MoveCamera] Saliendo de sala blend '{prevRoomName}' (idle) a '{nextRoomName}'");
-
             var blendData = self.GetBlendData();
             if (blendData != null)
             {
                 blendData.isBlendActive = false;
-                RSPlugin.log.LogDebug($"[MoveCamera] blendData.isBlendActive = false");
             }
 
             if (!_active && _room != null)
             {
-                RSPlugin.log.LogDebug($"[MoveCamera] Limpiando datos residuales _room='{_room?.abstractRoom?.name}'");
                 _room = null;
                 _pathA = null;
                 _pathB = null;
@@ -58,7 +53,6 @@ public static partial class SettingsBlendController
             if (newRoom?.roomSettings != null)
             {
                 int correctPal = newRoom.roomSettings.Palette;
-                RSPlugin.log.LogDebug($"[MoveCamera] Restaurando paleta {correctPal} para nueva sala '{nextRoomName}'");
                 self.ChangeMainPalette(correctPal);
                 self.ApplyFade();
             }

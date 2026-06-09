@@ -95,6 +95,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         _idleField = new EditableFloatField(owner, "RC_IdleField", this,
             new Vector2(MARGIN, ROW_IDLE_Y), FIELD_WIDTH, _logic.IdleValue, 0f, 999f);
         _idleField.OnSubmit = (float newValue) => {
+            if (!BlendClock.EditMode) return;
             _logic.IdleValue = newValue;
             _logic.SaveToBlendSettings();
         };
@@ -103,6 +104,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         _durationField = new EditableFloatField(owner, "RC_DurationField", this,
             new Vector2(MARGIN, ROW_DURATION_Y), FIELD_WIDTH, _logic.DurationValue, 0f, 999f);
         _durationField.OnSubmit = (float newValue) => {
+            if (!BlendClock.EditMode) return;
             _logic.DurationValue = newValue;
             _logic.SaveToBlendSettings();
         };
@@ -169,6 +171,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     
     private void CycleSlot(int delta)
     {
+        if (!BlendClock.EditMode) return;
         if (_logic.CurrentViewType != ViewType.PSV) return;
         
         _currentSlot += delta;
@@ -212,6 +215,11 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     public void Signal(DevUISignalType type, DevUINode sender, string message)
     {
         if (type != DevUISignalType.ButtonClick) return;
+        
+        // Bloquear la mayoría de acciones si EditMode está apagado
+        bool blockIfNotEditMode = sender.IDstring != "RC_ClockToggle"; // ClockToggle permite cambiar aunque EditMode esté apagado?
+        
+        if (blockIfNotEditMode && !BlendClock.EditMode) return;
         
         if (sender.IDstring == "RC_ClockToggle")
         {
@@ -413,6 +421,8 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
 
     private void OpenModSelectPanel()
     {
+        if (!BlendClock.EditMode) return;
+        
         if (_modSelectPanel != null)
         {
             _modSelectPanel.ClosePanel();
@@ -436,6 +446,8 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     
     private void OpenImageSelectPanel(int bkgIndex)
     {
+        if (!BlendClock.EditMode) return;
+        
         if (_imageSelectPanel != null)
         {
             _imageSelectPanel.ClosePanel();
@@ -527,16 +539,21 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     public override void Update()
     {
         base.Update();
-        if (_idleField != null && Math.Abs(_logic.IdleValue - _idleField.Value) > 0.01f)
-        {
-            _logic.IdleValue = _idleField.Value;
-            _logic.SaveToBlendSettings();
-        }
         
-        if (_durationField != null && Math.Abs(_logic.DurationValue - _durationField.Value) > 0.01f)
+        // Solo permitir cambios en los campos si EditMode está activo
+        if (BlendClock.EditMode)
         {
-            _logic.DurationValue = _durationField.Value;
-            _logic.SaveToBlendSettings();
+            if (_idleField != null && Math.Abs(_logic.IdleValue - _idleField.Value) > 0.01f)
+            {
+                _logic.IdleValue = _idleField.Value;
+                _logic.SaveToBlendSettings();
+            }
+            
+            if (_durationField != null && Math.Abs(_logic.DurationValue - _durationField.Value) > 0.01f)
+            {
+                _logic.DurationValue = _durationField.Value;
+                _logic.SaveToBlendSettings();
+            }
         }
     }
 }

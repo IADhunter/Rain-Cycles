@@ -68,16 +68,12 @@ public class RCPanel : Panel, IDevUISignals
     public RCPanel(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos, Vector2 size, string title)
         : base(owner, IDstring, parentNode, pos, size, title)
     {
-        RSPlugin.log.LogInfo("[RCPanel] Constructor iniciado");
-
         string currentFilePath = owner.room?.roomSettings?.filePath;
         int currentState = StateFileResolver.GetStateFromPath(currentFilePath, CurrentRoomName);
         ButtonSelectedA = currentState >= 1 ? currentState : 1;
 
         CreateCommonElements();
         SwitchTab(0);
-
-        RSPlugin.log.LogInfo($"[RCPanel] Constructor finalizado - Tab={_currentTab}, State={ButtonSelectedA}");
     }
 
     private void CreateCommonElements()
@@ -363,13 +359,14 @@ public class RCPanel : Panel, IDevUISignals
 
     public void OnSliderStarted()
     {
-        RSPlugin.log.LogDebug($"[RCPanel] OnSliderStarted called");
+        // Solo permitir si EditMode está activo
+        if (!BlendClock.EditMode) return;
+        
         _phases = null;
         SettingsBlendController.ClearPendingOrigin();
         BuildPhases();
         if (_phases != null && _phases.Count > 0)
         {
-            RSPlugin.log.LogDebug($"[RCPanel] OnSliderStarted: {_phases.Count} phases built, activating first");
             ActivatePhase(_phases[0]);
         }
         else
@@ -380,11 +377,11 @@ public class RCPanel : Panel, IDevUISignals
 
     public void OnSliderMoved(float t)
     {
-        RSPlugin.log.LogDebug($"[RCPanel] OnSliderMoved: t={t:F3}");
+        // Solo permitir si EditMode está activo
+        if (!BlendClock.EditMode) return;
         
         if (_phases == null || _phases.Count == 0)
         {
-            RSPlugin.log.LogWarning($"[RCPanel] OnSliderMoved: _phases is null or empty, rebuilding");
             BuildPhases();
             if (_phases == null || _phases.Count == 0)
             {
@@ -399,14 +396,12 @@ public class RCPanel : Panel, IDevUISignals
         float locT = Mathf.Clamp01((t - idx * size) / size);
 
         var phase = _phases[idx];
-        RSPlugin.log.LogDebug($"[RCPanel] OnSliderMoved: phase {idx+1}/{cnt}, from={phase.from} to={phase.to}, locT={locT:F3}");
 
         string room = owner.room?.abstractRoom?.name;
         string pA = StateFileResolver.GetRainStateSettingsFile(room, phase.from);
 
         if (!SettingsBlendController.IsActive || SettingsBlendController.CurrentPathA != pA)
         {
-            RSPlugin.log.LogDebug($"[RCPanel] OnSliderMoved: activating phase {phase.from}->{phase.to}");
             ActivatePhase(phase);
         }
 
@@ -426,26 +421,20 @@ public class RCPanel : Panel, IDevUISignals
 
     private void BuildLoopPhases()
     {
-        // Mismo patrón que BlendClock.BuildLoopSequence: LoopLane intrínseco
         int initial = ButtonSelectedA;
         
-        // Lane A: [N, N+1, N+2]
         var laneA = new List<int>();
         for (int i = 0; i < 3; i++)
             laneA.Add(((initial - 1 + i) % 4) + 1);
         
-        // Lane B: [N+2, N+3, N]
         var laneB = new List<int>();
         for (int i = 2; i < 5; i++)
             laneB.Add(((initial - 1 + i) % 4) + 1);
         
-        // Flatten: A completa + B sin primer elemento (anclaje)
         var flat = new List<int>(laneA);
         for (int i = 1; i < laneB.Count; i++)
             flat.Add(laneB[i]);
         
-        // CERRAR EL CICLO: añadir estado inicial al final para que 100% = inicio
-        // flat = [4,1,2,3] → [4,1,2,3,4]
         if (flat[flat.Count - 1] != initial)
             flat.Add(initial);
         
@@ -456,7 +445,6 @@ public class RCPanel : Panel, IDevUISignals
 
     private void BuildLinearPhases()
     {
-        // Cycle/EndCycle/Custom: secuencia de 3 estados [N, N+1, N+2]
         int initial = ButtonSelectedA;
         var seq = new List<int>();
         for (int i = 0; i < 3; i++)
@@ -473,11 +461,8 @@ public class RCPanel : Panel, IDevUISignals
         string pA = StateFileResolver.GetRainStateSettingsFile(room, phase.from);
         string pB = StateFileResolver.GetRainStateSettingsFile(room, phase.to);
         
-        RSPlugin.log.LogDebug($"[RCPanel] ActivatePhase: from={phase.from} to={phase.to}, pA={pA}, pB={pB}");
-        
         if (pA != null && pB != null && phase.from != phase.to)
         {
-            RSPlugin.log.LogDebug($"[RCPanel] ActivatePhase: calling AttachWithExternalT");
             SettingsBlendController.AttachWithExternalT(owner.room, pA, pB, isAuto: false);
         }
         else
@@ -488,7 +473,6 @@ public class RCPanel : Panel, IDevUISignals
 
     public void ResetRelaySystem()
     {
-        RSPlugin.log.LogDebug($"[RCPanel] ResetRelaySystem called");
         _phases = null;
         SettingsBlendController.Detach();
         ApplyStateA();
@@ -503,6 +487,7 @@ public class RCPanel : Panel, IDevUISignals
 
         if (sender.IDstring.StartsWith("RCA_"))
         {
+            // Bloquear si EditMode está apagado Y el blend clock está corriendo
             if (!BlendClock.EditMode && BlendClock.IsRunning) return;
 
             int sel = int.Parse(sender.IDstring.Split('_')[1]);
@@ -551,6 +536,7 @@ public class RCPanel : Panel, IDevUISignals
 
         if (sender.IDstring == "RC_Plus")
         {
+            // Bloquear si EditMode está apagado Y el blend clock está corriendo
             if (!BlendClock.EditMode && BlendClock.IsRunning) return;
 
             int cnt = _stateButtons.Count + 1;
@@ -572,6 +558,7 @@ public class RCPanel : Panel, IDevUISignals
 
         if (sender.IDstring == "RC_Minus")
         {
+            // Bloquear si EditMode está apagado Y el blend clock está corriendo
             if (!BlendClock.EditMode && BlendClock.IsRunning) return;
 
             string path = ResolveSettingsFile(ButtonSelectedA);

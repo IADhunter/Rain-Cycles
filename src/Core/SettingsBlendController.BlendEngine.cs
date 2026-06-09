@@ -9,10 +9,6 @@ namespace RainCycles.Core;
 
 public static partial class SettingsBlendController
 {
-    // ─── CONTADORES PARA DIAGNÓSTICO DE RENDIMIENTO ───
-    private static int _vanillaApplyFadeCount = 0;
-    private static int _vanillaLastLoggedFrame = 0;
-
     private static void ApplyBlend(float t)
     {
         if (_snapA == null || _snapB == null || _room == null)
@@ -147,16 +143,7 @@ public static partial class SettingsBlendController
 
     public static void OnApplyFade(On.RoomCamera.orig_ApplyFade orig, RoomCamera self)
     {
-        // ─── LOG DE RENDIMIENTO: contar llamadas a vanilla ApplyFade ───
-        if (Time.frameCount - _vanillaLastLoggedFrame >= 60)
-        {
-            _vanillaLastLoggedFrame = Time.frameCount;
-            RSPlugin.log.LogInfo($"[PERF] Vanilla ApplyFade llamado {_vanillaApplyFadeCount} veces en últimos 60 frames");
-            _vanillaApplyFadeCount = 0;
-        }
-        _vanillaApplyFadeCount++;
-
-        // Por ahora solo medimos, no bloqueamos
+        // Sin logs - función silenciosa
         orig(self);
     }
 }

@@ -109,6 +109,8 @@ public static class BlendClock
                 StartEndCycle(s, initialState);
                 break;
         }
+        
+        RSPlugin.log.LogInfo($"[BlendClock] Iniciado - Región: {_regionCode}, Modo: {_mode}, Estado inicial: {initialState}");
     }
 
     public static void Start(int initialState = 1)
@@ -116,6 +118,8 @@ public static class BlendClock
 
     public static void Stop()
     {
+        if (!IsRunning) return;
+        
         IsRunning = false;
         T = 0f;
         CurrentPhase = Phase.Idle;
@@ -124,6 +128,8 @@ public static class BlendClock
         _customPendingStop = false;
         _regionCode = null;
         _lastTransitionIndex = -1;
+        
+        RSPlugin.log.LogInfo("[BlendClock] Detenido");
     }
 
     public static void Tick(float dt, float rainTimer = 0f, int rainCycleLength = 1)
@@ -355,6 +361,7 @@ public static class BlendClock
                 UpdateStatesFromT();
                 CurrentPhase = Phase.Idle;
                 IsRunning = false;
+                RSPlugin.log.LogInfo("[BlendClock] EndCycle completado - Blend detenido");
             }
         }
     }
