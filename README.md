@@ -88,8 +88,7 @@ Controls the global behavior of the region:
 Three independent tint channels:
 
 * **Multiply:** Multiplies the color of the entire scene.
-* **Atmosphere:** Affects fog and atmosphere.
-* **Cloud:** Affects the sky in rooms with `AboveCloudsView`.
+* **Atmosphere:** Affects fog, the sky in rooms with `AboveCloudsView`and atmosphere.
 
 > 💡 *These can be edited in real-time from DevTools and are saved permanently.*
 
