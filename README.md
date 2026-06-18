@@ -1,4 +1,4 @@
-# Rain Cycles v1.5 Documentation
+# Rain Cycles Documentation
 
 ## Main Modes
 
