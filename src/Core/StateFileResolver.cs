@@ -1,6 +1,10 @@
+using System;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
+using System.Collections.Generic;
 using UnityEngine;
+using RainCycles.Blend;
 
 namespace RainCycles.Core;
 
@@ -12,6 +16,127 @@ public static class StateFileResolver
     
     // Estado actual del ciclo (1..4)
     private static int _currentCycleState = 1;
+    
+    // ============================================================
+    // SISTEMA DE PENDING DELETE - Estados marcados para eliminar al cerrar
+    // ============================================================
+    private static readonly HashSet<string> _pendingDeletes = new HashSet<string>();
+    
+    /// <summary>
+    /// Clave única para identificar un estado: "ROOM_STATE" ej. "UW_F01_1"
+    /// </summary>
+    private static string GetPendingKey(string roomName, int state)
+        => $"{roomName}_{state}";
+    
+    public static void MarkPendingDelete(string roomName, int state)
+    {
+        string key = GetPendingKey(roomName, state);
+        _pendingDeletes.Add(key);
+        
+        // ════════════════════════════════════════════════════════════════════
+        // INVALIDAR CACHE AL MARCAR PARA ELIMINAR
+        // ════════════════════════════════════════════════════════════════════
+        RoomCameraExtensions.InvalidateRoomCache(roomName);
+        
+        RSPlugin.log.LogInfo($"[StateFileResolver] Marcado para eliminar: {roomName} estado {state}");
+    }
+    
+    public static void UnmarkPendingDelete(string roomName, int state)
+    {
+        string key = GetPendingKey(roomName, state);
+        _pendingDeletes.Remove(key);
+        
+        // ════════════════════════════════════════════════════════════════════
+        // INVALIDAR CACHE AL DESMARCAR
+        // ════════════════════════════════════════════════════════════════════
+        RoomCameraExtensions.InvalidateRoomCache(roomName);
+        
+        RSPlugin.log.LogInfo($"[StateFileResolver] Desmarcado: {roomName} estado {state}");
+    }
+    
+    public static bool IsPendingDelete(string roomName, int state)
+    {
+        string key = GetPendingKey(roomName, state);
+        return _pendingDeletes.Contains(key);
+    }
+    
+    /// <summary>
+    /// Devuelve los estados existentes EXCLUYENDO los marcados para borrar
+    /// </summary>
+    public static List<int> GetActiveStates(string roomName)
+    {
+        var result = new List<int>();
+        int maxState = CountRainStateFiles(roomName);
+        for (int i = 1; i <= maxState; i++)
+        {
+            if (!IsPendingDelete(roomName, i))
+                result.Add(i);
+        }
+        return result;
+    }
+    
+    /// <summary>
+    /// Verifica si una sala tiene exactamente 4 estados activos
+    /// </summary>
+    public static bool HasFullStates(string roomName)
+    {
+        return GetActiveStates(roomName).Count == 4;
+    }
+    
+    /// <summary>
+    /// Ejecutar al cerrar la partida (ShutDownProcess)
+    /// </summary>
+    public static void ExecutePendingDeletes()
+    {
+        if (_pendingDeletes.Count == 0) return;
+        
+        RSPlugin.log.LogInfo($"[StateFileResolver] Ejecutando {_pendingDeletes.Count} eliminaciones pendientes");
+        
+        // Recopilar nombres de salas afectadas
+        var affectedRooms = new HashSet<string>();
+        
+        foreach (string key in _pendingDeletes.ToList())
+        {
+            // Parsear clave: "UW_F01_1"
+            int lastUnderscore = key.LastIndexOf('_');
+            if (lastUnderscore < 0) continue;
+            
+            string roomName = key.Substring(0, lastUnderscore);
+            if (!int.TryParse(key.Substring(lastUnderscore + 1), out int state)) continue;
+            
+            affectedRooms.Add(roomName);
+            
+            string path = GetRainStateSettingsFile(roomName, state);
+            if (path != null && File.Exists(path))
+            {
+                try
+                {
+                    File.Delete(path);
+                    RSPlugin.log.LogInfo($"[StateFileResolver] Eliminado: {path}");
+                }
+                catch (Exception ex)
+                {
+                    RSPlugin.log.LogWarning($"[StateFileResolver] No se pudo eliminar {path}: {ex.Message}");
+                }
+            }
+        }
+        
+        // ════════════════════════════════════════════════════════════════════
+        // INVALIDAR CACHE PARA SALAS AFECTADAS
+        // ════════════════════════════════════════════════════════════════════
+        foreach (string roomName in affectedRooms)
+        {
+            RoomCameraExtensions.InvalidateRoomCache(roomName);
+        }
+        
+        _pendingDeletes.Clear();
+        RSPlugin.log.LogInfo("[StateFileResolver] Eliminaciones pendientes completadas");
+    }
+    
+    public static void ClearAllPendingDeletes()
+    {
+        _pendingDeletes.Clear();
+    }
 
     public static void Init()
     {
@@ -94,9 +219,7 @@ public static class StateFileResolver
 
     public static string GetRainStateFilePath(string roomName, int cycle)
     {
-        // Usar el estado actual (ya calculado por LoadRegion)
         int stateNumber = _currentCycleState;
-
         return FindFileInRainCycles(roomName, stateNumber);
     }
 
@@ -130,6 +253,12 @@ public static class StateFileResolver
         string filePath = Path.Combine(dir, $"{name}_settings_{buttonCount}.txt");
         room.roomSettings.filePath = filePath;
         room.roomSettings.Save();
+        
+        // ════════════════════════════════════════════════════════════════════
+        // INVALIDAR CACHE AL CREAR NUEVO ESTADO
+        // ════════════════════════════════════════════════════════════════════
+        RoomCameraExtensions.InvalidateRoomCache(name);
+        
         return filePath;
     }
 

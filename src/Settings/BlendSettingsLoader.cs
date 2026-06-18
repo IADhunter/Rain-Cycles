@@ -14,6 +14,11 @@ public static class BlendSettingsLoader
 
     public static BlendSettings Active => _activeSettings;
     public static string ActiveRegion => _activeRegion;
+    
+    /// <summary>
+    /// Devuelve el nombre del mod seleccionado en el blend settings activo.
+    /// </summary>
+    public static string ActiveModName => _activeSettings?.SelectedModName ?? "";
 
     public static void Init()
     {
@@ -37,6 +42,11 @@ public static class BlendSettingsLoader
 
         _activeRegion   = regionCode;
         _activeSettings = settings;
+        
+        if (settings != null && !string.IsNullOrEmpty(settings.SelectedModName))
+        {
+            RSPlugin.log.LogInfo($"[BlendSettingsLoader] Mod seleccionado para región {regionCode}: {settings.SelectedModName}");
+        }
         
         int cycle = GetCurrentCycleNumber();
         
@@ -123,6 +133,10 @@ public static class BlendSettingsLoader
                         break;
                     case "setting":
                         if (int.TryParse(val, out int set) && set >= 0 && set <= 4) settings.Setting = set;
+                        break;
+                    case "mod":
+                        settings.SelectedModName = val.Trim();
+                        RSPlugin.log.LogDebug($"[BlendSettingsLoader] Mod seleccionado: {settings.SelectedModName}");
                         break;
                     default:
                         if (key.StartsWith("bkg") && currentView != ViewType.None)

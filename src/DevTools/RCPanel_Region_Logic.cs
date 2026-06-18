@@ -34,8 +34,7 @@ public class RegionLogic
     public string[] FogValues { get; private set; }
     public string[] SunValues { get; private set; }
     
-    public string SelectedModPath { get; set; } = "";
-    public string SelectedModName { get; set; } = "Select Mod";
+    public string SelectedModName { get; set; } = "";
     public string SavedModName { get; set; } = "";
     
     private Dictionary<ViewType, string[]> _allBackgrounds = new Dictionary<ViewType, string[]>();
@@ -86,20 +85,54 @@ public class RegionLogic
         return parts.Length >= 2 ? parts[0].ToUpperInvariant() : null;
     }
     
-    private string ResolveModPathFromSavedName(string modName)
+    // ================================================================
+    // OBTENER NOMBRE REAL DEL MOD DESDE MODINFO.JSON
+    // ================================================================
+    private string GetModNameFromModInfo(string modPath)
     {
-        if (string.IsNullOrEmpty(modName) || ModManager.ActiveMods == null)
-            return "";
+        try
+        {
+            string modInfoPath = Path.Combine(modPath, "modinfo.json");
+            if (!File.Exists(modInfoPath)) return null;
+
+            string json = File.ReadAllText(modInfoPath);
+            
+            int nameIndex = json.IndexOf("\"name\"", StringComparison.OrdinalIgnoreCase);
+            if (nameIndex < 0) return null;
+
+            int colonIndex = json.IndexOf(':', nameIndex);
+            if (colonIndex < 0) return null;
+
+            int startQuote = json.IndexOf('"', colonIndex + 1);
+            if (startQuote < 0) return null;
+
+            int endQuote = json.IndexOf('"', startQuote + 1);
+            if (endQuote < 0) return null;
+
+            return json.Substring(startQuote + 1, endQuote - startQuote - 1);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+    
+    // ================================================================
+    // RESOLVER RUTA DEL MOD POR NOMBRE (de modinfo.json)
+    // ================================================================
+    private string ResolveModPathFromName(string modName)
+    {
+        if (string.IsNullOrEmpty(modName)) return null;
         
         foreach (var mod in ModManager.ActiveMods)
         {
-            if (string.Equals(Path.GetFileName(mod.path), modName, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(mod.name, modName, StringComparison.OrdinalIgnoreCase))
+            string realName = GetModNameFromModInfo(mod.path);
+            if (string.Equals(realName, modName, StringComparison.OrdinalIgnoreCase))
             {
                 return mod.path;
             }
         }
-        return "";
+        return null;
     }
 
     // ============================================================
@@ -275,9 +308,8 @@ public class RegionLogic
                         if (int.TryParse(val, out int set)) SettingValue = set;
                         break;
                     case "mod":
+                        SelectedModName = val;
                         SavedModName = val;
-                        SelectedModName = string.IsNullOrEmpty(val) ? "Select Mod" : val;
-                        SelectedModPath = ResolveModPathFromSavedName(val);
                         break;
                     default:
                         if (key.StartsWith("bkg") && currentView != ViewType.None)
@@ -401,13 +433,12 @@ public class RegionLogic
             FogValues[i] = "";
             SunValues[i] = "";
         }
-        SelectedModPath = "";
-        SelectedModName = "Select Mod";
+        SelectedModName = "";
         SavedModName = "";
     }
 
     // ============================================================
-    // SAVE TO FILE (SIN LÍNEAS EN BLANCO ENTRE SECCIONES)
+    // SAVE TO FILE
     // ============================================================
     public void SaveToBlendSettings()
     {
@@ -431,6 +462,7 @@ public class RegionLogic
         sb.AppendLine($"Duration: {SubDurationValue:F1}");
         sb.AppendLine($"Setting: {SettingValue}");
         
+        // Guardar el nombre real del mod (de modinfo.json)
         if (!string.IsNullOrEmpty(SavedModName))
             sb.AppendLine($"Mod: {SavedModName}");
         

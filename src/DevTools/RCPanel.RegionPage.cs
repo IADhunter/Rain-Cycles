@@ -216,8 +216,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     {
         if (type != DevUISignalType.ButtonClick) return;
         
-        // Bloquear la mayoría de acciones si EditMode está apagado
-        bool blockIfNotEditMode = sender.IDstring != "RC_ClockToggle"; // ClockToggle permite cambiar aunque EditMode esté apagado?
+        bool blockIfNotEditMode = sender.IDstring != "RC_ClockToggle";
         
         if (blockIfNotEditMode && !BlendClock.EditMode) return;
         
@@ -318,11 +317,10 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         
         if (sender.IDstring.StartsWith("RC_ModSelect_") && _modSelectPanel != null)
         {
-            _logic.SelectedModPath = message;
-            _logic.SelectedModName = Path.GetFileName(_logic.SelectedModPath);
-            _logic.SavedModName = _logic.SelectedModName;
-            if (string.IsNullOrEmpty(_logic.SelectedModName)) _logic.SelectedModName = "Select Mod";
-            _modButton.Text = _logic.SelectedModName;
+            // message es el nombre real del mod (de modinfo.json)
+            _logic.SelectedModName = message;
+            _logic.SavedModName = message;
+            _modButton.Text = string.IsNullOrEmpty(message) ? "Select Mod" : message;
             
             if (_modSelectPanel != null)
             {
@@ -393,8 +391,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         
         if (sender.IDstring == "RC_ModClear")
         {
-            _logic.SelectedModPath = "";
-            _logic.SelectedModName = "Select Mod";
+            _logic.SelectedModName = "";
             _logic.SavedModName = "";
             _logic.ClearAllBackgrounds();
             
@@ -419,6 +416,63 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         }
     }
 
+    // ================================================================
+    // OBTENER MODS CON CARPETA ILLUSTRATIONS
+    // ================================================================
+    private string[] GetModsWithIllustrations()
+    {
+        var mods = new List<string>();
+        foreach (var mod in ModManager.ActiveMods)
+        {
+            if (Directory.Exists(Path.Combine(mod.path, "Illustrations")))
+            {
+                // Verificar que tiene modinfo.json válido
+                string modInfoPath = Path.Combine(mod.path, "modinfo.json");
+                if (File.Exists(modInfoPath))
+                {
+                    mods.Add(mod.path);
+                }
+                else
+                {
+                    RSPlugin.log.LogDebug($"[GetModsWithIllustrations] Mod {Path.GetFileName(mod.path)} no tiene modinfo.json, omitido");
+                }
+            }
+        }
+        return mods.ToArray();
+    }
+
+    // ================================================================
+    // OBTENER NOMBRE REAL DEL MOD DESDE MODINFO.JSON
+    // ================================================================
+    private string GetModNameFromModInfo(string modPath)
+    {
+        try
+        {
+            string modInfoPath = Path.Combine(modPath, "modinfo.json");
+            if (!File.Exists(modInfoPath)) return null;
+
+            string json = File.ReadAllText(modInfoPath);
+            
+            int nameIndex = json.IndexOf("\"name\"", StringComparison.OrdinalIgnoreCase);
+            if (nameIndex < 0) return null;
+
+            int colonIndex = json.IndexOf(':', nameIndex);
+            if (colonIndex < 0) return null;
+
+            int startQuote = json.IndexOf('"', colonIndex + 1);
+            if (startQuote < 0) return null;
+
+            int endQuote = json.IndexOf('"', startQuote + 1);
+            if (endQuote < 0) return null;
+
+            return json.Substring(startQuote + 1, endQuote - startQuote - 1);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private void OpenModSelectPanel()
     {
         if (!BlendClock.EditMode) return;
@@ -430,16 +484,16 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
             return;
         }
         
-        var mods = GetModsWithIllustrations();
-        if (mods.Length == 0)
+        var modPaths = GetModsWithIllustrations();
+        if (modPaths.Length == 0)
         {
-            RSPlugin.log.LogWarning("[RegionPage] No mods with Illustrations folder found");
+            RSPlugin.log.LogWarning("[RegionPage] No mods with Illustrations folder and modinfo.json found");
             return;
         }
         
         Vector2 panelPos = new Vector2(_modButton.pos.x + 10f, _modButton.pos.y - 150f);
         
-        _modSelectPanel = new ModSelectPanel(owner, "RC_ModSelectPanel", this, panelPos, mods, _logic.SelectedModPath);
+        _modSelectPanel = new ModSelectPanel(owner, "RC_ModSelectPanel", this, panelPos, modPaths, _logic.SelectedModName);
         subNodes.Add(_modSelectPanel);
         _modSelectPanel.Refresh();
     }
@@ -456,24 +510,18 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
             return;
         }
         
-        if (string.IsNullOrEmpty(_logic.SelectedModPath))
+        // Resolver la ruta del mod usando el nombre (de modinfo.json)
+        string modPath = ResolveModPathFromName(_logic.SelectedModName);
+        if (string.IsNullOrEmpty(modPath))
         {
-            if (!string.IsNullOrEmpty(_logic.SavedModName))
-            {
-                _logic.SelectedModPath = ResolveModPathFromName(_logic.SavedModName);
-            }
-        }
-        
-        if (string.IsNullOrEmpty(_logic.SelectedModPath))
-        {
-            RSPlugin.log.LogWarning("[RegionPage] No mod selected");
+            RSPlugin.log.LogWarning($"[RegionPage] Mod '{_logic.SelectedModName}' no encontrado");
             return;
         }
         
-        string illustrationsPath = Path.Combine(_logic.SelectedModPath, "Illustrations");
+        string illustrationsPath = Path.Combine(modPath, "Illustrations");
         if (!Directory.Exists(illustrationsPath))
         {
-            RSPlugin.log.LogWarning($"[RegionPage] Illustrations not found: {illustrationsPath}");
+            RSPlugin.log.LogWarning($"[RegionPage] Illustrations no encontrado: {illustrationsPath}");
             return;
         }
         
@@ -509,38 +557,28 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         _imageSelectPanel.Refresh();
     }
     
-    private string[] GetModsWithIllustrations()
-    {
-        var mods = new List<string>();
-        foreach (var mod in ModManager.ActiveMods)
-        {
-            if (Directory.Exists(Path.Combine(mod.path, "Illustrations")))
-                mods.Add(mod.path);
-        }
-        return mods.ToArray();
-    }
-    
+    // ================================================================
+    // RESOLVER RUTA DEL MOD POR NOMBRE (de modinfo.json)
+    // ================================================================
     private string ResolveModPathFromName(string modName)
     {
-        if (string.IsNullOrEmpty(modName) || ModManager.ActiveMods == null)
-            return "";
+        if (string.IsNullOrEmpty(modName)) return null;
         
         foreach (var mod in ModManager.ActiveMods)
         {
-            if (string.Equals(Path.GetFileName(mod.path), modName, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(mod.name, modName, StringComparison.OrdinalIgnoreCase))
+            string realName = GetModNameFromModInfo(mod.path);
+            if (string.Equals(realName, modName, StringComparison.OrdinalIgnoreCase))
             {
                 return mod.path;
             }
         }
-        return "";
+        return null;
     }
 
     public override void Update()
     {
         base.Update();
         
-        // Solo permitir cambios en los campos si EditMode está activo
         if (BlendClock.EditMode)
         {
             if (_idleField != null && Math.Abs(_logic.IdleValue - _idleField.Value) > 0.01f)

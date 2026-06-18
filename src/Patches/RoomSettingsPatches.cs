@@ -43,18 +43,13 @@ public static class RoomSettingsPatches
         PreserveExtendedData(self);
         _isSaving = false;
         
-        // ================================================================
-        // DESPUÉS del guardado: refrescar sistemas
-        // ================================================================
         string filePath = self.filePath;
         if (!string.IsNullOrEmpty(filePath))
         {
             RSPlugin.log.LogDebug($"[RoomSettingsPatches] Settings guardado: {Path.GetFileName(filePath)}");
             
-            // Invalidar caché de snapshots
             StaticTintManager.InvalidateCache(filePath);
             
-            // Refrescar efectos visuales en la cámara actual
             var rw = UnityEngine.Object.FindObjectOfType<RainWorld>();
             var game = rw?.processManager?.currentMainLoop as RainWorldGame;
             if (game?.cameras != null)
@@ -69,11 +64,9 @@ public static class RoomSettingsPatches
                         
                         if (freshSnap != null)
                         {
-                            // Aplicar tintes desde RoomSettings (nuestra fuente de verdad)
                             var rs = cam.room.roomSettings;
                             Color? tintMultiply = rs.GetTintMultiply();
                             Color? tintAtmosphere = rs.GetTintAtmosphere();
-                            Color? tintCloudAtmosphere = rs.GetTintCloudAtmosphere();
                             
                             if (tintMultiply.HasValue)
                             {
@@ -86,22 +79,19 @@ public static class RoomSettingsPatches
                                 var c = tintAtmosphere.Value;
                                 Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, new Vector4(c.r, c.g, c.b, 1f));
                                 RSPlugin.log.LogDebug($"[RoomSettingsPatches] TintAtmosphere aplicado: {c}");
-                            }
-                            if (tintCloudAtmosphere.HasValue)
-                            {
-                                SettingsBlendController.SetLastAtmosphereColor(tintCloudAtmosphere.Value);
+                                
+                                // También aplicar a ACV si existe en la sala
                                 for (int i = 0; i < cam.room.updateList.Count; i++)
                                 {
                                     if (cam.room.updateList[i] is AboveCloudsView acv)
                                     {
-                                        acv.atmosphereColor = tintCloudAtmosphere.Value;
-                                        RSPlugin.log.LogDebug($"[RoomSettingsPatches] TintCloudAtmosphere aplicado a ACV: {tintCloudAtmosphere.Value}");
+                                        acv.atmosphereColor = c;
+                                        RSPlugin.log.LogDebug($"[RoomSettingsPatches] TintAtmosphere aplicado a ACV: {c}");
                                         break;
                                     }
                                 }
                             }
                             
-                            // Si es sala blend y el blend está activo, refrescar snapshots
                             if (freshSnap.HasRcType && freshSnap.RcType == RcType.Blend)
                             {
                                 if (SettingsBlendController.IsActive && SettingsBlendController.ActiveRoom == cam.room)
@@ -111,7 +101,6 @@ public static class RoomSettingsPatches
                                 }
                                 else
                                 {
-                                    // Si no hay blend activo pero la sala es blend, al menos recargar la paleta
                                     if (freshSnap._hasPalette)
                                     {
                                         cam.ChangeMainPalette(freshSnap.Palette);
@@ -129,7 +118,6 @@ public static class RoomSettingsPatches
                                 }
                             }
                             
-                            // Aplicar efectos escalares siempre
                             RoomEffectsApplier.ApplyScalarEffects(cam.room, freshSnap);
                             RoomEffectsApplier.ApplyTerrainScalars(cam.room, freshSnap);
                             Shader.SetGlobalFloat(RainWorld.ShadPropGrime, cam.room.roomSettings.Grime);
@@ -138,7 +126,6 @@ public static class RoomSettingsPatches
                 }
             }
             
-            // Forzar refresco de sky slots
             SettingsBlendController.ForceRefreshSkySlots();
         }
     }
@@ -176,12 +163,12 @@ public static class RoomSettingsPatches
                 {
                     string hexes = trimmed.Substring("RC_TINT:".Length).Trim();
                     string[] parts = hexes.Split(' ');
+                    // Solo 2 colores: Multiply y Atmosphere
                     if (parts.Length >= 1)
                         self.SetTintMultiply(ParseHexColor(parts[0]));
                     if (parts.Length >= 2)
                         self.SetTintAtmosphere(ParseHexColor(parts[1]));
-                    if (parts.Length >= 3)
-                        self.SetTintCloudAtmosphere(ParseHexColor(parts[2]));
+                    // Ya no hay tercer color
                 }
             }
         }
@@ -201,25 +188,21 @@ public static class RoomSettingsPatches
             string content = File.ReadAllText(filePath, Encoding.UTF8);
             var lines = new List<string>(content.Split('\n'));
             
-            // Eliminar líneas viejas de todas las RC_*
             lines.RemoveAll(l => l.Trim().StartsWith("RC_TYPE:"));
             lines.RemoveAll(l => l.Trim().StartsWith("RC_VIEW:"));
             lines.RemoveAll(l => l.Trim().StartsWith("RC_TINT:"));
             
-            // Limpiar líneas vacías al final
             while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[lines.Count - 1]))
                 lines.RemoveAt(lines.Count - 1);
             
             var newLinesList = new List<string>();
             
-            // RC_TYPE
             if (self.HasRcType() && self.GetRcType() != RcType.None)
             {
                 string typeValue = self.GetRcType() == RcType.Static ? "Static" : "Blend";
                 newLinesList.Add($"RC_TYPE: {typeValue}");
             }
             
-            // RC_VIEW
             if (self.GetViewType() != ViewType.None)
             {
                 string viewValue = self.GetViewType() == ViewType.ACV ? "ACV" :
@@ -227,21 +210,18 @@ public static class RoomSettingsPatches
                 newLinesList.Add($"RC_VIEW: {viewValue}");
             }
             
-            // RC_TINT - guardar cada tinte individualmente
             Color? tintMultiply = self.GetTintMultiply();
             Color? tintAtmosphere = self.GetTintAtmosphere();
-            Color? tintCloudAtmosphere = self.GetTintCloudAtmosphere();
             
-            if (tintMultiply.HasValue || tintAtmosphere.HasValue || tintCloudAtmosphere.HasValue)
+            // Solo 2 colores: Multiply y Atmosphere
+            if (tintMultiply.HasValue || tintAtmosphere.HasValue)
             {
                 string mul = tintMultiply.HasValue ? ColorToHex(tintMultiply.Value) : "FFFFFF";
                 string atm = tintAtmosphere.HasValue ? ColorToHex(tintAtmosphere.Value) : "FFFFFF";
-                string cld = tintCloudAtmosphere.HasValue ? ColorToHex(tintCloudAtmosphere.Value) : "FFFFFF";
-                newLinesList.Add($"RC_TINT: #{mul} #{atm} #{cld}");
-                RSPlugin.log.LogDebug($"[RoomSettingsPatches] RC_TINT guardado: #{mul} #{atm} #{cld}");
+                newLinesList.Add($"RC_TINT: #{mul} #{atm}");
+                RSPlugin.log.LogDebug($"[RoomSettingsPatches] RC_TINT guardado: #{mul} #{atm}");
             }
             
-            // Solo reescribir si hay algo que guardar
             if (newLinesList.Count > 0)
             {
                 lines.AddRange(newLinesList);

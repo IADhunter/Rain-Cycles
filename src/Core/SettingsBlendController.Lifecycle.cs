@@ -23,7 +23,6 @@ public static partial class SettingsBlendController
         var cam = room.game?.cameras?[0];
         if (cam != null)
         {
-            // Activar modo blend (paletas autónomas)
             cam.ClearBlendSnapshots();
             cam.SetBlendActive(room.abstractRoom.name);
             cam.UpdateBlendPalette(0f);
@@ -38,35 +37,22 @@ public static partial class SettingsBlendController
 
     public static void Detach()
     {
+        // ════════════════════════════════════════════════════════════════════
+        // INVALIDAR CACHE DE LA SALA AL DETENER BLEND
+        // ════════════════════════════════════════════════════════════════════
         if (_room != null)
         {
+            string roomName = _room.abstractRoom?.name;
+            if (!string.IsNullOrEmpty(roomName))
+            {
+                RoomCameraExtensions.InvalidateRoomCache(roomName);
+            }
+            
             var cam = _room.game?.cameras?[0];
-            // CRÍTICO: solo tocar la cámara si todavía está en la sala que estamos
-            // detacheando. Si ya cambió a otra sala, NO contaminar su estado vanilla.
             if (cam != null && cam.room == _room)
             {
                 cam.paletteB = -1;
             }
-        }
-
-        if (_active && _externalT)
-        {
-            _savedDayAlpha = 1f - _forcedT;
-            _savedDuskAlpha = 1f;
-            _savedNightAlpha = 0f;
-            _hasSavedAlphas = true;
-        }
-        else if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending
-                 && (_room != null ? ActiveSlotDay(_room.game?.cameras?[0]) : -1) == BlendClock.StateA)
-        {
-            _savedDayAlpha = 1f - BlendClock.SubPhaseLocalT;
-            _savedDuskAlpha = 1f;
-            _savedNightAlpha = 0f;
-            _hasSavedAlphas = true;
-        }
-        else
-        {
-            _hasSavedAlphas = false;
         }
 
         _active = false;
@@ -77,11 +63,7 @@ public static partial class SettingsBlendController
         _pathB = null;
         _snapOriginal = null;
         _lastLightT = -1f;
-        _hasSavedAlphas = false;
-        _pendingSkySync = false;
-        _rcSlotsStaticACV = null;
-        _rcSlotsStaticRTV = null;
-        _rcSlotsStaticPSV = null;
+        _forceSkyRefresh = false;
         RoomEffectsApplier.ClearLightIndex();
 
         BlendTextureManager.DestroyTerrainTextures();
@@ -93,19 +75,13 @@ public static partial class SettingsBlendController
         _lastRoomWasManaged = false;
         if (_active) Detach();
         _rtvScene = null; _acvScene = null; _psvScene = null;
-        _rtvSlotDay = _rtvSlotDusk = _rtvSlotNight = -1;
-        _acvSlotDay = _acvSlotDusk = _acvSlotNight = -1;
-        _psvSlotDay = _psvSlotDusk = _psvSlotNight = -1;
-        _hasSavedAlphas = false;
+        _forceSkyRefresh = false;
         _entryFrameT = -1f;
-        _pendingSkySync = false;
-        _pendingSkyStateA = -1;
-        _pendingSkyStateB = -1;
+        
         _rcSlotsStaticACV = null;
         _rcSlotsStaticRTV = null;
         _rcSlotsStaticPSV = null;
         
-        // Limpiar referencias de slots PSV (fog y sun)
         _rcSlotsACV = null;
         _rcSlotsRTV = null;
         _rcSlotsPSV = null;

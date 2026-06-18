@@ -24,6 +24,69 @@ public static partial class RoomCameraExtensions
     
     private static bool _preloadHooksInitialized = false;
     
+    // ════════════════════════════════════════════════════════════════════
+    //  CACHE PARA ISBLENDROOM Y HASFULLSTATES
+    // ════════════════════════════════════════════════════════════════════
+    
+    private static readonly Dictionary<string, bool> _blendRoomCache = 
+        new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+    
+    private static readonly Dictionary<string, bool> _fullStatesCache = 
+        new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+    
+    /// <summary>
+    /// Versión cacheada de SettingsBlendController.IsBlendRoom()
+    /// Solo recalcula si la sala no está en cache o si se fuerza refresh
+    /// </summary>
+    public static bool IsBlendRoomCached(Room room, bool forceRefresh = false)
+    {
+        if (room == null) return false;
+        string roomName = room.abstractRoom?.name;
+        if (string.IsNullOrEmpty(roomName)) return false;
+        
+        if (forceRefresh || !_blendRoomCache.TryGetValue(roomName, out bool result))
+        {
+            result = SettingsBlendController.IsBlendRoom(room);
+            _blendRoomCache[roomName] = result;
+        }
+        return result;
+    }
+    
+    /// <summary>
+    /// Versión cacheada de StateFileResolver.HasFullStates()
+    /// Solo recalcula si la sala no está en cache o si se fuerza refresh
+    /// </summary>
+    public static bool HasFullStatesCached(string roomName, bool forceRefresh = false)
+    {
+        if (string.IsNullOrEmpty(roomName)) return false;
+        
+        if (forceRefresh || !_fullStatesCache.TryGetValue(roomName, out bool result))
+        {
+            result = StateFileResolver.HasFullStates(roomName);
+            _fullStatesCache[roomName] = result;
+        }
+        return result;
+    }
+    
+    /// <summary>
+    /// Invalida el cache para una sala específica
+    /// </summary>
+    public static void InvalidateRoomCache(string roomName)
+    {
+        if (string.IsNullOrEmpty(roomName)) return;
+        _blendRoomCache.Remove(roomName);
+        _fullStatesCache.Remove(roomName);
+    }
+    
+    /// <summary>
+    /// Invalida TODOS los caches (útil para reset completo)
+    /// </summary>
+    public static void InvalidateAllRoomCaches()
+    {
+        _blendRoomCache.Clear();
+        _fullStatesCache.Clear();
+    }
+    
     public static void InitPreloadHooks()
     {
         if (_preloadHooksInitialized) return;
@@ -64,6 +127,8 @@ public static partial class RoomCameraExtensions
         if (!string.IsNullOrEmpty(roomName))
         {
             UnloadRoomCache(roomName);
+            // Invalidar caches al descargar sala
+            InvalidateRoomCache(roomName);
         }
         
         orig(self);
@@ -97,6 +162,7 @@ public static partial class RoomCameraExtensions
     internal static void ClearAllCaches()
     {
         _stateCache.Clear();
+        InvalidateAllRoomCaches();
     }
     
     private static void GetOrLoadState(string roomName, int state, SettingsSnapshot snap,

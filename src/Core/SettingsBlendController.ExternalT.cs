@@ -24,6 +24,16 @@ public static partial class SettingsBlendController
 
     public static void AttachWithExternalT(Room room, string pathA, string pathB, bool isAuto = false)
     {
+        // ============================================================
+        // VERIFICACIÓN: LA SALA DEBE TENER 4 ESTADOS PARA BLEND
+        // ============================================================
+        string roomName = room?.abstractRoom?.name;
+        if (!string.IsNullOrEmpty(roomName) && !StateFileResolver.HasFullStates(roomName))
+        {
+            // Si no tiene 4 estados, no hacer nada (no log para no spamear)
+            return;
+        }
+
         bool isIdleRefresh = (pathA == pathB);
 
         if (isIdleRefresh)
@@ -65,9 +75,9 @@ public static partial class SettingsBlendController
             BlendTextureManager.Load(cam, _snapA, _snapB, _snapOriginal, applyFade: false);
             RoomEffectsApplier.BuildLightIndex(room);
 
-            string roomName = room.abstractRoom?.name;
-            int stateA = StateFileResolver.GetStateFromPath(pathA, roomName);
-            int stateB = StateFileResolver.GetStateFromPath(pathB, roomName);
+            string roomName2 = room.abstractRoom?.name;
+            int stateA = StateFileResolver.GetStateFromPath(pathA, roomName2);
+            int stateB = StateFileResolver.GetStateFromPath(pathB, roomName2);
             
             if (stateA > 0) _manualStateA = stateA;
             if (stateB > 0) _manualStateB = stateB;
@@ -154,8 +164,13 @@ public static partial class SettingsBlendController
         _lastT = t;
         
         ApplyBlend(t);
-
-        if (_acvScene != null)
-            _acvScene.atmosphereColor = _lastAtmosphereColor;
+        
+        // Actualizar fog y sun en modo manual (PSV)
+        if (_room != null)
+        {
+            var skyType = GetViewFromLoadedSettings(_room);
+            if (skyType == SkyType.PSV)
+                ApplyPsvAlphas(t, isBlending: _manualStateA != _manualStateB);
+        }
     }
 }

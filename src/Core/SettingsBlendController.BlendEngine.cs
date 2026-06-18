@@ -11,6 +11,15 @@ public static partial class SettingsBlendController
 {
     private static void ApplyBlend(float t)
     {
+        // ================================================================
+        // Si la sala actual es estática, NO hacer nada
+        // Las salas estáticas son completamente independientes del blend
+        // ================================================================
+        if (_room != null && StaticTintManager.IsStaticViewRoom(_room))
+        {
+            return;
+        }
+
         if (_snapA == null || _snapB == null || _room == null)
             return;
 
@@ -28,13 +37,10 @@ public static partial class SettingsBlendController
         cam.UpdateBlendPalette();
 
         // ================================================================
-        // 2. TINTES — Shaders globales
+        // 2. TINTES — Shaders globales + ACV.atmosphereColor
         // ================================================================
         var lerped = SettingsSnapshot.Lerp(_snapA, _snapB, t);
         _activeSnapshot = lerped;
-
-        if (lerped.TintCloudAtmosphere.HasValue)
-            _lastAtmosphereColor = lerped.TintCloudAtmosphere.Value;
 
         if (lerped.TintMultiply.HasValue)
         {
@@ -45,6 +51,19 @@ public static partial class SettingsBlendController
         {
             var c = lerped.TintAtmosphere.Value;
             Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, new Vector4(c.r, c.g, c.b, 1f));
+            
+            // Aplicar también a ACV si existe en la sala
+            if (_room != null)
+            {
+                for (int i = 0; i < _room.updateList.Count; i++)
+                {
+                    if (_room.updateList[i] is AboveCloudsView acv)
+                    {
+                        acv.atmosphereColor = c;
+                        break;
+                    }
+                }
+            }
         }
 
         // ================================================================
@@ -105,16 +124,12 @@ public static partial class SettingsBlendController
         var blendData = self.GetBlendData();
         bool isBlendActive = blendData != null && blendData.isBlendActive;
 
-        // DEFENSA: si la cámara está cargando una nueva sala vanilla, nunca bloquear.
-        // Durante ChangeRoom, self.room aún es la anterior pero loadingRoom es la nueva.
         if (self.loadingRoom != null && !IsBlendRoom(self.loadingRoom))
         {
             orig(self, palA, palB, blend);
             return;
         }
 
-        // DEFENSA: si la cámara ya está en una sala vanilla con datos residuales,
-        // limpiar el flag y permitir que vanilla maneje sus paletas.
         if (self.room != null && !IsBlendRoom(self.room) && isBlendActive)
         {
             if (blendData != null) blendData.isBlendActive = false;
@@ -143,7 +158,6 @@ public static partial class SettingsBlendController
 
     public static void OnApplyFade(On.RoomCamera.orig_ApplyFade orig, RoomCamera self)
     {
-        // Sin logs - función silenciosa
         orig(self);
     }
 }

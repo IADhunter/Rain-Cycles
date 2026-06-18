@@ -59,6 +59,12 @@ public static class ModResetter
     
     private static void OnGameShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
     {
+        // ════════════════════════════════════════════════════════════
+        // EJECUTAR ELIMINACIONES PENDIENTES ANTES DE CUALQUIER COSA
+        // ════════════════════════════════════════════════════════════
+        RSPlugin.log.LogInfo("[ModResetter] Ejecutando eliminaciones pendientes");
+        StateFileResolver.ExecutePendingDeletes();
+        
         RSPlugin.log.LogInfo("[ModResetter] Limpiando estado del mod");
         ResetAllModState();
         orig(self);
@@ -129,6 +135,9 @@ public static class ModResetter
         
         // 3. Limpiezas específicas que la reflexión no puede hacer
         PerformSpecificCleanup();
+        
+        // 4. Limpiar pending deletes en memoria (no ejecutar, solo limpiar)
+        StateFileResolver.ClearAllPendingDeletes();
         
         RSPlugin.log.LogInfo("[ModResetter] Limpieza completada");
     }

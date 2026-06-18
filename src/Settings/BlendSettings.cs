@@ -32,6 +32,11 @@ public partial class BlendSettings
     public int Setting = 0;
 
     // ============================================================
+    // MOD QUE PROVEE LAS IMÁGENES
+    // ============================================================
+    public string SelectedModName { get; set; } = "";
+
+    // ============================================================
     // BACKGROUNDS
     // ============================================================
     public Dictionary<ViewType, Dictionary<string, string>> BackgroundAliases =

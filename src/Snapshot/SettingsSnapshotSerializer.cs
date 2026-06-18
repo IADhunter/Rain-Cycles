@@ -131,8 +131,8 @@ public partial class SettingsSnapshot
     {
         string mul = TintMultiply.HasValue        ? ColorToHex(TintMultiply.Value)        : "#FFFFFF";
         string atm = TintAtmosphere.HasValue      ? ColorToHex(TintAtmosphere.Value)      : "#FFFFFF";
-        string cld = TintCloudAtmosphere.HasValue ? ColorToHex(TintCloudAtmosphere.Value) : "#FFFFFF";
-        return $"RC_TINT: {mul} {atm} {cld}";
+        // Solo 2 colores: Multiply y Atmosphere
+        return $"RC_TINT: {mul} {atm}";
     }
 
     private static string ColorToHex(Color c)

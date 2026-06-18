@@ -113,48 +113,17 @@ public static class StaticTintManager
 
         var snap = GetCachedSnapshot(room);
 
-        // Solo aplicar tintes si la sala es estática (RC_TYPE: Static)
+        // ================================================================
+        // FASE 1: Eliminada aplicación de tintes en modo estático
+        // Los tintes ahora solo los aplica SettingsBlendController
+        // (tanto para blend como, en el futuro, para estático)
+        // ================================================================
+        
         if (snap.HasRcType && snap.RcType == RcType.Static)
         {
-            if (snap.TintMultiply.HasValue)
-            {
-                var c = snap.TintMultiply.Value;
-                Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, new Vector4(c.r, c.g, c.b, 1f));
-            }
-            if (snap.TintAtmosphere.HasValue)
-            {
-                var c = snap.TintAtmosphere.Value;
-                Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, new Vector4(c.r, c.g, c.b, 1f));
-            }
-            if (snap.TintCloudAtmosphere.HasValue)
-            {
-                for (int i = 0; i < room.updateList.Count; i++)
-                {
-                    if (room.updateList[i] is AboveCloudsView acv)
-                    {
-                        acv.atmosphereColor = snap.TintCloudAtmosphere.Value;
-                        break;
-                    }
-                }
-            }
+            RSPlugin.log.LogDebug($"[StaticTintManager] Sala estática '{roomName}' - Tintes NO aplicados (delegado a blend system)");
+            // No aplicar tintes aquí
         }
-    }
-
-    public static void ApplyCloudAtmosphereToInstance(AboveCloudsView acv, Room room)
-    {
-        if (acv == null || room == null) return;
-        string roomName = room.abstractRoom?.name;
-        if (string.IsNullOrEmpty(roomName)) return;
-
-        string path = room.roomSettings?.filePath;
-        if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
-            return;
-
-        var snap = GetCachedSnapshot(room);
-
-        // Solo aplicar si la sala es estática
-        if (snap.HasRcType && snap.RcType == RcType.Static && snap.TintCloudAtmosphere.HasValue)
-            acv.atmosphereColor = snap.TintCloudAtmosphere.Value;
     }
 
     public static void Init()
@@ -162,8 +131,12 @@ public static class StaticTintManager
         // On.RoomCamera.UpdateDayNightPalette += OnUpdateDayNightPalette;  // ELIMINADO - El mod no debe interferir con DayNight
     }
 
-    // ── PSV defaults ────────────────────────────────────────────────────
+    // ================================================================
+    // ⚠️ PSV DEFAULTS - COMENTADO PARA FASE 2
+    // Posible reimplementación unificada para ACV, RTV y PSV
+    // ================================================================
 
+    /*
     private static readonly Color PSV_MULTIPLY = new Color(1f, 1f, 1f);
     private static readonly Color PSV_ATMOSPHERE = new Color(0.682f, 0.286f, 0.529f);
 
@@ -181,4 +154,5 @@ public static class StaticTintManager
         Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor,
             new Vector4(PSV_ATMOSPHERE.r, PSV_ATMOSPHERE.g, PSV_ATMOSPHERE.b, 1f));
     }
+    */
 }

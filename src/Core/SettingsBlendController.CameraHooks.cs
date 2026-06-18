@@ -11,16 +11,6 @@ namespace RainCycles.Core;
 
 public static partial class SettingsBlendController
 {
-    private static SkyType GetViewFromLoadedSettings(Room room)
-    {
-        if (room?.roomSettings?.filePath == null) return SkyType.None;
-        var snap = SettingsSnapshot.FromFile(room.roomSettings.filePath);
-        return snap.ViewType == ViewType.ACV ? SkyType.ACV
-            : snap.ViewType == ViewType.RTV ? SkyType.RTV
-            : snap.ViewType == ViewType.PSV ? SkyType.PSV
-            : SkyType.None;
-    }
-
     private static void OnMoveCamera(On.RoomCamera.orig_MoveCamera_Room_int orig, RoomCamera self, Room newRoom, int camPos)
     {
         _moveCameraThisFrame = true;
@@ -31,10 +21,21 @@ public static partial class SettingsBlendController
         bool prevWasManaged = prevRoomName != null && IsBlendRoom(self.room);
 
         string nextRoomName = newRoom?.abstractRoom?.name;
-        bool nextIsManaged  = nextRoomName != null && IsBlendRoom(newRoom);
+        bool nextIsManaged = nextRoomName != null && IsBlendRoom(newRoom);
+
+        // ════════════════════════════════════════════════════════════════════
+        // INVALIDAR CACHE AL MOVER CÁMARA
+        // ════════════════════════════════════════════════════════════════════
+        if (!string.IsNullOrEmpty(prevRoomName))
+            RoomCameraExtensions.InvalidateRoomCache(prevRoomName);
+        if (!string.IsNullOrEmpty(nextRoomName))
+            RoomCameraExtensions.InvalidateRoomCache(nextRoomName);
+
+        RSPlugin.log.LogDebug($"[OnMoveCamera] Moviendo cámara: '{prevRoomName}' → '{nextRoomName}'");
 
         if (prevWasManaged && !nextIsManaged)
         {
+            RSPlugin.log.LogDebug($"[OnMoveCamera] Saliendo de sala blend '{prevRoomName}' a no gestionada");
             var blendData = self.GetBlendData();
             if (blendData != null)
             {
@@ -60,13 +61,10 @@ public static partial class SettingsBlendController
             _activeSnapshot = null;
             _psvScene = null;
             _acvScene = null;
-            _lastIdleRotatedState = -1;
 
             if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Idle && self.room != null)
             {
-                var prevSkyType = GetViewFromLoadedSettings(self.room);
-                if (prevSkyType != SkyType.None && GetSlotDay(prevSkyType) != BlendClock.StateA)
-                    ApplySkyForState(BlendClock.StateA, self.room);
+                ApplySkyForState(BlendClock.StateA, self.room);
             }
         }
 
@@ -76,14 +74,16 @@ public static partial class SettingsBlendController
         orig(self, newRoom, camPos);
 
         if (_active && _room != null && newRoom != _room)
+        {
+            RSPlugin.log.LogDebug($"[OnMoveCamera] Detectando cambio de sala mientras blend activo, llamando Detach");
             Detach();
+        }
 
         if (prevWasManaged && !nextIsManaged)
         {
             _activeSnapshot = null;
             _psvScene = null;
             _acvScene = null;
-            _lastIdleRotatedState = -1;
         }
 
         if (newRoom == null || nextRoomName == null)
@@ -104,9 +104,7 @@ public static partial class SettingsBlendController
 
             if (pathA != null && pathB != null && BlendClock.StateA != BlendClock.StateB)
             {
-                var newSkyType = GetViewFromLoadedSettings(newRoom);
-                if (newSkyType != SkyType.None && GetSlotDay(newSkyType) != BlendClock.StateA)
-                    SyncSkySlots(newRoom, BlendClock.StateA, BlendClock.StateB);
+                SyncSkySlots(newRoom, BlendClock.StateA, BlendClock.StateB);
 
                 if (self.room == newRoom)
                 {
@@ -123,8 +121,6 @@ public static partial class SettingsBlendController
                     if (snapA2 != null && snapB2 != null)
                     {
                         var lerped2 = SettingsSnapshot.Lerp(snapA2, snapB2, _entryFrameT);
-                        if (lerped2.TintCloudAtmosphere.HasValue)
-                            _lastAtmosphereColor = lerped2.TintCloudAtmosphere.Value;
                     }
                 }
             }
@@ -135,41 +131,52 @@ public static partial class SettingsBlendController
         On.RoomCamera.orig_ChangeRoom orig, RoomCamera self,
         Room newRoom, int cameraPosition)
     {
-        if (BlendClock.IsRunning && newRoom != null)
-        {
-            string newRoomName = newRoom.abstractRoom?.name;
+        // Llamar al original PRIMERO - que ejecute ChangeBothPalettes con los valores de newRoom
+        orig(self, newRoom, cameraPosition);
 
-        }
+        // ════════════════════════════════════════════════════════════════════
+        // INVALIDAR CACHE AL CAMBIAR DE SALA
+        // ════════════════════════════════════════════════════════════════════
+        string roomName = newRoom?.abstractRoom?.name;
+        if (!string.IsNullOrEmpty(roomName))
+            RoomCameraExtensions.InvalidateRoomCache(roomName);
 
-        if (BlendClock.IsRunning && newRoom != null)
+        // ============================================================
+        // FORZAR RECARGA DE PALETAS PARA SALAS NO BLEND
+        // ============================================================
+        if (newRoom != null && !IsBlendRoom(newRoom))
         {
-            string newRoomName = newRoom.abstractRoom?.name;
-            if (newRoomName != null && IsBlendRoom(newRoom))
+            var rs = newRoom.roomSettings;
+            if (rs != null)
             {
-                var skyType = GetViewFromLoadedSettings(newRoom);
-                var acv = _acvScene;
-                var rtv = _rtvScene;
-                bool isAcv = skyType == SkyType.ACV && acv != null && acv.room?.abstractRoom?.name == newRoomName;
-                bool isRtv = skyType == SkyType.RTV && rtv != null && rtv.room?.abstractRoom?.name == newRoomName;
-                if (isAcv || isRtv)
+                RSPlugin.log.LogDebug($"[OnChangeRoom] Forzando recarga de paletas para sala NO blend: {newRoom.abstractRoom?.name}");
+                
+                ForceLoadPalette(self, rs.Palette, ref self.fadeTexA);
+                
+                if (rs.fadePalette != null)
                 {
-                    var thisSky = isAcv ? SkyType.ACV : SkyType.RTV;
-                    var phase = BlendClock.CurrentPhase;
-                    if (phase == BlendClock.Phase.Blending && GetSlotDay(thisSky) != BlendClock.StateA)
-                        SyncSkySlots(newRoom, BlendClock.StateA, BlendClock.StateB);
-                    else if (phase == BlendClock.Phase.Idle && GetSlotDay(thisSky) != BlendClock.StateA)
-                        SyncSkySlots(newRoom, BlendClock.StateA, NextStateIn(BlendSettingsLoader.Active, BlendClock.StateA));
+                    ForceLoadPalette(self, rs.fadePalette.palette, ref self.fadeTexB);
+                    self.paletteB = rs.fadePalette.palette;
+                    self.paletteBlend = (self.currentCameraPosition < rs.fadePalette.fades.Length) 
+                        ? rs.fadePalette.fades[self.currentCameraPosition] 
+                        : 0f;
+                }
+                else
+                {
+                    self.paletteB = -1;
+                    self.paletteBlend = 0f;
                 }
             }
         }
 
-        orig(self, newRoom, cameraPosition);
-
+        // ============================================================
+        // SLOTS - Mover slots al contenedor Water si es necesario
+        // ============================================================
         var rcSlots = GetRcSlotsForRoom(newRoom);
         if (rcSlots != null)
         {
             var waterContainer = self.ReturnFContainer("Water");
-            for (int i = 0; i < rcSlots.Count && i < 3; i++)
+            for (int i = 0; i < rcSlots.Count && i < 4; i++)
             {
                 var slot = rcSlots[i];
                 var sLeaser = self.spriteLeasers?.Find(s => s.drawableObject == slot);
@@ -177,43 +184,14 @@ public static partial class SettingsBlendController
                 {
                     var sprite = sLeaser.sprites[0];
                     sprite.RemoveFromContainer();
-                    waterContainer.AddChildAtIndex(sprite, 2 - i);
+                    waterContainer.AddChildAtIndex(sprite, 3 - i);
                 }
             }
         }
 
-        if (BlendClock.IsRunning && newRoom != null)
+        if (BlendClock.IsRunning && newRoom != null && IsBlendRoom(newRoom))
         {
-            string newRoomName = newRoom.abstractRoom?.name;
-            if (newRoomName != null && IsBlendRoom(newRoom))
-            {
-                var skyType = GetViewFromLoadedSettings(newRoom);
-                if (skyType != SkyType.None)
-                {
-                    var phase = BlendClock.CurrentPhase;
-                    int syncA, syncB;
-                    if (phase == BlendClock.Phase.Blending)
-                    {
-                        syncA = BlendClock.StateA;
-                        syncB = BlendClock.StateB;
-                    }
-                    else
-                    {
-                        syncA = BlendClock.StateA;
-                        syncB = NextStateIn(BlendSettingsLoader.Active, BlendClock.StateA);
-                    }
-                    _pendingSkySync = true;
-                    _pendingSkyStateA = syncA;
-                    _pendingSkyStateB = syncB;
-
-                    var acvPost = _acvScene;
-                    var rtvPost = _rtvScene;
-                    bool isAcvPost = skyType == SkyType.ACV && acvPost != null && acvPost.room?.abstractRoom?.name == newRoomName;
-                    bool isRtvPost = skyType == SkyType.RTV && rtvPost != null && rtvPost.room?.abstractRoom?.name == newRoomName;
-                    if (isAcvPost || isRtvPost)
-                        SyncSkySlots(newRoom, syncA, syncB);
-                }
-            }
+            SyncSkySlots(newRoom, BlendClock.StateA, BlendClock.StateB);
         }
 
         string newRoomNameClean = newRoom?.abstractRoom?.name;
@@ -222,10 +200,7 @@ public static partial class SettingsBlendController
         {
             _activeSnapshot = null;
             _psvScene = null;
-            _psvSlotDay = _psvSlotDusk = _psvSlotNight = -1;
-            _pendingSkySync = false; _pendingSkyStateA = -1; _pendingSkyStateB = -1;
-            _entryFrameT = -1f; _hasSavedAlphas = false;
-            _lastIdleRotatedState = -1;
+            _entryFrameT = -1f;
         }
     }
 
@@ -233,11 +208,11 @@ public static partial class SettingsBlendController
     {
         orig(self);
         if (self.room == null) return;
-        var settings = BlendSettingsLoader.Active;
+
         string roomName = self.room.abstractRoom?.name;
         if (roomName == null) return;
 
-        bool isBlendRoom  = IsBlendRoom(self.room);
+        bool isBlendRoom = IsBlendRoom(self.room);
         bool isStaticRoom = StaticTintManager.IsStaticViewRoom(self.room);
 
         if (isBlendRoom)
@@ -250,25 +225,10 @@ public static partial class SettingsBlendController
             ForceHideVanillaSlots(self.room);
         }
 
-        if (_lastRoomWasManaged && self.room != null)
+        // Restaurar tintes en idle para salas blend
+        if (_lastRoomWasManaged && self.room != null && IsBlendRoom(self.room))
         {
-            string currentRoom = self.room.abstractRoom?.name;
-            bool stillManaged = currentRoom != null && (IsBlendRoom(self.room) || StaticTintManager.IsStaticViewRoom(self.room));
-
-            if (!stillManaged)
-            {
-                _lastRoomWasManaged = false;
-                Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, new Vector4(1f, 1f, 1f, 1f));
-                Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor,
-                    new Vector4(0.16078432f, 0.23137255f, 0.31764707f, 1f));
-                StaticTintManager.ApplyPSVDefaults(self.room);
-            }
-        }
-
-        if (_lastRoomWasManaged && self.room != null)
-        {
-            string currentRoom = self.room.abstractRoom?.name;
-            bool stillManaged = currentRoom != null && (IsBlendRoom(self.room) || StaticTintManager.IsStaticViewRoom(self.room));
+            bool stillManaged = IsBlendRoom(self.room) || StaticTintManager.IsStaticViewRoom(self.room);
 
             if (stillManaged && BlendClock.IsRunning &&
                 BlendClock.CurrentPhase == BlendClock.Phase.Idle)
@@ -287,37 +247,6 @@ public static partial class SettingsBlendController
                         if (snap?.TintAtmosphere != null)
                             Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor,
                                 new Vector4(snap.TintAtmosphere.Value.r, snap.TintAtmosphere.Value.g, snap.TintAtmosphere.Value.b, 1f));
-                    }
-                }
-            }
-            else if (!stillManaged)
-            {
-                Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, new Vector4(1f, 1f, 1f, 1f));
-                Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor,
-                    new Vector4(0.16078432f, 0.23137255f, 0.31764707f, 1f));
-                StaticTintManager.ApplyPSVDefaults(self.room);
-                StaticTintManager.ApplyForRoom(self.room);
-            }
-        }
-
-        if (self.room != null)
-        {
-            string currentRoom = self.room.abstractRoom?.name;
-            bool isBlendManaged = currentRoom != null && IsBlendRoom(self.room);
-
-            if (!isBlendManaged)
-            {
-                StaticTintManager.ApplyForRoom(self.room);
-            }
-            else if (BlendClock.IsRunning)
-            {
-                if (BlendClock.CurrentPhase == BlendClock.Phase.Blending)
-                {
-                    if (_acvScene != null && _acvScene.room == self.room)
-                    {
-                        _acvScene.atmosphereColor = _lastAtmosphereColor;
-                        Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor,
-                            new Vector4(_lastAtmosphereColor.r, _lastAtmosphereColor.g, _lastAtmosphereColor.b, 1f));
                     }
                 }
             }

@@ -65,14 +65,8 @@ public static partial class SettingsBlendController
                 int cycle = room.game?.GetStorySession?.saveState?.cycleNumber ?? 0;
                 state = n > 0 ? (cycle % n) + 1 : 1;
             }
-            int stateB = NextStateIn(regionSettings, state);
-            int stateC = NextStateIn(regionSettings, stateB);
 
-            UpdateRcSlots(SkyType.RTV, state, stateB, stateC, cam);
-            SetSlotDay(SkyType.RTV, state);
-            SetSlotDusk(SkyType.RTV, stateB);
-            SetSlotNight(SkyType.RTV, stateC);
-            ApplyRcSlotsAlpha(SkyType.RTV, 0f, false);
+            UpdateRcSlots(SkyType.RTV, state, state, cam, room);
         }
         else if (shouldCreateRTV && isStaticManaged)
         {
@@ -91,7 +85,6 @@ public static partial class SettingsBlendController
 
         if (!isBlendManaged && !isStaticManaged) return;
         _rtvScene = self;
-        _rtvSlotDay = _rtvSlotDusk = _rtvSlotNight = -1;
     }
 
     private static void OnRoofTopViewUpdate(
@@ -121,18 +114,7 @@ public static partial class SettingsBlendController
                 if (state < 1) state = 1;
             }
             
-            string currentRegionCode = self.room.world?.region?.name?.ToUpperInvariant();
-            var regionSettings = BlendSettingsLoader.GetForRegion(currentRegionCode);
-            int stateB = NextStateIn(regionSettings, state);
-            int stateC = NextStateIn(regionSettings, stateB);
-            
-            UpdateRcSlots(SkyType.RTV, state, stateB, stateC, cam, self.room);
-            SetSlotDay(SkyType.RTV, state);
-            SetSlotDusk(SkyType.RTV, stateB);
-            SetSlotNight(SkyType.RTV, stateC);
-            
-            bool isBlending = BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending;
-            ApplyRcSlotsAlpha(SkyType.RTV, isBlending ? BlendClock.SubPhaseLocalT : 0f, isBlending);
+            UpdateRcSlots(SkyType.RTV, state, state, cam, self.room);
         }
 
         if (!hasRcType)
@@ -141,22 +123,8 @@ public static partial class SettingsBlendController
             return;
         }
 
-        if (_pendingSkySync && camIsHere)
-        {
-            var settings = BlendSettingsLoader.Active;
-            SkyType pendingSky = _pendingSyncSky == 0 ? SkyType.ACV :
-                                (_pendingSyncSky == 1 ? SkyType.RTV : SkyType.PSV);
-            int stateC = settings != null ? NextStateIn(settings, _pendingStateB) : _pendingStateB;
-            UpdateRcSlots(pendingSky, _pendingStateA, _pendingStateB, stateC);
-            _pendingSkySync = false;
-            _pendingSyncSky = -1;
-        }
-
-        if (_rcSlotsRTV != null)
-            PreApplySlotAlphas(_rcSlotsRTV);
-
         if (camIsHere && _rcSlotsStaticRTV != null && _rcSlotsStaticRTV.Count > 0
-            && _rcSlotsStaticRTV[0].illustrationName != "Futile_White")
+            && _rcSlotsStaticRTV[0].illustrationName != "RC_Transparent")
         {
             RefreshSlotSprite(_rcSlotsStaticRTV[0], _rcSlotsStaticRTV[0].illustrationName, cam);
         }
@@ -224,14 +192,8 @@ public static partial class SettingsBlendController
                     int cycle = room.game?.GetStorySession?.saveState?.cycleNumber ?? 0;
                     state = n > 0 ? (cycle % n) + 1 : 1;
                 }
-                int stateB = NextStateIn(regionSettings, state);
-                int stateC = NextStateIn(regionSettings, stateB);
 
-                UpdateRcSlots(targetSky, state, stateB, stateC, cam);
-                SetSlotDay(targetSky, state);
-                SetSlotDusk(targetSky, stateB);
-                SetSlotNight(targetSky, stateC);
-                ApplyRcSlotsAlpha(targetSky, 0f, false);
+                UpdateRcSlots(targetSky, state, state, cam, room);
             }
             else if (targetSky == SkyType.PSV)
             {
@@ -247,14 +209,8 @@ public static partial class SettingsBlendController
                     int cycle = room.game?.GetStorySession?.saveState?.cycleNumber ?? 0;
                     state = n > 0 ? (cycle % n) + 1 : 1;
                 }
-                int stateB = NextStateIn(regionSettings, state);
-                int stateC = NextStateIn(regionSettings, stateB);
 
-                UpdateRcSlots(targetSky, state, stateB, stateC, cam);
-                SetSlotDay(targetSky, state);
-                SetSlotDusk(targetSky, stateB);
-                SetSlotNight(targetSky, stateC);
-                ApplyRcSlotsAlpha(targetSky, 0f, false);
+                UpdateRcSlots(targetSky, state, state, cam, room);
             }
         }
         else if (targetSky != SkyType.None && isStaticManaged)
@@ -289,7 +245,6 @@ public static partial class SettingsBlendController
         }
 
         _acvScene = self;
-        _acvSlotDay = _acvSlotDusk = _acvSlotNight = -1;
     }
 
     private static void OnAboveCloudsViewUpdate(
@@ -320,18 +275,7 @@ public static partial class SettingsBlendController
                 if (state < 1) state = 1;
             }
             
-            string currentRegionCode = self.room.world?.region?.name?.ToUpperInvariant();
-            var regionSettings = BlendSettingsLoader.GetForRegion(currentRegionCode);
-            int stateB = NextStateIn(regionSettings, state);
-            int stateC = NextStateIn(regionSettings, stateB);
-            
-            UpdateRcSlots(SkyType.ACV, state, stateB, stateC, cam, self.room);
-            SetSlotDay(SkyType.ACV, state);
-            SetSlotDusk(SkyType.ACV, stateB);
-            SetSlotNight(SkyType.ACV, stateC);
-            
-            bool isBlending = BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending;
-            ApplyRcSlotsAlpha(SkyType.ACV, isBlending ? BlendClock.SubPhaseLocalT : 0f, isBlending);
+            UpdateRcSlots(SkyType.ACV, state, state, cam, self.room);
         }
 
         if (isBlendManaged && snap.ViewType == ViewType.PSV && (_rcSlotsPSV == null || _rcSlotsPSV.Count == 0))
@@ -348,18 +292,7 @@ public static partial class SettingsBlendController
                 if (state < 1) state = 1;
             }
             
-            string currentRegionCode = self.room.world?.region?.name?.ToUpperInvariant();
-            var regionSettings = BlendSettingsLoader.GetForRegion(currentRegionCode);
-            int stateB = NextStateIn(regionSettings, state);
-            int stateC = NextStateIn(regionSettings, stateB);
-            
-            UpdateRcSlots(SkyType.PSV, state, stateB, stateC, cam, self.room);
-            SetSlotDay(SkyType.PSV, state);
-            SetSlotDusk(SkyType.PSV, stateB);
-            SetSlotNight(SkyType.PSV, stateC);
-            
-            bool isBlending = BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending;
-            ApplyRcSlotsAlpha(SkyType.PSV, isBlending ? BlendClock.SubPhaseLocalT : 0f, isBlending);
+            UpdateRcSlots(SkyType.PSV, state, state, cam, self.room);
         }
 
         if (!hasRcType)
@@ -368,36 +301,12 @@ public static partial class SettingsBlendController
             return;
         }
 
-        if (_pendingSkySync && camIsHere)
-        {
-            var settings = BlendSettingsLoader.Active;
-            SkyType pendingSky = _pendingSyncSky == 0 ? SkyType.ACV :
-                                (_pendingSyncSky == 1 ? SkyType.RTV : SkyType.PSV);
-            int stateC = settings != null ? NextStateIn(settings, _pendingStateB) : _pendingStateB;
-            UpdateRcSlots(pendingSky, _pendingStateA, _pendingStateB, stateC);
-            _pendingSkySync = false;
-            _pendingSyncSky = -1;
-        }
-
-        if (_rcSlotsACV != null)
-            PreApplySlotAlphas(_rcSlotsACV);
-        if (_rcSlotsPSV != null)
-            PreApplySlotAlphas(_rcSlotsPSV);
-        if (_rcSlotsPSVFog != null)
-            PreApplySlotAlphas(_rcSlotsPSVFog);
-        if (_rcSlotsPSVSun != null)
-        {
-            PreApplySlotAlphas(_rcSlotsPSVSun);
-            ForceSunShader(_rcSlotsPSVSun, cam);
-        }
-
         if (!isBlendManaged && !isStaticManaged)
         {
             orig(self, eu);
             if (camIsHere)
             {
                 StaticTintManager.ApplyForRoom(self.room);
-                StaticTintManager.ApplyCloudAtmosphereToInstance(self, self.room);
 
                 foreach (var el in self.elements)
                 {
@@ -424,7 +333,7 @@ public static partial class SettingsBlendController
 
                     if (staticSlots != null && staticSlots.Count > 0)
                     {
-                        if (staticSlots[0].illustrationName == "Futile_White")
+                        if (staticSlots[0].illustrationName == "RC_Transparent")
                         {
                             var settings = BlendSettingsLoader.Active;
                             int state = StateFileResolver.GetStateFromPath(self.room.roomSettings?.filePath, roomName);
@@ -467,54 +376,5 @@ public static partial class SettingsBlendController
             if (el is BackgroundScene.AdditiveBackgroundIllustration abi && abi.illustrationName?.StartsWith("pnk_") == true)
                 abi.alpha = 0f;
         }
-
-        if (isBlendManaged && camIsHere)
-            self.atmosphereColor = _lastAtmosphereColor;
-    }
-
-    // ── Creación de slots ───────────────────────────────────────────────
-
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateRcSlotsVanilla(
-        BackgroundScene scene, Room room, SkyType sky)
-    {
-        var slots = new List<BackgroundScene.Simple2DBackgroundIllustration>();
-        for (int i = 0; i < 3; i++)
-        {
-            var slot = new BackgroundScene.Simple2DBackgroundIllustration(
-                scene, "Futile_White", new Vector2(683f, 384f));
-            slot.alpha = 0f;
-            scene.AddElement(slot);
-            slots.Add(slot);
-        }
-        return slots;
-    }
-
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateStaticSlotsVanilla(
-        BackgroundScene scene, Room room, SkyType sky)
-    {
-        var slots = new List<BackgroundScene.Simple2DBackgroundIllustration>();
-        var slot = new BackgroundScene.Simple2DBackgroundIllustration(
-            scene, "Futile_White", new Vector2(683f, 384f));
-        slot.alpha = 0f;
-        scene.AddElement(slot);
-        slots.Add(slot);
-        return slots;
-    }
-
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateSunSlots(
-        BackgroundScene scene, Room room, SkyType sky, bool isStatic)
-    {
-        int count = isStatic ? 1 : 3;
-        var slots = new List<BackgroundScene.Simple2DBackgroundIllustration>();
-        for (int i = 0; i < count; i++)
-        {
-            var slot = new BackgroundScene.Simple2DBackgroundIllustration(
-                scene, "Futile_White", new Vector2(683f, 384f));
-            slot.depth = 22.5f;
-            slot.alpha = 0f;
-            scene.AddElement(slot);
-            slots.Add(slot);
-        }
-        return slots;
     }
 }

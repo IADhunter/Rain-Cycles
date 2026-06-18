@@ -168,18 +168,26 @@ public class RCPanel : Panel, IDevUISignals
         }
         _stateButtons.Clear();
 
-        bool isArena = owner.room?.game?.IsArenaSession == true;
-        int fileCount = isArena ? ArenaStateResolver.CountSettingsFiles(CurrentRoomName)
-                                : StateFileResolver.CountRainStateFiles(CurrentRoomName);
-
-        for (int i = 1; i <= fileCount; i++)
+        // Obtener estados activos (excluyendo pendientes de borrar)
+        var activeStates = StateFileResolver.GetActiveStates(CurrentRoomName);
+        
+        // Si no hay estados activos, no mostrar botones de estado
+        if (activeStates.Count > 0)
         {
-            bool isSelected = (i == ButtonSelectedA);
-            var btn = new SelectButton(owner, $"RCA_{i}", this,
-                new Vector2(MARGIN, ROW_A_Y), BUTTON_WIDTH, i.ToString(), isSelected);
-            subNodes.Add(btn);
-            _stateButtons.Add(btn);
-            if (isSelected) btn.Select();
+            foreach (int state in activeStates)
+            {
+                bool isSelected = (state == ButtonSelectedA);
+                var btn = new SelectButton(owner, $"RCA_{state}", this,
+                    new Vector2(MARGIN, ROW_A_Y), BUTTON_WIDTH, state.ToString(), isSelected);
+                subNodes.Add(btn);
+                _stateButtons.Add(btn);
+                if (isSelected) btn.Select();
+            }
+        }
+        else
+        {
+            // No hay estados - asegurar que ButtonSelectedA sea 1 para cuando se genere
+            ButtonSelectedA = 1;
         }
 
         _plusButton = new Button(owner, "RC_Plus", this, new Vector2(MARGIN, ROW_A_Y), 30f, "   +");
@@ -187,19 +195,27 @@ public class RCPanel : Panel, IDevUISignals
         subNodes.Add(_plusButton);
         subNodes.Add(_minusButton);
 
-        if (fileCount >= 2 && _blendSlider == null)
+        // Slider solo si hay exactamente 4 estados activos
+        UpdateSliderVisibility();
+
+        ReorganizeStateButtons();
+    }
+
+    private void UpdateSliderVisibility()
+    {
+        bool hasFullStates = StateFileResolver.HasFullStates(CurrentRoomName);
+        
+        if (hasFullStates && _blendSlider == null)
         {
             _blendSlider = new BlendSlider(owner, "RC_BlendSlider", this, new Vector2(MARGIN, SLIDER_Y));
             subNodes.Add(_blendSlider);
         }
-        else if (fileCount < 2 && _blendSlider != null)
+        else if (!hasFullStates && _blendSlider != null)
         {
             _blendSlider.ClearSprites();
             subNodes.Remove(_blendSlider);
             _blendSlider = null;
         }
-
-        ReorganizeStateButtons();
     }
 
     private void ReorganizeStateButtons()
@@ -292,8 +308,36 @@ public class RCPanel : Panel, IDevUISignals
         return StateFileResolver.GetRainStateSettingsFile(CurrentRoomName, n);
     }
 
+    private string GetVanillaSettingsPath()
+    {
+        if (owner.room?.roomSettings == null) return null;
+        string path = owner.room.roomSettings.filePath;
+        if (string.IsNullOrEmpty(path)) return null;
+        
+        // Quitar "_settings_N" del nombre
+        string dir = Path.GetDirectoryName(path);
+        string fileName = Path.GetFileNameWithoutExtension(path);
+        int idx = fileName.ToLowerInvariant().LastIndexOf("_settings_");
+        if (idx >= 0)
+        {
+            fileName = fileName.Substring(0, idx);
+        }
+        return Path.Combine(dir, fileName + ".txt");
+    }
+
     public void ApplyStateA()
     {
+        // Verificar si el estado seleccionado está pendiente de borrar
+        if (StateFileResolver.IsPendingDelete(CurrentRoomName, ButtonSelectedA))
+        {
+            // Si está pendiente, usar el estado 1 o el primer estado activo
+            var activeStates = StateFileResolver.GetActiveStates(CurrentRoomName);
+            if (activeStates.Count > 0)
+                ButtonSelectedA = activeStates[0];
+            else
+                return;
+        }
+
         string path = ResolveSettingsFile(ButtonSelectedA);
         if (path == null) return;
         
@@ -315,14 +359,14 @@ public class RCPanel : Panel, IDevUISignals
             c0.ReloadTerrainPalette();
 
         ApplyTintsFromSnapshot(snapCheck);
-        if (snapCheck.TintCloudAtmosphere.HasValue)
-            SettingsBlendController.SetLastAtmosphereColor(snapCheck.TintCloudAtmosphere.Value);
 
         RoomEffectsApplier.ApplyDecalsFromSnapshot(owner.room, path);
         RoomEffectsApplier.ApplyLightSourcesFromSnapshot(owner.room, path);
         RoomEffectsApplier.ApplyLightBeamsFromSnapshot(owner.room, path);
         Shader.SetGlobalFloat(RainWorld.ShadPropGrime, owner.room.roomSettings.Grime);
         SettingsBlendController.ApplySkyForState(ButtonSelectedA, owner.room);
+        
+        SettingsBlendController.UpdateManualStates(ButtonSelectedA, ButtonSelectedA);
         
         if (_activeFileLabel != null)
             _activeFileLabel.Text = Path.GetFileName(path ?? "");
@@ -339,14 +383,12 @@ public class RCPanel : Panel, IDevUISignals
         {
             var c = snap.TintAtmosphere.Value;
             Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, new Vector4(c.r, c.g, c.b, 1f));
-        }
-        if (snap.TintCloudAtmosphere.HasValue)
-        {
+            
             for (int i = 0; i < owner.room.updateList.Count; i++)
             {
                 if (owner.room.updateList[i] is AboveCloudsView acv)
                 {
-                    acv.atmosphereColor = snap.TintCloudAtmosphere.Value;
+                    acv.atmosphereColor = c;
                     break;
                 }
             }
@@ -359,8 +401,14 @@ public class RCPanel : Panel, IDevUISignals
 
     public void OnSliderStarted()
     {
-        // Solo permitir si EditMode está activo
         if (!BlendClock.EditMode) return;
+        
+        // Solo permitir blend manual si hay 4 estados
+        if (!StateFileResolver.HasFullStates(CurrentRoomName))
+        {
+            RSPlugin.log.LogDebug($"[RCPanel] Blend manual deshabilitado: {CurrentRoomName} no tiene 4 estados");
+            return;
+        }
         
         _phases = null;
         SettingsBlendController.ClearPendingOrigin();
@@ -369,25 +417,22 @@ public class RCPanel : Panel, IDevUISignals
         {
             ActivatePhase(_phases[0]);
         }
-        else
-        {
-            RSPlugin.log.LogWarning($"[RCPanel] OnSliderStarted: NO phases built!");
-        }
     }
 
     public void OnSliderMoved(float t)
     {
-        // Solo permitir si EditMode está activo
         if (!BlendClock.EditMode) return;
+        
+        // Solo permitir blend manual si hay 4 estados
+        if (!StateFileResolver.HasFullStates(CurrentRoomName))
+        {
+            return;
+        }
         
         if (_phases == null || _phases.Count == 0)
         {
             BuildPhases();
-            if (_phases == null || _phases.Count == 0)
-            {
-                RSPlugin.log.LogWarning($"[RCPanel] OnSliderMoved: still no phases, returning");
-                return;
-            }
+            if (_phases == null || _phases.Count == 0) return;
         }
 
         int cnt = _phases.Count;
@@ -422,37 +467,31 @@ public class RCPanel : Panel, IDevUISignals
     private void BuildLoopPhases()
     {
         int initial = ButtonSelectedA;
-        
-        var laneA = new List<int>();
-        for (int i = 0; i < 3; i++)
-            laneA.Add(((initial - 1 + i) % 4) + 1);
-        
-        var laneB = new List<int>();
-        for (int i = 2; i < 5; i++)
-            laneB.Add(((initial - 1 + i) % 4) + 1);
-        
-        var flat = new List<int>(laneA);
-        for (int i = 1; i < laneB.Count; i++)
-            flat.Add(laneB[i]);
-        
-        if (flat[flat.Count - 1] != initial)
-            flat.Add(initial);
+        if (initial < 1 || initial > 4) initial = 1;
         
         _phases = new List<(int, int)>();
-        for (int i = 0; i < flat.Count - 1; i++)
-            _phases.Add((flat[i], flat[i + 1]));
+        
+        for (int i = 0; i < 4; i++)
+        {
+            int from = ((initial - 1 + i) % 4) + 1;
+            int to = ((initial - 1 + i + 1) % 4) + 1;
+            _phases.Add((from, to));
+        }
     }
 
     private void BuildLinearPhases()
     {
         int initial = ButtonSelectedA;
-        var seq = new List<int>();
-        for (int i = 0; i < 3; i++)
-            seq.Add(((initial - 1 + i) % 4) + 1);
+        if (initial < 1 || initial > 4) initial = 1;
         
         _phases = new List<(int, int)>();
-        for (int i = 0; i < seq.Count - 1; i++)
-            _phases.Add((seq[i], seq[i + 1]));
+        
+        for (int i = 0; i < 3; i++)
+        {
+            int from = ((initial - 1 + i) % 4) + 1;
+            int to = ((initial - 1 + i + 1) % 4) + 1;
+            _phases.Add((from, to));
+        }
     }
 
     private void ActivatePhase((int from, int to) phase)
@@ -463,11 +502,8 @@ public class RCPanel : Panel, IDevUISignals
         
         if (pA != null && pB != null && phase.from != phase.to)
         {
+            SettingsBlendController.UpdateManualStates(phase.from, phase.to);
             SettingsBlendController.AttachWithExternalT(owner.room, pA, pB, isAuto: false);
-        }
-        else
-        {
-            RSPlugin.log.LogWarning($"[RCPanel] ActivatePhase: missing paths! pA={pA != null}, pB={pB != null}, sameState={phase.from == phase.to}");
         }
     }
 
@@ -485,16 +521,25 @@ public class RCPanel : Panel, IDevUISignals
     {
         if (type != DevUISignalType.ButtonClick) return;
 
+        // ── Selección de estado ────────────────────────────────────────
         if (sender.IDstring.StartsWith("RCA_"))
         {
-            // Bloquear si EditMode está apagado Y el blend clock está corriendo
             if (!BlendClock.EditMode && BlendClock.IsRunning) return;
 
             int sel = int.Parse(sender.IDstring.Split('_')[1]);
+            
+            // Verificar que no esté pendiente de borrar
+            if (StateFileResolver.IsPendingDelete(CurrentRoomName, sel))
+            {
+                // Desmarcar automáticamente al seleccionarlo
+                StateFileResolver.UnmarkPendingDelete(CurrentRoomName, sel);
+                RebuildStateButtons();
+            }
+
             string path = ResolveSettingsFile(sel);
             if (path == null) return;
 
-            if (SettingsBlendController.IsActive) { SettingsBlendController.Detach(); if (_blendSlider != null) BlendSlider.Reset(); }
+            ResetRelaySystem();
 
             owner.room.roomSettings.filePath = path;
             owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
@@ -516,14 +561,13 @@ public class RCPanel : Panel, IDevUISignals
             SettingsBlendController.SetActiveSnapshot(snapTint);
             ApplyTintsFromSnapshot(snapTint);
 
-            if (snapTint.TintCloudAtmosphere.HasValue)
-                SettingsBlendController.SetLastAtmosphereColor(snapTint.TintCloudAtmosphere.Value);
-
             RoomEffectsApplier.ApplyDecalsFromSnapshot(owner.room, path);
             RoomEffectsApplier.ApplyLightSourcesFromSnapshot(owner.room, path);
             RoomEffectsApplier.ApplyLightBeamsFromSnapshot(owner.room, path);
             Shader.SetGlobalFloat(RainWorld.ShadPropGrime, owner.room.roomSettings.Grime);
             SettingsBlendController.ApplySkyForState(sel, owner.room);
+
+            SettingsBlendController.UpdateManualStates(sel, sel);
 
             if (_activeFileLabel != null)
                 _activeFileLabel.Text = Path.GetFileName(path ?? "");
@@ -534,40 +578,111 @@ public class RCPanel : Panel, IDevUISignals
             return;
         }
 
+        // ── Botón "+" (Generar nuevo estado) ──────────────────────────
         if (sender.IDstring == "RC_Plus")
         {
-            // Bloquear si EditMode está apagado Y el blend clock está corriendo
             if (!BlendClock.EditMode && BlendClock.IsRunning) return;
 
-            int cnt = _stateButtons.Count + 1;
-            var newBtn = new SelectButton(owner, $"RCA_{cnt}", this,
-                new Vector2(MARGIN, ROW_A_Y), BUTTON_WIDTH, cnt.ToString(), false);
-            _stateButtons.Add(newBtn);
-            subNodes.Add(newBtn);
-            StateFileResolver.CreateNewRainStateFile(CurrentRoomName, cnt, owner.room);
+            var activeStates = StateFileResolver.GetActiveStates(CurrentRoomName);
+            int nextState = activeStates.Count + 1;
 
-            if (cnt == 2 && _blendSlider == null)
+            if (nextState > 4)
             {
-                _blendSlider = new BlendSlider(owner, "RC_BlendSlider", this, new Vector2(MARGIN, SLIDER_Y));
-                subNodes.Add(_blendSlider);
+                RSPlugin.log.LogDebug($"[RCPanel] Máximo 4 estados alcanzado para {CurrentRoomName}");
+                return;
             }
 
-            ReorganizeStateButtons();
+            // Verificar si el estado está pendiente de borrar
+            if (StateFileResolver.IsPendingDelete(CurrentRoomName, nextState))
+            {
+                // Desmarcar y no crear nuevo archivo (ya existe)
+                StateFileResolver.UnmarkPendingDelete(CurrentRoomName, nextState);
+                RSPlugin.log.LogInfo($"[RCPanel] Estado {nextState} desmarcado para {CurrentRoomName}");
+            }
+            else
+            {
+                // Crear nuevo archivo
+                string path = ResolveSettingsFile(nextState);
+                if (path == null || !File.Exists(path))
+                {
+                    StateFileResolver.CreateNewRainStateFile(CurrentRoomName, nextState, owner.room);
+                }
+                else
+                {
+                    // Si el archivo existe pero no está marcado, no hacer nada
+                    RSPlugin.log.LogDebug($"[RCPanel] Estado {nextState} ya existe para {CurrentRoomName}");
+                }
+            }
+
+            ButtonSelectedA = nextState;
+            RebuildStateButtons();
+            ApplyStateA();
             return;
         }
 
+        // ── Botón "-" (Eliminar el estado más alto) ────────────────────
         if (sender.IDstring == "RC_Minus")
         {
-            // Bloquear si EditMode está apagado Y el blend clock está corriendo
             if (!BlendClock.EditMode && BlendClock.IsRunning) return;
 
-            string path = ResolveSettingsFile(ButtonSelectedA);
-            if (path != null && File.Exists(path))
-                File.Delete(path);
+            var activeStates = StateFileResolver.GetActiveStates(CurrentRoomName);
+            if (activeStates.Count == 0) return;
 
-            ButtonSelectedA = 1;
-            RebuildStateButtons();
-            ApplyStateA();
+            int highestState = activeStates.Max();
+
+            if (highestState == 1)
+            {
+                // ── ÚLTIMO ESTADO - Marcar para eliminar y restaurar vanilla ──
+                string path = ResolveSettingsFile(1);
+                if (path != null && File.Exists(path))
+                {
+                    // Copiar vanilla sobre settings_1.txt
+                    string vanillaPath = GetVanillaSettingsPath();
+                    if (vanillaPath != null && File.Exists(vanillaPath))
+                    {
+                        File.Copy(vanillaPath, path, overwrite: true);
+                        RSPlugin.log.LogInfo($"[RCPanel] Restaurado vanilla en {path}");
+                    }
+                    else
+                    {
+                        // Si no hay vanilla, guardar el actual como vanilla
+                        owner.room.roomSettings.filePath = path;
+                        owner.room.roomSettings.Save();
+                        RSPlugin.log.LogInfo($"[RCPanel] Guardado como vanilla: {path}");
+                    }
+
+                    // Marcar como pendiente de eliminar
+                    StateFileResolver.MarkPendingDelete(CurrentRoomName, 1);
+
+                    // Deseleccionar y reconstruir botones
+                    ButtonSelectedA = 1;
+                    RebuildStateButtons();
+
+                    // Aplicar el estado vanilla (que ahora es settings_1.txt)
+                    ApplyStateA();
+                }
+            }
+            else
+            {
+                // ── Estados 2, 3, 4 - Eliminación directa ──
+                string path = ResolveSettingsFile(highestState);
+                if (path != null && File.Exists(path))
+                {
+                    File.Delete(path);
+                    RSPlugin.log.LogInfo($"[RCPanel] Eliminado estado {highestState}: {path}");
+                }
+
+                // Si el estado seleccionado era el eliminado, cambiar al más alto disponible
+                if (ButtonSelectedA == highestState)
+                {
+                    var remaining = StateFileResolver.GetActiveStates(CurrentRoomName);
+                    ButtonSelectedA = remaining.Count > 0 ? remaining.Max() : 1;
+                }
+
+                RebuildStateButtons();
+                ApplyStateA();
+            }
+
             return;
         }
     }

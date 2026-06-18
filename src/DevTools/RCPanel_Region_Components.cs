@@ -106,7 +106,6 @@ public class EditableFloatField : PositionedDevUINode
     
     private void StartEditing()
     {
-        // Bloquear si EditMode está apagado
         if (!BlendClock.EditMode) return;
         
         _isEditing = true;
@@ -282,7 +281,7 @@ public class EditableFloatField : PositionedDevUINode
 }
 
 // ================================================================
-// MOD SELECT PANEL
+// MOD SELECT PANEL - Ahora muestra nombres de modinfo.json
 // ================================================================
 public class ModSelectPanel : Panel, IDevUISignals
 {
@@ -290,25 +289,83 @@ public class ModSelectPanel : Panel, IDevUISignals
     private const float PANEL_WIDTH = 200f;
     private const float PANEL_HEIGHT = 150f;
     
-    private string[] _mods;
-    private string _selectedPath;
+    private ModInfo[] _mods;
+    private string _selectedModName;
     private int _scrollOffset;
     private int _visibleItems;
     private RCPanel_RegionPage _parentPage;
     
-    public ModSelectPanel(DevUI owner, string id, RCPanel_RegionPage parent, Vector2 pos, string[] mods, string selectedPath)
+    // Estructura para almacenar información del mod
+    private struct ModInfo
+    {
+        public string Path;
+        public string DisplayName;
+        public string ModId;
+    }
+    
+    public ModSelectPanel(DevUI owner, string id, RCPanel_RegionPage parent, Vector2 pos, string[] modPaths, string selectedModName)
         : base(owner, id, parent, pos, new Vector2(PANEL_WIDTH, PANEL_HEIGHT), "Select Mod")
     {
         _parentPage = parent;
-        _mods = mods;
-        _selectedPath = selectedPath;
+        _selectedModName = selectedModName;
         _visibleItems = (int)((PANEL_HEIGHT - 40f) / ITEM_HEIGHT);
         _scrollOffset = 0;
+        
+        // Convertir rutas a ModInfo
+        var modList = new List<ModInfo>();
+        foreach (string path in modPaths)
+        {
+            string displayName = GetModNameFromModInfo(path);
+            if (!string.IsNullOrEmpty(displayName))
+            {
+                modList.Add(new ModInfo
+                {
+                    Path = path,
+                    DisplayName = displayName,
+                    ModId = Path.GetFileName(path)
+                });
+            }
+        }
+        _mods = modList.ToArray();
+        
         PopulateItems();
+    }
+    
+    // ================================================================
+    // OBTENER NOMBRE REAL DEL MOD DESDE MODINFO.JSON
+    // ================================================================
+    private string GetModNameFromModInfo(string modPath)
+    {
+        try
+        {
+            string modInfoPath = Path.Combine(modPath, "modinfo.json");
+            if (!File.Exists(modInfoPath)) return null;
+
+            string json = File.ReadAllText(modInfoPath);
+            
+            int nameIndex = json.IndexOf("\"name\"", StringComparison.OrdinalIgnoreCase);
+            if (nameIndex < 0) return null;
+
+            int colonIndex = json.IndexOf(':', nameIndex);
+            if (colonIndex < 0) return null;
+
+            int startQuote = json.IndexOf('"', colonIndex + 1);
+            if (startQuote < 0) return null;
+
+            int endQuote = json.IndexOf('"', startQuote + 1);
+            if (endQuote < 0) return null;
+
+            return json.Substring(startQuote + 1, endQuote - startQuote - 1);
+        }
+        catch
+        {
+            return null;
+        }
     }
     
     private void PopulateItems()
     {
+        // Limpiar items existentes
         for (int i = subNodes.Count - 1; i >= 0; i--)
         {
             if (subNodes[i] is Button btn && (
@@ -322,14 +379,15 @@ public class ModSelectPanel : Panel, IDevUISignals
             }
         }
         
+        // Mostrar mods con su nombre real (de modinfo.json)
         for (int i = _scrollOffset; i < Math.Min(_scrollOffset + _visibleItems, _mods.Length); i++)
         {
             int idx = i;
             float y = size.y - 30f - (i - _scrollOffset) * ITEM_HEIGHT;
-            bool isSelected = _mods[idx] == _selectedPath;
+            bool isSelected = _mods[idx].DisplayName == _selectedModName;
             
             var btn = new Button(owner, $"RC_ModSelect_{idx}", this,
-                new Vector2(5f, y), PANEL_WIDTH - 10f, Path.GetFileName(_mods[idx]));
+                new Vector2(5f, y), PANEL_WIDTH - 10f, _mods[idx].DisplayName);
             btn.colorA = isSelected ? new Color(0.2f, 0.7f, 0.3f) : new Color(1f, 1f, 1f);
             subNodes.Add(btn);
         }
@@ -361,8 +419,6 @@ public class ModSelectPanel : Panel, IDevUISignals
     public void Signal(DevUISignalType type, DevUINode sender, string message)
     {
         if (type != DevUISignalType.ButtonClick) return;
-        
-        // Bloquear si EditMode está apagado
         if (!BlendClock.EditMode) return;
         
         if (sender.IDstring == "RC_ModScroll_Prev")
@@ -389,8 +445,11 @@ public class ModSelectPanel : Panel, IDevUISignals
         if (sender.IDstring.StartsWith("RC_ModSelect_"))
         {
             int idx = int.Parse(sender.IDstring.Substring("RC_ModSelect_".Length));
-            string selectedMod = _mods[idx];
-            _parentPage.Signal(DevUISignalType.ButtonClick, sender, selectedMod);
+            if (idx >= 0 && idx < _mods.Length)
+            {
+                // Enviamos el nombre real del mod (de modinfo.json), no la ruta
+                _parentPage.Signal(DevUISignalType.ButtonClick, sender, _mods[idx].DisplayName);
+            }
         }
     }
     
@@ -409,7 +468,7 @@ public class ModSelectPanel : Panel, IDevUISignals
 }
 
 // ================================================================
-// IMAGE SELECT PANEL - Con soporte para PSV multi-slot
+// IMAGE SELECT PANEL
 // ================================================================
 public class ImageSelectPanel : Panel, IDevUISignals
 {
@@ -422,7 +481,7 @@ public class ImageSelectPanel : Panel, IDevUISignals
     private int _scrollOffset;
     private int _visibleItems;
     private RCPanel_RegionPage _parentPage;
-    private int _targetSlot; // Para PSV: 0=sky, 1=fog, 2=sun
+    private int _targetSlot;
     
     public ImageSelectPanel(DevUI owner, string id, RCPanel_RegionPage parent, Vector2 pos, string[] images, string selectedImage, int targetSlot = -1)
         : base(owner, id, parent, pos, new Vector2(PANEL_WIDTH, PANEL_HEIGHT), "Select Image")
@@ -492,8 +551,6 @@ public class ImageSelectPanel : Panel, IDevUISignals
     public void Signal(DevUISignalType type, DevUINode sender, string message)
     {
         if (type != DevUISignalType.ButtonClick) return;
-        
-        // Bloquear si EditMode está apagado
         if (!BlendClock.EditMode) return;
         
         if (sender.IDstring == "RC_ImageScroll_Prev")

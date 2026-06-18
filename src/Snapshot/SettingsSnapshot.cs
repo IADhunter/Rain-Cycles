@@ -84,10 +84,9 @@ public partial class SettingsSnapshot
 
     public string RawText = "";
 
-    // RC_TINT
-    public UnityEngine.Color? TintMultiply        = null;
-    public UnityEngine.Color? TintAtmosphere      = null;
-    public UnityEngine.Color? TintCloudAtmosphere = null;
+    // RC_TINT - SOLO DOS COLORES (Multiply y Atmosphere)
+    public UnityEngine.Color? TintMultiply   = null;
+    public UnityEngine.Color? TintAtmosphere = null;
 
     // RC_VIEW
     public ViewType ViewType = ViewType.None;

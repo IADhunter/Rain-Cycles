@@ -56,9 +56,10 @@ public partial class SettingsSnapshot
             if (key == "RC_TINT" && snap.HasRcType)
             {
                 string[] hexes = val.Trim().Split(' ');
+                // Solo 2 colores: Multiply y Atmosphere
                 if (hexes.Length >= 1) snap.TintMultiply = ParseHexColor(hexes[0]);
                 if (hexes.Length >= 2) snap.TintAtmosphere = ParseHexColor(hexes[1]);
-                if (hexes.Length >= 3) snap.TintCloudAtmosphere = ParseHexColor(hexes[2]);
+                // Ya no hay tercer color
                 continue;
             }
 

@@ -14,7 +14,7 @@ public static class RoomSettingsExtensions
         public static ViewType ViewType = ViewType.None;
         public static Color? TintMultiply = null;
         public static Color? TintAtmosphere = null;
-        public static Color? TintCloudAtmosphere = null;
+        // TintCloudAtmosphere eliminado - solo existen 2 tintes
     }
 
     public static RcType GetRcType(this RoomSettings settings)
@@ -63,15 +63,7 @@ public static class RoomSettingsExtensions
         Storage.TintAtmosphere = value;
     }
 
-    public static Color? GetTintCloudAtmosphere(this RoomSettings settings)
-    {
-        return Storage.TintCloudAtmosphere;
-    }
-
-    public static void SetTintCloudAtmosphere(this RoomSettings settings, Color? value)
-    {
-        Storage.TintCloudAtmosphere = value;
-    }
+    // TintCloudAtmosphere eliminado - usar TintAtmosphere para ambos shader global y propiedad ACV
 
     public static void ClearExtendedData(this RoomSettings settings)
     {
@@ -80,6 +72,5 @@ public static class RoomSettingsExtensions
         Storage.ViewType = ViewType.None;
         Storage.TintMultiply = null;
         Storage.TintAtmosphere = null;
-        Storage.TintCloudAtmosphere = null;
     }
 }

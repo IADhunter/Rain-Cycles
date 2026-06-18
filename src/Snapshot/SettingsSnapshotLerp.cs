@@ -108,13 +108,12 @@ public partial class SettingsSnapshot
             snap.TerrainFadeOpacities[i] = Mathf.Lerp(opA, opB, t);
         }
 
-        // RC_TINT
+        // RC_TINT - SOLO DOS COLORES (Multiply y Atmosphere)
         if (a.TintMultiply.HasValue || b.TintMultiply.HasValue)
             snap.TintMultiply = Color.Lerp(a.TintMultiply ?? b.TintMultiply.Value, b.TintMultiply ?? a.TintMultiply.Value, t);
         if (a.TintAtmosphere.HasValue || b.TintAtmosphere.HasValue)
             snap.TintAtmosphere = Color.Lerp(a.TintAtmosphere ?? b.TintAtmosphere.Value, b.TintAtmosphere ?? a.TintAtmosphere.Value, t);
-        if (a.TintCloudAtmosphere.HasValue || b.TintCloudAtmosphere.HasValue)
-            snap.TintCloudAtmosphere = Color.Lerp(a.TintCloudAtmosphere ?? b.TintCloudAtmosphere.Value, b.TintCloudAtmosphere ?? a.TintCloudAtmosphere.Value, t);
+        // Ya no hay TintCloudAtmosphere
 
         // Terrain scalars
         snap.TerrainWaves           = LerpNullable(a.TerrainWaves,           b.TerrainWaves,           t);
@@ -127,10 +126,6 @@ public partial class SettingsSnapshot
         snap.TerrainStainAmount     = LerpNullable(a.TerrainStainAmount,     b.TerrainStainAmount,     t);
         snap.TerrainStainBrightness = LerpNullable(a.TerrainStainBrightness, b.TerrainStainBrightness, t);
         snap.TerrainStainHeight     = LerpNullable(a.TerrainStainHeight,     b.TerrainStainHeight,     t);
-
-        // NOTA: NO interpolamos ModifyEffectColorA/B parameters
-        // Se mantienen tal cual en cada snapshot y se usan para calcular colores finales
-        // La interpolación se hace sobre los colores finales en RoomCameraBlend.Effects.cs
 
         return snap;
     }

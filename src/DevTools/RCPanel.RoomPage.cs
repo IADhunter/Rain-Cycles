@@ -79,7 +79,6 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
             ParentPanel.CurrentRoom.roomSettings.SetViewType(ViewType.None);
             ParentPanel.CurrentRoom.roomSettings.SetTintMultiply(null);
             ParentPanel.CurrentRoom.roomSettings.SetTintAtmosphere(null);
-            ParentPanel.CurrentRoom.roomSettings.SetTintCloudAtmosphere(null);
             var snap = SettingsSnapshot.FromFile(ParentPanel.CurrentRoom.roomSettings.filePath);
             SettingsBlendController.SetActiveSnapshot(snap);
             ParentPanel.ApplyTintsFromSnapshot(snap);

@@ -1,6 +1,7 @@
 using DevInterface;
 using UnityEngine;
 using System.IO;
+using RainCycles.Patches;
 
 namespace FilesSetting;
 
@@ -181,11 +182,12 @@ public class SkyTypeButton : Button
 
         if (room != null)
         {
-            string currentPath = room.roomSettings?.filePath;
-            if (!string.IsNullOrEmpty(currentPath) && File.Exists(currentPath))
+            // Leer de memoria (RoomSettingsExtensions) en lugar del archivo
+            var rs = room.roomSettings;
+            if (rs != null)
             {
-                var snap = SettingsSnapshot.FromFile(currentPath);
-                this.colorA = snap.ViewType == Type ? COLOR_ACTIVE : COLOR_INACTIVE;
+                ViewType currentView = rs.GetViewType();
+                this.colorA = currentView == Type ? COLOR_ACTIVE : COLOR_INACTIVE;
                 return;
             }
         }
@@ -195,7 +197,7 @@ public class SkyTypeButton : Button
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// RC_TYPE Button - Actualizado para leer el estado real del archivo
+// RC_TYPE Button - Ahora lee de memoria (RoomSettingsExtensions)
 // ──────────────────────────────────────────────────────────────────────────
 
 public class RcTypeButton : Button
@@ -234,7 +236,9 @@ public class RcTypeButton : Button
 
     private void UpdateVisual()
     {
-        // Leer el RC_TYPE real del archivo cargado, igual que hace SkyTypeButton
+        // ================================================================
+        // LEER DE MEMORIA (RoomSettingsExtensions) en lugar del archivo
+        // ================================================================
         Room room = null;
         var devUI = this.owner as DevUI;
         if (devUI?.room != null)
@@ -244,12 +248,10 @@ public class RcTypeButton : Button
 
         if (room != null)
         {
-            string currentPath = room.roomSettings?.filePath;
-            if (!string.IsNullOrEmpty(currentPath) && File.Exists(currentPath))
+            var rs = room.roomSettings;
+            if (rs != null && rs.HasRcType())
             {
-                var snap = SettingsSnapshot.FromFile(currentPath);
-                if (snap != null && snap.HasRcType)
-                    currentRcType = snap.RcType;
+                currentRcType = rs.GetRcType();
             }
         }
 

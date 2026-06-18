@@ -8,6 +8,9 @@ namespace RainCycles.Core;
 
 public static partial class SettingsBlendController
 {
+    // ============================================================
+    // OBTENER SLOTS POR TIPO DE SKY
+    // ============================================================
     private static List<BackgroundScene.Simple2DBackgroundIllustration> GetSlotsForSky(SkyType sky)
     {
         if (sky == SkyType.ACV) return _rcSlotsACV;
@@ -16,6 +19,9 @@ public static partial class SettingsBlendController
         return null;
     }
 
+    // ============================================================
+    // FORCE SUN SHADER - Asegura que los slots Sun usen shader aditivo
+    // ============================================================
     private static void ForceSunShader(List<BackgroundScene.Simple2DBackgroundIllustration> sunSlots, RoomCamera cam)
     {
         if (sunSlots == null || cam?.spriteLeasers == null) return;
@@ -30,148 +36,61 @@ public static partial class SettingsBlendController
         }
     }
 
-    private static void PreApplySlotAlphas(List<BackgroundScene.Simple2DBackgroundIllustration> slots)
+    // ============================================================
+    // CREAR SLOTS - 4 slots en orden INVERSO
+    // slot3 (estado 4, detrás) → slot2 → slot1 → slot0 (estado 1, encima)
+    // ============================================================
+    private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateRcSlotsVanilla(
+        BackgroundScene scene, Room room, SkyType sky)
     {
-        if (slots == null || slots.Count < 3) return;
-        if (slots == _rcSlotsPSVFog || slots == _rcSlotsPSVSun) return;
-
-        if (_active && _externalT)
+        var slots = new List<BackgroundScene.Simple2DBackgroundIllustration>();
+        for (int i = 3; i >= 0; i--)
         {
-            float t = _forcedT;
-            slots[0].alpha = 1f - t;
-            slots[1].alpha = 1f;
-            slots[2].alpha = 0f;
+            var slot = new BackgroundScene.Simple2DBackgroundIllustration(
+                scene, "RC_Transparent", new Vector2(683f, 384f));
+            slot.alpha = 0f;
+            scene.AddElement(slot);
+            slots.Insert(0, slot);
         }
-        else if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending)
-        {
-            float t = BlendClock.SubPhaseLocalT;
-            slots[0].alpha = 1f - t;
-            slots[1].alpha = 1f;
-            slots[2].alpha = 0f;
-        }
-        else if (_hasSavedAlphas && _detachedThisFrame)
-        {
-            slots[0].alpha = _savedDayAlpha;
-            slots[1].alpha = _savedDuskAlpha;
-            slots[2].alpha = _savedNightAlpha;
-        }
-        else
-        {
-            slots[0].alpha = 1f;
-            slots[1].alpha = 0f;
-            slots[2].alpha = 0f;
-        }
-
-        _savedDayAlpha = slots[0].alpha;
-        _savedDuskAlpha = slots[1].alpha;
-        _savedNightAlpha = slots[2].alpha;
-        _hasSavedAlphas = true;
+        return slots;
     }
 
-    private static void UpdatePsvSlots(int stateA, int stateB, int stateC, RoomCamera cam)
+    private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateStaticSlotsVanilla(
+        BackgroundScene scene, Room room, SkyType sky)
     {
-        var settings = BlendSettingsLoader.Active;
-        if (settings == null) return;
-
-        var skySlots = _rcSlotsPSV;
-        if (skySlots != null && skySlots.Count >= 3)
-        {
-            string fileA = settings.GetBkgFileForState(stateA, ViewType.PSV);
-            string fileB = settings.GetBkgFileForState(stateB, ViewType.PSV);
-            string fileC = settings.GetBkgFileForState(stateC, ViewType.PSV);
-
-            if (!string.IsNullOrEmpty(fileA) && skySlots[0].illustrationName != Path.GetFileNameWithoutExtension(fileA))
-                RefreshSlotSprite(skySlots[0], Path.GetFileNameWithoutExtension(fileA), cam);
-            if (!string.IsNullOrEmpty(fileB) && skySlots[1].illustrationName != Path.GetFileNameWithoutExtension(fileB))
-                RefreshSlotSprite(skySlots[1], Path.GetFileNameWithoutExtension(fileB), cam);
-            if (!string.IsNullOrEmpty(fileC) && skySlots[2].illustrationName != Path.GetFileNameWithoutExtension(fileC))
-                RefreshSlotSprite(skySlots[2], Path.GetFileNameWithoutExtension(fileC), cam);
-        }
-
-        var fogSlots = _rcSlotsPSVFog;
-        if (fogSlots != null && fogSlots.Count >= 3)
-        {
-            string fogA = settings.GetBkgFogForState(stateA);
-            string fogB = settings.GetBkgFogForState(stateB);
-            string fogC = settings.GetBkgFogForState(stateC);
-
-            if (!string.IsNullOrEmpty(fogA) && fogSlots[0].illustrationName != Path.GetFileNameWithoutExtension(fogA))
-                RefreshSlotSprite(fogSlots[0], Path.GetFileNameWithoutExtension(fogA), cam);
-            if (!string.IsNullOrEmpty(fogB) && fogSlots[1].illustrationName != Path.GetFileNameWithoutExtension(fogB))
-                RefreshSlotSprite(fogSlots[1], Path.GetFileNameWithoutExtension(fogB), cam);
-            if (!string.IsNullOrEmpty(fogC) && fogSlots[2].illustrationName != Path.GetFileNameWithoutExtension(fogC))
-                RefreshSlotSprite(fogSlots[2], Path.GetFileNameWithoutExtension(fogC), cam);
-        }
-
-        var sunSlots = _rcSlotsPSVSun;
-        if (sunSlots != null && sunSlots.Count >= 3)
-        {
-            string sunA = settings.GetBkgSunForState(stateA);
-            string sunB = settings.GetBkgSunForState(stateB);
-            string sunC = settings.GetBkgSunForState(stateC);
-
-            if (!string.IsNullOrEmpty(sunA) && sunSlots[0].illustrationName != Path.GetFileNameWithoutExtension(sunA))
-                RefreshSlotSprite(sunSlots[0], Path.GetFileNameWithoutExtension(sunA), cam);
-            if (!string.IsNullOrEmpty(sunB) && sunSlots[1].illustrationName != Path.GetFileNameWithoutExtension(sunB))
-                RefreshSlotSprite(sunSlots[1], Path.GetFileNameWithoutExtension(sunB), cam);
-            if (!string.IsNullOrEmpty(sunC) && sunSlots[2].illustrationName != Path.GetFileNameWithoutExtension(sunC))
-                RefreshSlotSprite(sunSlots[2], Path.GetFileNameWithoutExtension(sunC), cam);
-        }
+        var slots = new List<BackgroundScene.Simple2DBackgroundIllustration>();
+        var slot = new BackgroundScene.Simple2DBackgroundIllustration(
+            scene, "RC_Transparent", new Vector2(683f, 384f));
+        slot.alpha = 0f;
+        scene.AddElement(slot);
+        slots.Add(slot);
+        return slots;
     }
 
-    private static int _lastApplyFrame = -1;
-    private static float _lastAppliedT = -1f;
-
-    private static void ApplyPsvAlphas(float t, bool isBlending)
+    private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateSunSlots(
+        BackgroundScene scene, Room room, SkyType sky, bool isStatic)
     {
-        bool isManualMode = _active && _externalT;
-        
-        if (!isManualMode && Time.frameCount == _lastApplyFrame) 
-            return;
-        
-        var allSlots = new[] { _rcSlotsPSV, _rcSlotsPSVFog, _rcSlotsPSVSun };
-        
-        foreach (var slots in allSlots)
+        int count = isStatic ? 1 : 4;
+        var slots = new List<BackgroundScene.Simple2DBackgroundIllustration>();
+        for (int i = count - 1; i >= 0; i--)
         {
-            if (slots == null || slots.Count < 3) continue;
-            
-            float alphaDay, alphaDusk, alphaNight;
-            
-            if (isBlending)
-            {
-                if (slots == _rcSlotsPSV)
-                {
-                    alphaDay = 1f - t;
-                    alphaDusk = 1f;
-                    alphaNight = 0f;
-                }
-                else
-                {
-                    alphaDay = 1f - t;
-                    alphaDusk = t;
-                    alphaNight = 0f;
-                }
-            }
-            else
-            {
-                alphaDay = 1f;
-                alphaDusk = 0f;
-                alphaNight = 0f;
-            }
-            
-            slots[0].alpha = alphaDay;
-            slots[1].alpha = alphaDusk;
-            slots[2].alpha = alphaNight;
+            var slot = new BackgroundScene.Simple2DBackgroundIllustration(
+                scene, "RC_Transparent", new Vector2(683f, 384f));
+            slot.depth = 22.5f;
+            slot.alpha = 0f;
+            scene.AddElement(slot);
+            slots.Insert(0, slot);
         }
-        
-        _lastApplyFrame = Time.frameCount;
-        _lastAppliedT = t;
+        return slots;
     }
 
-    private static void UpdateRcSlots(SkyType sky, int stateA, int stateB, int stateC, RoomCamera forcedCam = null, Room targetRoom = null)
+    // ============================================================
+    // ACTUALIZAR SLOTS RC - Asigna imágenes a los 4 slots
+    // ============================================================
+    private static void UpdateRcSlots(SkyType sky, int stateA, int stateB, RoomCamera forcedCam = null, Room targetRoom = null)
     {
         var slots = GetSlotsForSky(sky);
-        if (slots == null || slots.Count < 3) return;
+        if (slots == null || slots.Count < 4) return;
 
         string regionCode = null;
         if (targetRoom != null)
@@ -189,78 +108,205 @@ public static partial class SettingsBlendController
         if (cam == null && targetRoom != null)
             cam = targetRoom.game?.cameras?[0];
 
-        if (cam == null || (_room != null && cam.room != _room && (targetRoom == null || cam.room != targetRoom)))
-        {
-            _pendingSkySync = true;
-            _pendingSyncSky = sky == SkyType.ACV ? 0 : (sky == SkyType.RTV ? 1 : 2);
-            _pendingStateA = stateA;
-            _pendingStateB = stateB;
-            return;
-        }
+        if (cam == null || (_room != null && cam.room != _room && (targetRoom == null || cam.room != targetRoom))) return;
 
         ViewType view = sky == SkyType.ACV ? ViewType.ACV :
                         sky == SkyType.RTV ? ViewType.RTV : ViewType.PSV;
 
-        string fileA = effectiveSettings.GetBkgFileForState(stateA, view);
-        string fileB = effectiveSettings.GetBkgFileForState(stateB, view);
-        string fileC = effectiveSettings.GetBkgFileForState(stateC, view);
-
-        if (!string.IsNullOrEmpty(fileA) && slots[0].illustrationName != Path.GetFileNameWithoutExtension(fileA))
-            RefreshSlotSprite(slots[0], Path.GetFileNameWithoutExtension(fileA), cam);
-        if (!string.IsNullOrEmpty(fileB) && slots[1].illustrationName != Path.GetFileNameWithoutExtension(fileB))
-            RefreshSlotSprite(slots[1], Path.GetFileNameWithoutExtension(fileB), cam);
-        if (!string.IsNullOrEmpty(fileC) && slots[2].illustrationName != Path.GetFileNameWithoutExtension(fileC))
-            RefreshSlotSprite(slots[2], Path.GetFileNameWithoutExtension(fileC), cam);
-
-        if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending)
+        // Asignar imágenes a los 4 slots según estado
+        for (int state = 1; state <= 4; state++)
         {
-            float t = BlendClock.SubPhaseLocalT;
-            slots[0].alpha = 1f - t;
-            slots[1].alpha = 1f;
-            slots[2].alpha = 0f;
-        }
-        else
-        {
-            slots[0].alpha = 1f;
-            slots[1].alpha = 0f;
-            slots[2].alpha = 0f;
+            string file = effectiveSettings.GetBkgFileForState(state, view);
+            int slotIndex = state - 1;
+            
+            if (!string.IsNullOrEmpty(file) && slots[slotIndex].illustrationName != Path.GetFileNameWithoutExtension(file))
+            {
+                RefreshSlotSprite(slots[slotIndex], Path.GetFileNameWithoutExtension(file), cam);
+            }
         }
 
-        SetSlotDay(sky, stateA);
-        SetSlotDusk(sky, stateB);
-        SetSlotNight(sky, stateC);
+        // Aplicar alphas según fase actual
+        bool isBlending = BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending;
+        float t = isBlending ? BlendClock.SubPhaseLocalT : 0f;
+        
+        ApplyRcSlotsAlpha(sky, t, isBlending, stateA, stateB);
 
+        // Actualizar PSV (fog y sun)
         if (sky == SkyType.PSV)
         {
-            UpdatePsvSlots(stateA, stateB, stateC, cam);
-            ApplyPsvAlphas(BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending ? BlendClock.SubPhaseLocalT : 0f, BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending);
+            UpdatePsvSlots(stateA, stateB, cam);
+            ApplyPsvAlphas(t, isBlending, stateA, stateB);
         }
-
-        _pendingSkySync = false;
     }
 
-    private static void ApplyRcSlotsAlpha(SkyType sky, float t, bool isBlending)
+    // ============================================================
+    // APLICAR ALPHAS A SLOTS RC
+    // ============================================================
+    private static void ApplyRcSlotsAlpha(SkyType sky, float t, bool isBlending, int? overrideStateA = null, int? overrideStateB = null)
     {
         var slots = GetSlotsForSky(sky);
-        if (slots == null || slots.Count < 3) return;
+        if (slots == null || slots.Count < 4) return;
 
-        if (isBlending)
+        int stateA, stateB;
+        if (overrideStateA.HasValue && overrideStateB.HasValue)
         {
-            slots[0].alpha = 1f - t;
-            slots[1].alpha = 1f;
-            slots[2].alpha = 0f;
+            stateA = overrideStateA.Value;
+            stateB = overrideStateB.Value;
+        }
+        else if (BlendClock.IsRunning)
+        {
+            stateA = BlendClock.StateA;
+            stateB = BlendClock.StateB;
+        }
+        else if (_externalT)
+        {
+            stateA = _manualStateA;
+            stateB = _manualStateB;
         }
         else
         {
-            slots[0].alpha = 1f;
-            slots[1].alpha = 0f;
-            slots[2].alpha = 0f;
+            stateA = BlendClock.StateA > 0 ? BlendClock.StateA : 1;
+            stateB = stateA;
         }
 
-        if (sky == SkyType.PSV)
-            ApplyPsvAlphas(t, isBlending);
+        int slotA = stateA - 1;
+        int slotB = stateB - 1;
+        bool isClosingTransition = (stateA == 4 && stateB == 1);
+        bool actuallyBlending = isBlending || (_externalT && stateA != stateB) || (overrideStateA.HasValue && overrideStateA.Value != overrideStateB.Value);
+
+        if (actuallyBlending)
+        {
+            for (int i = 0; i < 4; i++)
+                slots[i].alpha = 0f;
+
+            if (sky == SkyType.PSV)
+            {
+                if (slotA >= 0 && slotA < 4)
+                    slots[slotA].alpha = 1f - t;
+                if (slotB >= 0 && slotB < 4)
+                    slots[slotB].alpha = t;
+            }
+            else
+            {
+                if (isClosingTransition)
+                {
+                    if (slotA >= 0 && slotA < 4)
+                        slots[slotA].alpha = 1f;
+                    if (slotB >= 0 && slotB < 4)
+                        slots[slotB].alpha = t;
+                }
+                else
+                {
+                    if (slotA >= 0 && slotA < 4)
+                        slots[slotA].alpha = 1f - t;
+                    if (slotB >= 0 && slotB < 4)
+                        slots[slotB].alpha = 1f;
+                }
+            }
+        }
+        else
+        {
+            int currentState = stateA;
+            int activeSlot = currentState - 1;
+            
+            for (int i = 0; i < 4; i++)
+                slots[i].alpha = (i == activeSlot) ? 1f : 0f;
+        }
     }
 
+    // ============================================================
+    // ACTUALIZAR SLOTS PSV (fog y sun)
+    // ============================================================
+    private static void UpdatePsvSlots(int stateA, int stateB, RoomCamera cam)
+    {
+        var settings = BlendSettingsLoader.Active;
+        if (settings == null) return;
+
+        if (_rcSlotsPSVFog != null && _rcSlotsPSVFog.Count >= 4)
+        {
+            for (int state = 1; state <= 4; state++)
+            {
+                string fog = settings.GetBkgFogForState(state);
+                int idx = state - 1;
+                if (!string.IsNullOrEmpty(fog) && _rcSlotsPSVFog[idx].illustrationName != Path.GetFileNameWithoutExtension(fog))
+                    RefreshSlotSprite(_rcSlotsPSVFog[idx], Path.GetFileNameWithoutExtension(fog), cam);
+            }
+        }
+
+        if (_rcSlotsPSVSun != null && _rcSlotsPSVSun.Count >= 4)
+        {
+            for (int state = 1; state <= 4; state++)
+            {
+                string sun = settings.GetBkgSunForState(state);
+                int idx = state - 1;
+                if (!string.IsNullOrEmpty(sun) && _rcSlotsPSVSun[idx].illustrationName != Path.GetFileNameWithoutExtension(sun))
+                    RefreshSlotSprite(_rcSlotsPSVSun[idx], Path.GetFileNameWithoutExtension(sun), cam);
+            }
+            ForceSunShader(_rcSlotsPSVSun, cam);
+        }
+    }
+
+    // ============================================================
+    // APLICAR ALPHAS PSV
+    // ============================================================
+    public static void ApplyPsvAlphas(float t, bool isBlending, int? overrideStateA = null, int? overrideStateB = null)
+    {
+        var allSlots = new[] { _rcSlotsPSVFog, _rcSlotsPSVSun };
+        
+        foreach (var slots in allSlots)
+        {
+            if (slots == null || slots.Count < 4) continue;
+
+            int stateA, stateB;
+            if (overrideStateA.HasValue && overrideStateB.HasValue)
+            {
+                stateA = overrideStateA.Value;
+                stateB = overrideStateB.Value;
+            }
+            else if (BlendClock.IsRunning)
+            {
+                stateA = BlendClock.StateA;
+                stateB = BlendClock.StateB;
+            }
+            else if (_externalT)
+            {
+                stateA = _manualStateA;
+                stateB = _manualStateB;
+            }
+            else
+            {
+                stateA = BlendClock.StateA > 0 ? BlendClock.StateA : 1;
+                stateB = stateA;
+            }
+
+            int slotA = stateA - 1;
+            int slotB = stateB - 1;
+            bool actuallyBlending = isBlending || (_externalT && stateA != stateB) || (overrideStateA.HasValue && overrideStateA.Value != overrideStateB.Value);
+
+            if (actuallyBlending)
+            {
+                for (int i = 0; i < 4; i++)
+                    slots[i].alpha = 0f;
+
+                if (slotA >= 0 && slotA < 4)
+                    slots[slotA].alpha = 1f - t;
+                if (slotB >= 0 && slotB < 4)
+                    slots[slotB].alpha = t;
+            }
+            else
+            {
+                int currentState = stateA;
+                int activeSlot = currentState - 1;
+                
+                for (int i = 0; i < 4; i++)
+                    slots[i].alpha = (i == activeSlot) ? 1f : 0f;
+            }
+        }
+    }
+
+    // ============================================================
+    // SYNC SKY SLOTS - Punto de entrada unificado para todos los casos
+    // ============================================================
     public static void SyncSkySlots(Room room, int stateA, int stateB)
     {
         if (room == null) return;
@@ -273,14 +319,12 @@ public static partial class SettingsBlendController
         var skyType = GetViewFromLoadedSettings(room);
         if (skyType == SkyType.None) return;
 
-        int stateC = NextStateIn(settings, stateB);
-        SetSlotDay(skyType, stateA);
-        SetSlotDusk(skyType, stateB);
-        SetSlotNight(skyType, stateC);
-
-        UpdateRcSlots(skyType, stateA, stateB, stateC, null, room);
+        UpdateRcSlots(skyType, stateA, stateB, null, room);
     }
 
+    // ============================================================
+    // APPLY SKY FOR STATE
+    // ============================================================
     public static void ApplySkyForState(int state, Room room)
     {
         if (room == null) return;
@@ -291,81 +335,13 @@ public static partial class SettingsBlendController
 
         var skyType = GetViewFromLoadedSettings(room);
         if (skyType == SkyType.None) return;
-        if (GetSlotDay(skyType) == state) return;
 
-        int stateB = NextStateIn(settings, state);
-        int stateC = NextStateIn(settings, stateB);
-
-        SetSlotDay(skyType, state);
-        SetSlotDusk(skyType, stateB);
-        SetSlotNight(skyType, stateC);
-
-        UpdateRcSlots(skyType, state, stateB, stateC, null, room);
-        ApplyRcSlotsAlpha(skyType, 0f, false);
+        UpdateRcSlots(skyType, state, state, null, room);
     }
 
-    public static void RotateSlotsOnIdle(Room room, int currentState)
-    {
-        if (room == null) return;
-        var settings = BlendSettingsLoader.Active;
-        if (settings == null) return;
-
-        string roomName = room.abstractRoom?.name;
-        if (roomName == null) return;
-
-        var skyType = GetViewFromLoadedSettings(room);
-        if (skyType == SkyType.None) return;
-
-        var slots = GetSlotsForSky(skyType);
-        if (slots == null || slots.Count < 3) return;
-        if (currentState == _lastIdleRotatedState) return;
-
-        int stateB = NextStateIn(settings, currentState);
-        int stateC = NextStateIn(settings, stateB);
-
-        ViewType view = skyType == SkyType.ACV ? ViewType.ACV
-                      : skyType == SkyType.RTV ? ViewType.RTV : ViewType.PSV;
-
-        string fileA = settings.GetBkgFileForState(currentState, view);
-        string fileB = settings.GetBkgFileForState(stateB, view);
-        string fileC = settings.GetBkgFileForState(stateC, view);
-
-        var cam = room.game?.cameras?[0];
-
-        if (!string.IsNullOrEmpty(fileA) && slots[0].illustrationName != fileA)
-            RefreshSlotSprite(slots[0], fileA, cam);
-        if (!string.IsNullOrEmpty(fileB) && slots[1].illustrationName != fileB)
-            RefreshSlotSprite(slots[1], fileB, cam);
-        if (!string.IsNullOrEmpty(fileC) && slots[2].illustrationName != fileC)
-            RefreshSlotSprite(slots[2], fileC, cam);
-
-        slots[0].alpha = 1f;
-        slots[1].alpha = 0f;
-        slots[2].alpha = 0f;
-
-        SetSlotDay(skyType, currentState);
-        SetSlotDusk(skyType, stateB);
-        SetSlotNight(skyType, stateC);
-
-        if (skyType == SkyType.PSV)
-        {
-            UpdatePsvSlots(currentState, stateB, stateC, cam);
-            ApplyPsvAlphas(0f, false);
-        }
-
-        _lastIdleRotatedState = currentState;
-    }
-
-    /// <summary>
-    /// Siguiente estado en rotación cíclica intrínseca: 1→2→3→4→1.
-    /// No depende de secuencias configuradas en archivo.
-    /// </summary>
-    private static int NextStateIn(BlendSettings settings, int state)
-    {
-        if (settings == null || state < 1 || state > 4) return state;
-        return (state % 4) + 1;
-    }
-
+    // ============================================================
+    // REFRESH SLOT SPRITE - SIN PREFIJOS, USANDO LA IMAGEN CARGADA
+    // ============================================================
     private static bool RefreshSlotSprite(
         BackgroundScene.Simple2DBackgroundIllustration slot,
         string newName, RoomCamera cam)
@@ -374,7 +350,30 @@ public static partial class SettingsBlendController
 
         float currentAlpha = slot.alpha;
         string oldName = slot.illustrationName;
-        slot.illustrationName = newName;
+        
+        string finalName = newName;
+        
+        if (!Futile.atlasManager.DoesContainElementWithName(newName))
+        {
+            string modName = BlendSettingsLoader.ActiveModName;
+            if (!string.IsNullOrEmpty(modName))
+            {
+                string path = ResolveIllustrationPath(modName, newName);
+                if (path != null && File.Exists(path))
+                {
+                    var tex = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+                    AssetManager.SafeWWWLoadTexture(ref tex, "file:///" + path, true, true);
+                    HeavyTexturesCache.LoadAndCacheAtlasFromTexture(newName, tex, false);
+                }
+            }
+        }
+        
+        if (!Futile.atlasManager.DoesContainElementWithName(finalName))
+        {
+            finalName = "RC_Transparent";
+        }
+        
+        slot.illustrationName = finalName;
 
         var cameras = cam?.room?.game?.cameras
                    ?? slot.scene?.room?.game?.cameras;
@@ -397,7 +396,7 @@ public static partial class SettingsBlendController
                 for (int i = 0; i < container.GetChildCount(); i++)
                     if (container.GetChildAt(i) == oldSprite) { childIndex = i; break; }
 
-                var newSprite = new FSprite(newName, true);
+                var newSprite = new FSprite(finalName, true);
                 newSprite.x = oldSprite.x;
                 newSprite.y = oldSprite.y;
                 bool isSunSlot = (_rcSlotsPSVSun != null && _rcSlotsPSVSun.Contains(slot));
@@ -425,28 +424,61 @@ public static partial class SettingsBlendController
         return success;
     }
 
+    // ================================================================
+    // RESOLVER RUTA DE IMAGEN
+    // ================================================================
+    private static string ResolveIllustrationPath(string modName, string imageName)
+    {
+        if (string.IsNullOrEmpty(modName) || string.IsNullOrEmpty(imageName))
+            return null;
+
+        foreach (var mod in ModManager.ActiveMods)
+        {
+            string modFolderName = Path.GetFileName(mod.path);
+            
+            if (string.Equals(modFolderName, modName, System.StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(mod.name, modName, System.StringComparison.OrdinalIgnoreCase))
+            {
+                string candidate = Path.Combine(mod.path, "Illustrations", imageName + ".png");
+                if (File.Exists(candidate))
+                    return candidate;
+                
+                string illustrationsDir = Path.Combine(mod.path, "Illustrations");
+                if (Directory.Exists(illustrationsDir))
+                {
+                    foreach (string file in Directory.GetFiles(illustrationsDir, imageName + ".png", SearchOption.AllDirectories))
+                        return file;
+                }
+            }
+        }
+
+        string fallback = AssetManager.ResolveFilePath("Illustrations" + Path.DirectorySeparatorChar + imageName + ".png");
+        if (!string.IsNullOrEmpty(fallback) && File.Exists(fallback))
+            return fallback;
+
+        return null;
+    }
+
+    // ============================================================
+    // CLEAR ALL SLOTS
+    // ============================================================
     public static void ClearAllSlots()
     {
         _rcSlotsACV = null;
         _acvScene = null;
-        _acvSlotDay = _acvSlotDusk = _acvSlotNight = -1;
 
         _rcSlotsRTV = null;
         _rtvScene = null;
-        _rtvSlotDay = _rtvSlotDusk = _rtvSlotNight = -1;
 
         _rcSlotsPSV = null;
         _rcSlotsPSVFog = null;
         _rcSlotsPSVSun = null;
         _psvScene = null;
-        _psvSlotDay = _psvSlotDusk = _psvSlotNight = -1;
 
         _rcSlotsStaticACV = null;
         _rcSlotsStaticRTV = null;
         _rcSlotsStaticPSV = null;
 
-        _lastIdleRotatedState = -1;
-        _hasSavedAlphas = false;
-        _pendingSkySync = false;
+        _forceSkyRefresh = false;
     }
 }

@@ -21,11 +21,10 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 
     // Botones de tinte (horizontal - misma fila)
     private const float TINT_BTN_Y = 29f;
-    private const float TINT_BTN_WIDTH = 40f;
+    private const float TINT_BTN_WIDTH = 60f;
     private const float TINT_BTN_SPACING = 5f;
     private const float TINT_MULTIPLY_X = 5f;
     private const float TINT_ATMOSPHERE_X = TINT_MULTIPLY_X + TINT_BTN_WIDTH + TINT_BTN_SPACING;
-    private const float TINT_CLOUD_X = TINT_ATMOSPHERE_X + TINT_BTN_WIDTH + TINT_BTN_SPACING;
 
     private const float HSV_SLIDER_X = 5f;
     private const float HSV_SLIDER_Y = 56f;
@@ -56,11 +55,10 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
     private readonly ViewType[] _viewTypes = { ViewType.None, ViewType.ACV, ViewType.RTV, ViewType.PSV };
     private int _viewTypeIndex = 0;
 
-    // Tinte activo
+    // Tinte activo (0=Multiply, 1=Atmosphere)
     private int _activeTint = 0;
     private Button _multiplyBtn;
     private Button _atmosphereBtn;
-    private Button _cloudBtn;
     private Color _currentColor = Color.white;
 
     // Color editor
@@ -95,17 +93,14 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         
         LoadCurrentViewType();
 
-        // Botones de tinte (horizontal - misma fila Y)
+        // Botones de tinte (solo 2: Multiply y Atmosphere)
         _multiplyBtn = new Button(owner, "RC_Tint_Multiply", this,
-            new Vector2(TINT_MULTIPLY_X, TINT_BTN_Y), TINT_BTN_WIDTH, "Multi");
+            new Vector2(TINT_MULTIPLY_X, TINT_BTN_Y), TINT_BTN_WIDTH, "Multiply");
         _atmosphereBtn = new Button(owner, "RC_Tint_Atmosphere", this,
-            new Vector2(TINT_ATMOSPHERE_X, TINT_BTN_Y), TINT_BTN_WIDTH, "Atmos");
-        _cloudBtn = new Button(owner, "RC_Tint_Cloud", this,
-            new Vector2(TINT_CLOUD_X, TINT_BTN_Y), TINT_BTN_WIDTH, "Cloud");
+            new Vector2(TINT_ATMOSPHERE_X, TINT_BTN_Y), TINT_BTN_WIDTH, "Atmosphere");
         
         subNodes.Add(_multiplyBtn);
         subNodes.Add(_atmosphereBtn);
-        subNodes.Add(_cloudBtn);
         
         UpdateTintButtonsHighlight();
 
@@ -158,7 +153,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 
     private void SetViewType(int delta)
     {
-        // Bloquear si EditMode está apagado
         if (!BlendClock.EditMode) return;
         
         _viewTypeIndex += delta;
@@ -176,7 +170,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 
     private void SaveCurrentColor()
     {
-        // Bloquear si EditMode está apagado
         if (!BlendClock.EditMode) return;
         
         var roomSettings = ParentPanel.CurrentRoom?.roomSettings;
@@ -184,24 +177,19 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         
         switch (_activeTint)
         {
-            case 0:
+            case 0: // Multiply
                 roomSettings.SetTintMultiply(_currentColor);
+                // Feedback visual inmediato
+                Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, 
+                    new Vector4(_currentColor.r, _currentColor.g, _currentColor.b, 1f));
                 break;
-            case 1:
+            case 1: // Atmosphere
                 roomSettings.SetTintAtmosphere(_currentColor);
-                break;
-            case 2:
-                roomSettings.SetTintCloudAtmosphere(_currentColor);
-                
-                // === MISMO PATRÓN QUE EL BLEND ===
-                // 1. Actualizar la fuente de verdad
-                SettingsBlendController.SetLastAtmosphereColor(_currentColor);
-                
-                // 2. Actualizar shader global
+                // Feedback visual inmediato - shader global
                 Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, 
                     new Vector4(_currentColor.r, _currentColor.g, _currentColor.b, 1f));
                 
-                // 3. Aplicar directamente al AboveCloudsView si existe
+                // También aplicar directamente a ACV si existe en la sala
                 if (ParentPanel.CurrentRoom != null)
                 {
                     for (int i = 0; i < ParentPanel.CurrentRoom.updateList.Count; i++)
@@ -209,6 +197,7 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
                         if (ParentPanel.CurrentRoom.updateList[i] is AboveCloudsView acv)
                         {
                             acv.atmosphereColor = _currentColor;
+                            RSPlugin.log.LogDebug($"[ViewPage] Atmosphere aplicado a ACV: {_currentColor}");
                             break;
                         }
                     }
@@ -216,25 +205,9 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
                 break;
         }
         
-        // Aplicar visualmente inmediatamente
-        var snap = GetCurrentSnapshot();
-        if (snap != null)
-        {
-            // Actualizar el snapshot en caché para que coincida con RoomSettings
-            switch (_activeTint)
-            {
-                case 0:
-                    snap.TintMultiply = _currentColor;
-                    break;
-                case 1:
-                    snap.TintAtmosphere = _currentColor;
-                    break;
-                case 2:
-                    snap.TintCloudAtmosphere = _currentColor;
-                    break;
-            }
-            ParentPanel.ApplyTintsFromSnapshot(snap);
-        }
+        // NOTA: NO actualizamos snapshots aquí.
+        // Los snapshots se actualizan SOLO cuando se guarda el archivo (RoomSettings.Save)
+        // y luego RefreshActiveSnapshots() recarga desde disco.
     }
 
     private SettingsSnapshot GetCurrentSnapshot()
@@ -251,17 +224,13 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         
         switch (_activeTint)
         {
-            case 0:
+            case 0: // Multiply
                 if (roomSettings.GetTintMultiply().HasValue)
                     _currentColor = roomSettings.GetTintMultiply().Value;
                 break;
-            case 1:
+            case 1: // Atmosphere
                 if (roomSettings.GetTintAtmosphere().HasValue)
                     _currentColor = roomSettings.GetTintAtmosphere().Value;
-                break;
-            case 2:
-                if (roomSettings.GetTintCloudAtmosphere().HasValue)
-                    _currentColor = roomSettings.GetTintCloudAtmosphere().Value;
                 break;
         }
         
@@ -280,16 +249,12 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         _colorPreview.SetColor(_currentColor);
     }
 
-    // CRÍTICO: Cuando el slider H cambia, forzamos el hue al FreeColorPicker
-    // porque el Color que viaja puede haber perdido H si S=0 o V=0
     private void OnColorEditorChanged(Color color)
     {
-        // Bloquear si EditMode está apagado
         if (!BlendClock.EditMode) return;
         
         _currentColor = color;
         
-        // Sincronizar hue al picker para que el gradiente cambie independientemente de S/V
         _freeColorPicker.SetHue(_colorEditor.CurrentHue01);
         _freeColorPicker.SetColor(_currentColor);
         
@@ -299,7 +264,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 
     private void OnFreeColorSelected(Color color)
     {
-        // Bloquear si EditMode está apagado
         if (!BlendClock.EditMode) return;
         
         _currentColor = color;
@@ -310,7 +274,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 
     private void OnColorPickerClicked()
     {
-        // Bloquear si EditMode está apagado
         if (!BlendClock.EditMode) return;
         
         if (ScreenColorPicker.IsActive)
@@ -342,7 +305,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         
         _multiplyBtn.colorA = _activeTint == 0 ? activeColor : normalColor;
         _atmosphereBtn.colorA = _activeTint == 1 ? activeColor : normalColor;
-        _cloudBtn.colorA = _activeTint == 2 ? activeColor : normalColor;
     }
 
     private void SetActiveTint(int tint)
@@ -356,7 +318,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
     {
         if (type != DevUISignalType.ButtonClick) return;
         
-        // Bloquear todo si EditMode está apagado (excepto el botón de EditMode que está en otro panel)
         if (!BlendClock.EditMode) return;
         
         if (sender.IDstring == "RC_ViewType_Prev")
@@ -378,11 +339,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         if (sender.IDstring == "RC_Tint_Atmosphere")
         {
             SetActiveTint(1);
-            return;
-        }
-        if (sender.IDstring == "RC_Tint_Cloud")
-        {
-            SetActiveTint(2);
             return;
         }
         

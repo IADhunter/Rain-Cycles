@@ -82,6 +82,14 @@ public static partial class RoomCameraExtensions
         ClearEffectData(cam);
 
         cam.paletteBlend = 0f;
+
+        // ════════════════════════════════════════════════════════════════════
+        // LIMPIAR CACHE DE LA SALA ASOCIADA A ESTA CÁMARA
+        // ════════════════════════════════════════════════════════════════════
+        if (!string.IsNullOrEmpty(data.roomName))
+        {
+            InvalidateRoomCache(data.roomName);
+        }
     }
 
     private static bool ShouldHaveBlendActive(RoomCamera cam)
