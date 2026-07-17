@@ -21,10 +21,26 @@ public static class RainCyclesAPI
     }
 
     internal static void InvokeRegionEnter(RainCyclesRegionEventArgs args)
-        => OnRegionEnter?.Invoke(null, args);
+    {
+        Delegate[] dlist = OnRegionEnter?.GetInvocationList();
+        if (dlist == null) return;
+        foreach (Delegate d in dlist)
+        {
+            try { ((EventHandler<RainCyclesRegionEventArgs>)d).Invoke(null, args); }
+            catch (Exception ex) { RSPlugin.log.LogWarning($"[RainCyclesAPI] Handler exception in OnRegionEnter: {ex.Message}"); }
+        }
+    }
 
     internal static void InvokeStateChanged(RainCyclesStateEventArgs args)
-        => OnStateChanged?.Invoke(null, args);
+    {
+        Delegate[] dlist = OnStateChanged?.GetInvocationList();
+        if (dlist == null) return;
+        foreach (Delegate d in dlist)
+        {
+            try { ((EventHandler<RainCyclesStateEventArgs>)d).Invoke(null, args); }
+            catch (Exception ex) { RSPlugin.log.LogWarning($"[RainCyclesAPI] Handler exception in OnStateChanged: {ex.Message}"); }
+        }
+    }
 }
 
 public class RainCyclesRegionEventArgs : EventArgs

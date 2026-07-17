@@ -53,6 +53,7 @@ public static class BlendClock
     private static float     _subIdleDuration;
     private static float     _subBlendDuration;
     private static float     _lastCheckedT = -1f;
+    private static bool     _didReset = false;
 
     public static void SetCustomPendingStop()
     {
@@ -160,6 +161,7 @@ public static class BlendClock
         _rainTimer = rainTimer;
         _rainCycleLen = Mathf.Max(1, rainCycleLength);
         _timer += dt;
+        _didReset = false;
 
         switch (_mode)
         {
@@ -296,6 +298,7 @@ public static class BlendClock
                     T = 0f;
                     _lastTransitionIndex = -1;
                     UpdateStatesFromT();
+                    _didReset = true;
                 }
             }
         }
@@ -415,8 +418,7 @@ public static class BlendClock
 
             if (threshold == 0.00f)
             {
-                if (isLoop && prevT > 0.85f && currT < 0.15f)
-                    crossed = true;
+                crossed = isLoop && (_didReset || (prevT > 0.65f && currT < 0.15f));
             }
             else
             {
