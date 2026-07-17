@@ -14,17 +14,16 @@ public static class StateFileResolver
     private static int  _frozenCycle    = 0;
     private static bool _hasFrozenCycle = false;
     
-    // Estado actual del ciclo (1..4)
     private static int _currentCycleState = 1;
     
+    private static readonly Dictionary<(string roomName, int state, string slugcat, string dlcs), string> _resolutionCache
+        = new Dictionary<(string, int, string, string), string>();
+    
     // ============================================================
-    // SISTEMA DE PENDING DELETE - Estados marcados para eliminar al cerrar
+    // SISTEMA DE PENDING DELETE
     // ============================================================
     private static readonly HashSet<string> _pendingDeletes = new HashSet<string>();
     
-    /// <summary>
-    /// Clave única para identificar un estado: "ROOM_STATE" ej. "UW_F01_1"
-    /// </summary>
     private static string GetPendingKey(string roomName, int state)
         => $"{roomName}_{state}";
     
@@ -32,12 +31,7 @@ public static class StateFileResolver
     {
         string key = GetPendingKey(roomName, state);
         _pendingDeletes.Add(key);
-        
-        // ════════════════════════════════════════════════════════════════════
-        // INVALIDAR CACHE AL MARCAR PARA ELIMINAR
-        // ════════════════════════════════════════════════════════════════════
         RoomCameraExtensions.InvalidateRoomCache(roomName);
-        
         RSPlugin.log.LogInfo($"[StateFileResolver] Marcado para eliminar: {roomName} estado {state}");
     }
     
@@ -45,12 +39,7 @@ public static class StateFileResolver
     {
         string key = GetPendingKey(roomName, state);
         _pendingDeletes.Remove(key);
-        
-        // ════════════════════════════════════════════════════════════════════
-        // INVALIDAR CACHE AL DESMARCAR
-        // ════════════════════════════════════════════════════════════════════
         RoomCameraExtensions.InvalidateRoomCache(roomName);
-        
         RSPlugin.log.LogInfo($"[StateFileResolver] Desmarcado: {roomName} estado {state}");
     }
     
@@ -60,9 +49,6 @@ public static class StateFileResolver
         return _pendingDeletes.Contains(key);
     }
     
-    /// <summary>
-    /// Devuelve los estados existentes EXCLUYENDO los marcados para borrar
-    /// </summary>
     public static List<int> GetActiveStates(string roomName)
     {
         var result = new List<int>();
@@ -75,29 +61,21 @@ public static class StateFileResolver
         return result;
     }
     
-    /// <summary>
-    /// Verifica si una sala tiene exactamente 4 estados activos
-    /// </summary>
     public static bool HasFullStates(string roomName)
     {
         return GetActiveStates(roomName).Count == 4;
     }
     
-    /// <summary>
-    /// Ejecutar al cerrar la partida (ShutDownProcess)
-    /// </summary>
     public static void ExecutePendingDeletes()
     {
         if (_pendingDeletes.Count == 0) return;
         
         RSPlugin.log.LogInfo($"[StateFileResolver] Ejecutando {_pendingDeletes.Count} eliminaciones pendientes");
         
-        // Recopilar nombres de salas afectadas
         var affectedRooms = new HashSet<string>();
         
         foreach (string key in _pendingDeletes.ToList())
         {
-            // Parsear clave: "UW_F01_1"
             int lastUnderscore = key.LastIndexOf('_');
             if (lastUnderscore < 0) continue;
             
@@ -106,7 +84,7 @@ public static class StateFileResolver
             
             affectedRooms.Add(roomName);
             
-            string path = GetRainStateSettingsFile(roomName, state);
+            string path = ResolveSettingsPath(roomName, state);
             if (path != null && File.Exists(path))
             {
                 try
@@ -121,9 +99,6 @@ public static class StateFileResolver
             }
         }
         
-        // ════════════════════════════════════════════════════════════════════
-        // INVALIDAR CACHE PARA SALAS AFECTADAS
-        // ════════════════════════════════════════════════════════════════════
         foreach (string roomName in affectedRooms)
         {
             RoomCameraExtensions.InvalidateRoomCache(roomName);
@@ -146,11 +121,247 @@ public static class StateFileResolver
         On.RainWorldGame.ShutDownProcess += OnGameShutDown;
     }
 
+    // ============================================================
+    // DETECCIÓN DE CONTEXTO
+    // ============================================================
+    
+    public static string GetCurrentSlugcatSuffix()
+    {
+        try
+        {
+            var rw = UnityEngine.Object.FindObjectOfType<RainWorld>();
+            var game = rw?.processManager?.currentMainLoop as RainWorldGame;
+            
+            if (game?.GetStorySession?.saveState != null)
+            {
+                string slugcat = game.GetStorySession.saveState.saveStateNumber?.value;
+                if (!string.IsNullOrEmpty(slugcat))
+                {
+                    if (!string.Equals(slugcat, "white", StringComparison.OrdinalIgnoreCase) && 
+                        !string.Equals(slugcat, "yellow", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return "-" + slugcat.ToLowerInvariant();
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            RSPlugin.log.LogDebug($"[StateFileResolver] Error obteniendo slugcat: {ex.Message}");
+        }
+        return "";
+    }
+    
+    /// <summary>
+    /// Obtiene la lista de sufijos DLC activos.
+    /// Usa ModManager (igual que vanilla).
+    /// </summary>
+    public static List<string> GetActiveDLCSuffixes()
+    {
+        var suffixes = new List<string>();
+        
+        if (ModManager.Watcher) suffixes.Add("-wtc");
+        if (ModManager.MSC) suffixes.Add("-dwp");
+        
+        return suffixes;
+    }
+    
+    // ============================================================
+    // RESOLUCIÓN DE RUTAS - SISTEMA PRINCIPAL
+    // ============================================================
+    
+    public static string ResolveSettingsPath(string roomName, int state)
+    {
+        if (string.IsNullOrEmpty(roomName) || state < 1 || state > 4)
+            return null;
+        
+        string slugcatSuffix = GetCurrentSlugcatSuffix();
+        var activeDLCs = GetActiveDLCSuffixes();
+        string dlcKey = string.Join(",", activeDLCs);
+        
+        var cacheKey = (roomName, state, slugcatSuffix, dlcKey);
+        if (_resolutionCache.TryGetValue(cacheKey, out string cached) && cached != null)
+        {
+            if (File.Exists(cached)) return cached;
+            _resolutionCache.Remove(cacheKey);
+        }
+        
+        RSPlugin.log.LogDebug($"[StateFileResolver] Resolviendo {roomName} estado {state} | Slugcat: '{slugcatSuffix}' | DLCs activos: [{string.Join(", ", activeDLCs)}]");
+        
+        string dir = BuildDirectoryPath(roomName);
+        if (!Directory.Exists(dir))
+        {
+            RSPlugin.log.LogDebug($"[StateFileResolver] Directorio no existe: {dir}");
+            return null;
+        }
+        
+        var candidates = BuildCandidatePaths(roomName, state, slugcatSuffix, activeDLCs);
+        
+        foreach (string candidate in candidates)
+        {
+            if (File.Exists(candidate))
+            {
+                RSPlugin.log.LogDebug($"[StateFileResolver] Encontrado: {candidate}");
+                _resolutionCache[cacheKey] = candidate;
+                return candidate;
+            }
+        }
+        
+        RSPlugin.log.LogDebug($"[StateFileResolver] No se encontró ningún archivo para {roomName} estado {state}");
+        return null;
+    }
+    
+    private static List<string> BuildCandidatePaths(string roomName, int state, string slugcatSuffix, List<string> activeDLCs)
+    {
+        var candidates = new List<string>();
+        string dir = BuildDirectoryPath(roomName);
+        
+        bool isDashTwo = roomName.EndsWith("-2");
+        string baseName = isDashTwo ? roomName.Substring(0, roomName.Length - 2) : roomName;
+        string dashTwoName = isDashTwo ? baseName + "-2" : null;
+        
+        // ============================================================
+        // NUEVO ORDEN: slugcat tiene prioridad sobre DLC
+        // 1. DLC + slugcat (más específico)
+        // 2. Solo slugcat
+        // 3. Solo DLC
+        // 4. Base
+        // ============================================================
+        
+        // 1. DLC + slugcat
+        foreach (string dlcSuffix in activeDLCs)
+        {
+            if (!string.IsNullOrEmpty(slugcatSuffix))
+            {
+                if (isDashTwo)
+                    candidates.Add(Path.Combine(dir, $"{dashTwoName}_settings{dlcSuffix}{slugcatSuffix}_{state}.txt"));
+                candidates.Add(Path.Combine(dir, $"{baseName}_settings{dlcSuffix}{slugcatSuffix}_{state}.txt"));
+            }
+        }
+        
+        // 2. Solo slugcat
+        if (!string.IsNullOrEmpty(slugcatSuffix))
+        {
+            if (isDashTwo)
+                candidates.Add(Path.Combine(dir, $"{dashTwoName}_settings{slugcatSuffix}_{state}.txt"));
+            candidates.Add(Path.Combine(dir, $"{baseName}_settings{slugcatSuffix}_{state}.txt"));
+        }
+        
+        // 3. Solo DLC
+        foreach (string dlcSuffix in activeDLCs)
+        {
+            if (isDashTwo)
+                candidates.Add(Path.Combine(dir, $"{dashTwoName}_settings{dlcSuffix}_{state}.txt"));
+            candidates.Add(Path.Combine(dir, $"{baseName}_settings{dlcSuffix}_{state}.txt"));
+        }
+        
+        // 4. Base
+        if (isDashTwo)
+            candidates.Add(Path.Combine(dir, $"{dashTwoName}_settings_{state}.txt"));
+        candidates.Add(Path.Combine(dir, $"{baseName}_settings_{state}.txt"));
+        
+        return candidates;
+    }
+    
+    // ============================================================
+    // MÉTODOS LEGACY
+    // ============================================================
+    
+    public static string GetRainStateSettingsFile(string roomName, int number)
+        => ResolveSettingsPath(roomName, number);
+    
+    public static string GetRainStateFilePath(string roomName, int cycle)
+    {
+        int stateNumber = _currentCycleState;
+        return ResolveSettingsPath(roomName, stateNumber);
+    }
+    
+    // ============================================================
+    // MÉTODOS DE UTILIDAD
+    // ============================================================
+    
+    public static int CountRainStateFiles(string roomName)
+    {
+        string dir = BuildDirectoryPath(roomName);
+        if (!Directory.Exists(dir)) return 0;
+        
+        string pattern = $"{roomName}_settings*_*.txt";
+        string baseName = roomName.EndsWith("-2") ? roomName.Substring(0, roomName.Length - 2) : roomName;
+        string patternDashTwo = $"{baseName}-2_settings*_*.txt";
+        
+        var files = Directory.GetFiles(dir, pattern)
+            .Concat(Directory.GetFiles(dir, patternDashTwo))
+            .Distinct()
+            .ToList();
+        
+        var states = new HashSet<int>();
+        foreach (string file in files)
+        {
+            string name = Path.GetFileNameWithoutExtension(file);
+            int lastUnderscore = name.LastIndexOf('_');
+            if (lastUnderscore >= 0 && int.TryParse(name.Substring(lastUnderscore + 1), out int state))
+            {
+                states.Add(state);
+            }
+        }
+        
+        return states.Count;
+    }
+    
+    public static int GetStateFromPath(string path, string roomName = null)
+    {
+        if (string.IsNullOrEmpty(path)) return -1;
+        string fileName = Path.GetFileNameWithoutExtension(path);
+        int lastUnderscore = fileName.LastIndexOf('_');
+        if (lastUnderscore < 0) return -1;
+        return int.TryParse(fileName.Substring(lastUnderscore + 1), out int n) ? n : -1;
+    }
+    
+    internal static string CreateNewRainStateFile(string name, int buttonCount, Room room)
+    {
+        string dir = BuildDirectoryPath(name);
+        if (!Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+
+        string filePath = Path.Combine(dir, $"{name}_settings_{buttonCount}.txt");
+        room.roomSettings.filePath = filePath;
+        room.roomSettings.Save();
+        
+        RoomCameraExtensions.InvalidateRoomCache(name);
+        _resolutionCache.Clear();
+        
+        return filePath;
+    }
+
+    // ============================================================
+    // HELPERS
+    // ============================================================
+    
+    private static string BuildDirectoryPath(string roomName)
+    {
+        string regionCode   = Regex.Split(roomName, "_")[0].ToUpperInvariant();
+        string regionFolder = Path.Combine("World", regionCode + "-Rooms", "RainCycles");
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, regionFolder);
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        return Path.Combine(Application.streamingAssetsPath, regionFolder);
+    }
+    
+    // ============================================================
+    // HOOKS
+    // ============================================================
+    
     private static void OnGameCtor(On.RainWorldGame.orig_ctor orig, RainWorldGame self, ProcessManager manager)
     {
         orig(self, manager);
         _frozenCycle    = self.GetStorySession?.saveState?.cycleNumber ?? 0;
         _hasFrozenCycle = true;
+        _resolutionCache.Clear();
     }
 
     private static bool _cycleAdvancedThisSession = false;
@@ -162,6 +373,7 @@ public static class StateFileResolver
         {
             _cycleAdvancedThisSession = true;
             _frozenCycle = self.GetStorySession?.saveState?.cycleNumber ?? _frozenCycle;
+            _resolutionCache.Clear();
         }
     }
 
@@ -171,6 +383,7 @@ public static class StateFileResolver
         _hasFrozenCycle = false;
         _cycleAdvancedThisSession = false;
         _currentCycleState = 1;
+        _resolutionCache.Clear();
     }
 
     private static bool _blockLoad = false;
@@ -190,7 +403,8 @@ public static class StateFileResolver
         if (_blockLoad) return;
 
         int cycle = _hasFrozenCycle ? _frozenCycle : session.saveState.cycleNumber;
-        string rainStatePath = GetRainStateFilePath(name, cycle);
+        int stateNumber = _currentCycleState;
+        string rainStatePath = ResolveSettingsPath(name, stateNumber);
         if (rainStatePath == null) return;
 
         self.filePath = rainStatePath;
@@ -201,97 +415,21 @@ public static class StateFileResolver
             self.terrainFadePalette = null;
     }
 
-    // ── API pública ───────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Devuelve el estado actual del ciclo (1..4).
-    /// </summary>
+    // ============================================================
+    // API PÚBLICA
+    // ============================================================
+    
     public static int GetCurrentCycleState() => _currentCycleState;
-
-    /// <summary>
-    /// Establece manualmente el estado actual del ciclo.
-    /// Usado por BlendSettingsLoader al cargar una región.
-    /// </summary>
+    
     public static void SetCurrentCycleState(int state)
     {
         _currentCycleState = state;
+        _resolutionCache.Clear();
     }
-
-    public static string GetRainStateFilePath(string roomName, int cycle)
+    
+    public static void InvalidatePathCache()
     {
-        int stateNumber = _currentCycleState;
-        return FindFileInRainCycles(roomName, stateNumber);
-    }
-
-    public static string GetRainStateSettingsFile(string roomName, int number)
-        => FindFileInRainCycles(roomName, number);
-
-    public static int CountRainStateFiles(string roomName)
-    {
-        int count = 0;
-        while (FindFileInRainCycles(roomName, count + 1) != null)
-            count++;
-        return count;
-    }
-
-    public static int GetStateFromPath(string path, string roomName = null)
-    {
-        if (string.IsNullOrEmpty(path)) return -1;
-        string fileName = Path.GetFileNameWithoutExtension(path);
-        int idx = fileName.ToLowerInvariant().LastIndexOf("_settings_");
-        if (idx < 0) return -1;
-        string numStr = fileName.Substring(idx + "_settings_".Length);
-        return int.TryParse(numStr, out int n) ? n : -1;
-    }
-
-    internal static string CreateNewRainStateFile(string name, int buttonCount, Room room)
-    {
-        string dir = BuildDirectoryPath(name);
-        if (!Directory.Exists(dir))
-            Directory.CreateDirectory(dir);
-
-        string filePath = Path.Combine(dir, $"{name}_settings_{buttonCount}.txt");
-        room.roomSettings.filePath = filePath;
-        room.roomSettings.Save();
-        
-        // ════════════════════════════════════════════════════════════════════
-        // INVALIDAR CACHE AL CREAR NUEVO ESTADO
-        // ════════════════════════════════════════════════════════════════════
-        RoomCameraExtensions.InvalidateRoomCache(name);
-        
-        return filePath;
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────
-
-    private static string FindFileInRainCycles(string roomName, int number)
-    {
-        string fileName = $"{roomName}_settings_{number}.txt";
-        string baseDir  = BuildDirectoryPath(roomName);
-
-        if (!Directory.Exists(baseDir)) return null;
-
-        string direct = Path.Combine(baseDir, fileName);
-        if (File.Exists(direct)) return direct;
-
-        foreach (string found in Directory.GetFiles(baseDir, fileName, SearchOption.AllDirectories))
-            return found;
-
-        return null;
-    }
-
-    private static string BuildDirectoryPath(string roomName)
-    {
-        string regionCode   = Regex.Split(roomName, "_")[0].ToUpperInvariant();
-        string regionFolder = Path.Combine("World", regionCode + "-Rooms", "RainCycles");
-
-        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
-        {
-            string candidate = Path.Combine(ModManager.ActiveMods[i].path, regionFolder);
-            if (Directory.Exists(candidate))
-                return candidate;
-        }
-
-        return Path.Combine(Application.streamingAssetsPath, regionFolder);
+        _resolutionCache.Clear();
+        RSPlugin.log.LogDebug("[StateFileResolver] Caché de rutas invalidada");
     }
 }

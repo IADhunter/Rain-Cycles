@@ -1,6 +1,7 @@
 using UnityEngine;
 using RainCycles.Snapshot;
 using RWCustom;
+using System.Collections.Generic;
 
 namespace RainCycles.Blend;
 
@@ -135,6 +136,130 @@ public static partial class RoomCameraExtensions
 
     public static void ClearEffectData(RoomCamera cam)
     {
-        // No hay datos persistentes que limpiar
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    //  SCALAR EFFECTS - INTERPOLACIÓN Y APLICACIÓN DURANTE EL BLEND
+    // ═════════════════════════════════════════════════════════════════════
+
+    private static readonly RoomSettings.RoomEffect.Type[] _exclusivePriority = new[]
+    {
+        RoomSettings.RoomEffect.Type.Bloom,
+        RoomSettings.RoomEffect.Type.VoidMelt,
+        RoomSettings.RoomEffect.Type.Fog,
+        RoomSettings.RoomEffect.Type.LightBurn,
+        RoomSettings.RoomEffect.Type.SkyAndLightBloom,
+        RoomSettings.RoomEffect.Type.SkyBloom,
+    };
+
+    public static void ApplyScalarEffects(this Room room, SettingsSnapshot a, SettingsSnapshot b, float t)
+    {
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Darkness,         LerpScalarEffect(a.EffectDarkness,         b.EffectDarkness,         t));
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Brightness,       LerpScalarEffect(a.EffectBrightness,       b.EffectBrightness,       t));
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Contrast,         LerpScalarEffect(a.EffectContrast,         b.EffectContrast,         t));
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Desaturation,     LerpScalarEffect(a.EffectDesaturation,     b.EffectDesaturation,     t));
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Hue,              LerpScalarEffect(a.EffectHue,              b.EffectHue,              t));
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.DarkenLights,     LerpScalarEffect(a.EffectDarkenLights,     b.EffectDarkenLights,     t));
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Fog,              LerpScalarEffect(a.EffectFog,              b.EffectFog,              t));
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.SkyBloom,         LerpScalarEffect(a.EffectSkyBloom,         b.EffectSkyBloom,         t));
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.SkyAndLightBloom, LerpScalarEffect(a.EffectSkyAndLightBloom, b.EffectSkyAndLightBloom, t));
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.LightBurn,        LerpScalarEffect(a.EffectLightBurn,        b.EffectLightBurn,        t));
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Bloom,            LerpScalarEffect(a.EffectBloom,            b.EffectBloom,            t));
+
+        float sandstorm = LerpScalarEffect(a.EffectSurfaceSandstorm, b.EffectSurfaceSandstorm, t);
+        if (sandstorm >= 0f)
+            ApplyEffect(room, new RoomSettings.RoomEffect.Type("SurfaceSandstorm"), sandstorm);
+    }
+
+    private static float LerpScalarEffect(float va, float vb, float t)
+    {
+        float a = va < 0f ? 0f : va;
+        float b = vb < 0f ? 0f : vb;
+        return Mathf.Lerp(a, b, t);
+    }
+
+    private static bool IsOverriddenByHigherPriority(RoomSettings rs, RoomSettings.RoomEffect.Type type)
+    {
+        int myPriority = System.Array.IndexOf(_exclusivePriority, type);
+        if (myPriority < 0) return false;
+        for (int i = myPriority + 1; i < _exclusivePriority.Length; i++)
+        {
+            var higher = rs.GetEffect(_exclusivePriority[i]);
+            if (higher != null && higher.amount > 0f) return true;
+        }
+        return false;
+    }
+
+    private static void ApplyEffect(Room room, RoomSettings.RoomEffect.Type type, float amount)
+    {
+        if (amount <= 0f)
+        {
+            var existing = room.roomSettings.GetEffect(type);
+            if (existing != null) existing.amount = 0f;
+            return;
+        }
+        if (IsOverriddenByHigherPriority(room.roomSettings, type)) return;
+        var effect = room.roomSettings.GetEffect(type);
+        if (effect != null)
+            effect.amount = amount;
+        else
+            room.roomSettings.effects.Add(new RoomSettings.RoomEffect(type, amount, false));
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    //  DECALS - INTERPOLACIÓN Y APLICACIÓN DURANTE EL BLEND
+    //  (Extraído de SettingsSnapshotLerp y RoomEffectsApplier)
+    // ═════════════════════════════════════════════════════════════════════
+
+    public static SettingsSnapshot LerpDecals(SettingsSnapshot a, SettingsSnapshot b, float t)
+    {
+        var snap = new SettingsSnapshot();
+        snap.PlacedObjectLines = new List<string>(a.PlacedObjectLines);
+
+        foreach (var kv in a.DecalOpacities)
+        {
+            if (!b.DecalOpacities.TryGetValue(kv.Key, out float[] opsB)) opsB = new float[4];
+            float[] lerped = new float[4];
+            for (int i = 0; i < 4; i++) lerped[i] = Mathf.Lerp(kv.Value[i], opsB[i], t);
+            snap.DecalOpacities[kv.Key] = lerped;
+        }
+
+        return snap;
+    }
+
+    public static void ApplyDecalOpacities(this Room room, SettingsSnapshot lerped)
+    {
+        if (lerped.DecalOpacities.Count == 0) return;
+
+        var decalSnapIndices = new List<int>();
+        for (int i = 0; i < lerped.PlacedObjectLines.Count; i++)
+            if (lerped.PlacedObjectLines[i].StartsWith("CustomDecal><"))
+                decalSnapIndices.Add(i);
+
+        int decalCount = 0;
+        for (int i = 0; i < room.updateList.Count; i++)
+        {
+            var decal = room.updateList[i] as CustomDecal;
+            if (decal == null) continue;
+
+            if (decalCount < decalSnapIndices.Count)
+            {
+                int snapIdx = decalSnapIndices[decalCount];
+                if (lerped.DecalOpacities.TryGetValue(snapIdx, out float[] ops))
+                {
+                    var data = decal.placedObject.data as PlacedObject.CustomDecalData;
+                    if (data != null)
+                    {
+                        for (int j = 0; j < 4 && j < ops.Length; j++)
+                        {
+                            float op = Mathf.Clamp01(ops[j]);
+                            data.vertices[j, 0] = op;
+                        }
+                        decal.meshDirty = true;
+                    }
+                }
+            }
+            decalCount++;
+        }
     }
 }

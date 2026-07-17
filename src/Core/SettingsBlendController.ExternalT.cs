@@ -9,18 +9,6 @@ namespace RainCycles.Core;
 
 public static partial class SettingsBlendController
 {
-    public static void OverrideLightColorsPostOrig()
-    {
-        if (!_active || !_externalT || _room == null) return;
-        if (!BlendTextureManager.Ready) return;
-
-        var cam = _room.game?.cameras?[0];
-        if (cam == null) return;
-        if (_snapA == null || _snapB == null) return;
-
-        var lerped = SettingsSnapshot.Lerp(_snapA, _snapB, _forcedT);
-        RoomEffectsApplier.ApplyLightSources(_room, lerped);
-    }
 
     public static void AttachWithExternalT(Room room, string pathA, string pathB, bool isAuto = false)
     {
@@ -30,7 +18,6 @@ public static partial class SettingsBlendController
         string roomName = room?.abstractRoom?.name;
         if (!string.IsNullOrEmpty(roomName) && !StateFileResolver.HasFullStates(roomName))
         {
-            // Si no tiene 4 estados, no hacer nada (no log para no spamear)
             return;
         }
 
@@ -41,7 +28,7 @@ public static partial class SettingsBlendController
             _room = room;
             _pathA = pathA;
             _pathB = pathB;
-            _snapA = StaticTintManager.GetCachedSnapshot(pathA, room.abstractRoom.name);
+            _snapA = SettingsSnapshot.GetCached(pathA, room.abstractRoom.name);
             _snapB = _snapA;
             _isAutoBlend = isAuto;
 
@@ -58,8 +45,8 @@ public static partial class SettingsBlendController
         _pathA = pathA;
         _pathB = pathB;
         ConsumePendingOrigin(room, pathA);
-        _snapA = StaticTintManager.GetCachedSnapshot(pathA, room.abstractRoom.name);
-        _snapB = StaticTintManager.GetCachedSnapshot(pathB, room.abstractRoom.name);
+        _snapA = SettingsSnapshot.GetCached(pathA, room.abstractRoom.name);
+        _snapB = SettingsSnapshot.GetCached(pathB, room.abstractRoom.name);
         _active = true;
         _externalT = true;
         _isAutoBlend = isAuto;
@@ -72,10 +59,10 @@ public static partial class SettingsBlendController
             cam.ClearBlendSnapshots();
             cam.SetBlendActive(room.abstractRoom.name);
 
-            BlendTextureManager.Load(cam, _snapA, _snapB, _snapOriginal, applyFade: false);
-            RoomEffectsApplier.BuildLightIndex(room);
+            RoomCameraExtensions.BuildLightIndex(room);
 
             string roomName2 = room.abstractRoom?.name;
+            // ⭐ Ahora usa StateFileResolver.GetStateFromPath()
             int stateA = StateFileResolver.GetStateFromPath(pathA, roomName2);
             int stateB = StateFileResolver.GetStateFromPath(pathB, roomName2);
             
@@ -120,11 +107,12 @@ public static partial class SettingsBlendController
             string roomName = room.abstractRoom?.name;
             if (settings != null && roomName != null)
             {
-                string pathA = StateFileResolver.GetRainStateSettingsFile(roomName, BlendClock.StateA);
+                // ⭐ Ahora usa StateFileResolver.ResolveSettingsPath()
+                string pathA = StateFileResolver.ResolveSettingsPath(roomName, BlendClock.StateA);
                 if (pathA != null)
-                    _snapOriginal = StaticTintManager.GetCachedSnapshot(pathA, roomName);
+                    _snapOriginal = SettingsSnapshot.GetCached(pathA, roomName);
                 else
-                    _snapOriginal = StaticTintManager.GetCachedSnapshot(room.roomSettings.filePath ?? "", roomName);
+                    _snapOriginal = SettingsSnapshot.GetCached(room.roomSettings.filePath ?? "", roomName);
             }
             else
                 _snapOriginal = SettingsSnapshot.FromFile(room.roomSettings.filePath ?? "");
@@ -132,7 +120,7 @@ public static partial class SettingsBlendController
         else if (originPath != null)
         {
             string roomName = room.abstractRoom?.name ?? "";
-            _snapOriginal = StaticTintManager.GetCachedSnapshot(originPath, roomName);
+            _snapOriginal = SettingsSnapshot.GetCached(originPath, roomName);
         }
         else if (_snapOriginal == null)
         {
@@ -155,9 +143,9 @@ public static partial class SettingsBlendController
             if (lightTChanged || _lastLightT < 0f)
             {
                 _lastLightT = t;
-                var lerpedForLights = SettingsSnapshot.Lerp(_snapA, _snapB, t);
-                RoomEffectsApplier.ApplyLightSources(_room, lerpedForLights);
-                RoomEffectsApplier.ApplyLightBeams(_room, lerpedForLights);
+
+                _room.ApplyLightSources(_snapA, _snapB, t);
+                _room.ApplyLightBeams(_snapA, _snapB, t);
             }
         }
 
@@ -165,7 +153,6 @@ public static partial class SettingsBlendController
         
         ApplyBlend(t);
         
-        // Actualizar fog y sun en modo manual (PSV)
         if (_room != null)
         {
             var skyType = GetViewFromLoadedSettings(_room);

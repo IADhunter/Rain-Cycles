@@ -74,13 +74,14 @@ public static class BlendClockUpdater
 
             SettingsBlendController.ClearAllSlots();
             BlendSkyAtlasCache.PreloadRegion(regionAfter);
-            StaticTintManager.PreloadRegionTemplates(regionAfter);
+            SettingsSnapshot.PreloadRegionTemplates(regionAfter);
             BlendSettingsLoader.LoadRegion(regionAfter);
 
             SettingsBlendController.ResetFull();
             _startFailed = false;
             _lastRegion = regionAfter;
             RoomCameraExtensions.ClearAllCaches();
+            StateFileResolver.InvalidatePathCache(); // ⭐ NUEVO
         }
     }
 
@@ -88,7 +89,6 @@ public static class BlendClockUpdater
     {
         SettingsBlendController.ClearFrameFlag();
         orig(self);
-        SettingsBlendController.OverrideLightColorsPostOrig();
 
         if (self.GamePaused)
         {
@@ -146,12 +146,10 @@ public static class BlendClockUpdater
 
         SettingsBlendController.ProcessPendingSkyRefresh();
 
-        // ════════════════════════════════════════════════════════════════════
-        // UpdateCameras SIEMPRE - necesario para idle y blending
-        // Los caches evitan el trabajo pesado innecesario
-        // ════════════════════════════════════════════════════════════════════
+        // ============================================================
+        // ACTUALIZAR CÁMARAS - CACHES EVITAN TRABAJO PESADO
+        // ============================================================
         UpdateCameras(self);
-        SettingsBlendController.OverrideLightColorsPostOrig();
     }
 
     private static void UpdateSlidersOnly(RainWorldGame game)
@@ -184,15 +182,13 @@ public static class BlendClockUpdater
             string room = cam.room.abstractRoom?.name;
             if (room == null) continue;
             
-            // ════════════════════════════════════════════════════════════════
-            // USAR VERSIONES CACHEADAS - EVITAN LECTURA DE DISCO
-            // ════════════════════════════════════════════════════════════════
             if (!RoomCameraExtensions.IsBlendRoomCached(cam.room)) continue;
 
             bool hasFullStates = RoomCameraExtensions.HasFullStatesCached(room);
 
             if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending && hasFullStates)
             {
+                // ⭐ Ahora usa StateFileResolver.ResolveSettingsPath()
                 string pA = GetSettingsFile(game, room, BlendClock.StateA);
                 string pB = GetSettingsFile(game, room, BlendClock.StateB);
 
@@ -256,14 +252,12 @@ public static class BlendClockUpdater
             
             AfterIdleCheck:
 
-            // Solo actualizar blend palette si la sala tiene 4 estados
             if (BlendClock.IsRunning && hasFullStates)
             {
                 cam.UpdateBlendPalette();
             }
             else if (!hasFullStates)
             {
-                // Si no tiene 4 estados, asegurar que no quede blend activo
                 var blendData = cam.GetBlendData();
                 if (blendData != null && blendData.isBlendActive)
                 {
@@ -275,11 +269,14 @@ public static class BlendClockUpdater
         UpdateSliders(game);
     }
 
+    // ============================================================
+    // ⭐ CAMBIO PRINCIPAL: Ahora usa StateFileResolver.ResolveSettingsPath()
+    // ============================================================
     private static string GetSettingsFile(RainWorldGame game, string room, int state)
     {
         if (game?.IsArenaSession == true)
             return ArenaStateResolver.GetSettingsPath(room, state);
-        return StateFileResolver.GetRainStateSettingsFile(room, state);
+        return StateFileResolver.ResolveSettingsPath(room, state);
     }
 
     private static void UpdateSliders(RainWorldGame game)
@@ -355,11 +352,8 @@ public static class BlendClockUpdater
         BlendClock.Stop();
         orig(self);
         StateFileResolver.SetBlockLoad(false);
-        
-        // ════════════════════════════════════════════════════════════════════
-        // LIMPIAR TODOS LOS CACHES AL CERRAR PARTIDA
-        // ════════════════════════════════════════════════════════════════════
         RoomCameraExtensions.InvalidateAllRoomCaches();
+        StateFileResolver.InvalidatePathCache(); // ⭐ NUEVO
     }
 
     private static void OnWin(On.RainWorldGame.orig_Win orig, RainWorldGame self, bool mal, bool warp)

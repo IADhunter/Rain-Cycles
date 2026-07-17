@@ -37,11 +37,10 @@ public static partial class SettingsBlendController
     private static AboveCloudsView _acvScene = null;
     private static AboveCloudsView _psvScene = null;
 
+    private static AboveCloudsView.HorizonFog _cachedVanillaFog = null;
+
     // ============================================================
-    // SLOTS DE BACKGROUND - 4 slots directos por estado (1-4)
-    // Orden de creación INVERSO: slot3→slot2→slot1→slot0
-    // Renderizado: slot3(detras) → slot2 → slot1 → slot0(encima)
-    // slot0 = estado 1 (bkg01), slot3 = estado 4 (bkg04)
+    // SLOTS DE BACKGROUND
     // ============================================================
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsACV = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsRTV = null;
@@ -49,9 +48,6 @@ public static partial class SettingsBlendController
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsPSVFog = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsPSVSun = null;
 
-    // ============================================================
-    // SLOTS ESTÁTICOS (1 slot por vista, no 4)
-    // ============================================================
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticACV = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticRTV = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticPSV = null;
@@ -98,16 +94,36 @@ public static partial class SettingsBlendController
         On.RoofTopView.Update               += OnRoofTopViewUpdate;
         On.AboveCloudsView.Update           += OnAboveCloudsViewUpdate;
         On.AboveCloudsView.ctor             += OnAboveCloudsViewCtor;
+        On.Watcher.OuterRimView.ctor        += OnOuterRimViewCtor;
+        On.Watcher.AncientUrbanView.ctor    += OnAncientUrbanViewCtor;
         On.RoomCamera.ChangeRoom            += OnChangeRoom;
         On.RoomSettings.Save                += OnRoomSettingsSave;
         On.RoomCamera.Update                += OnRoomCameraUpdate;
-        
-        // Hook para LoadPalette - necesario para forzar recarga en salas NO blend
         On.RoomCamera.LoadPalette           += OnLoadPalette;
+
+        // ═══════════════════════════════════════════════════════════════
+        // NUEVO HOOK: Sincronizar fog RC durante DrawSprites del vanilla
+        // ═══════════════════════════════════════════════════════════════
+        On.AboveCloudsView.HorizonFog.DrawSprites += OnHorizonFogDrawSprites;
+
+        // ═══════════════════════════════════════════════════════════════
+        // HOOK: Ocultar DistantCloud con depth >= 195f en PSV
+        // ═══════════════════════════════════════════════════════════════
+        On.AboveCloudsView.DistantCloud.InitiateSprites += OnDistantCloudInitiateSprites;
     }
 
     // ============================================================
-    // HOOK PARA LOADPALETTE - Solo para poder llamarlo externamente
+    // IS STATIC VIEW ROOM
+    // ============================================================
+    public static bool IsStaticViewRoom(Room room)
+    {
+        if (room == null) return false;
+        var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
+        return snap != null && snap.HasRcType && snap.RcType == RcType.Static;
+    }
+
+    // ============================================================
+    // HOOK LOADPALETTE
     // ============================================================
     private static void OnLoadPalette(On.RoomCamera.orig_LoadPalette orig, RoomCamera self, int pal, ref Texture2D texture)
     {
@@ -115,13 +131,16 @@ public static partial class SettingsBlendController
     }
 
     // ============================================================
-    // MÉTODO AUXILIAR PARA FORZAR RECARGA DE PALETA
+    // FORCE LOAD PALETTE
     // ============================================================
     public static void ForceLoadPalette(RoomCamera cam, int palId, ref Texture2D texture)
     {
         cam.LoadPalette(palId, ref texture);
     }
 
+    // ============================================================
+    // APPLY IDLE TINTS AND EFFECTS
+    // ============================================================
     public static void ApplyIdleTintsAndEffects(Room room, SettingsSnapshot snap)
     {
         if (room == null || snap == null) return;
@@ -149,31 +168,32 @@ public static partial class SettingsBlendController
             }
         }
 
-        var rs = room.roomSettings;
-        rs.Grime = snap.Grime;
-        if (!RoomHasWeatherController(room))
-            rs.Clouds = snap.Clouds;
-        rs.CeilingDrips = snap.CeilingDrips;
-        rs.BkgDroneVolume = snap.BkgDroneVolume;
-        rs.RandomItemDensity = snap.RandomItemDensity;
-        rs.RandomItemSpearChance = snap.RandomItemSpearChance;
-        rs.WaterReflectionAlpha = snap.WaterReflectionAlpha;
+        room.ApplyRoomScalars(snap, snap, 0f);
 
-        RoomEffectsApplier.ApplyDecalOpacities(room, snap);
-        RoomEffectsApplier.ApplyScalarEffects(room, snap);
-        RoomEffectsApplier.ApplyTerrainScalars(room, snap);
+        if (IsBlendRoom(room))
+        {
+            room.ApplyDecalOpacities(snap);
+        }
+
+        room.ApplyScalarEffects(snap, snap, 0f);
 
         var skyType = GetViewFromLoadedSettings(room);
         if (skyType != SkyType.None)
             ApplyRcSlotsAlpha(skyType, 0f, isBlending: false);
     }
     
+    // ============================================================
+    // UPDATE MANUAL STATES
+    // ============================================================
     internal static void UpdateManualStates(int stateA, int stateB)
     {
         _manualStateA = stateA;
         _manualStateB = stateB;
     }
     
+    // ============================================================
+    // REFRESH ACTIVE SNAPSHOTS
+    // ============================================================
     public static void RefreshActiveSnapshots()
     {
         if (!_active || _room == null) return;
@@ -182,9 +202,9 @@ public static partial class SettingsBlendController
         if (!string.IsNullOrEmpty(roomName))
         {
             if (_pathA != null)
-                _snapA = StaticTintManager.GetCachedSnapshot(_pathA, roomName);
+                _snapA = SettingsSnapshot.GetCached(_pathA, roomName);
             if (_pathB != null)
-                _snapB = StaticTintManager.GetCachedSnapshot(_pathB, roomName);
+                _snapB = SettingsSnapshot.GetCached(_pathB, roomName);
         }
         
         float currentT = _externalT ? _forcedT : (BlendClock.IsRunning ? BlendClock.SubPhaseLocalT : 0f);
@@ -192,7 +212,7 @@ public static partial class SettingsBlendController
         var cam = _room.game?.cameras?[0];
         if (cam != null && _snapA != null && _snapB != null && _active && _externalT)
         {
-            BlendTextureManager.Load(cam, _snapA, _snapB, _snapOriginal, applyFade: false);
+            
         }
         
         if (_snapA != null && _snapB != null)
@@ -204,6 +224,9 @@ public static partial class SettingsBlendController
         }
     }
     
+    // ============================================================
+    // FORCE REFRESH SKY SLOTS
+    // ============================================================
     public static void ForceRefreshSkySlots()
     {
         _forceSkyRefresh = true;
@@ -220,6 +243,9 @@ public static partial class SettingsBlendController
         }
     }
 
+    // ============================================================
+    // APPLY STATIC TINTS
+    // ============================================================
     public static void ApplyStaticTints(Room room)
     {
         if (room == null) return;
@@ -234,7 +260,7 @@ public static partial class SettingsBlendController
         if (string.IsNullOrEmpty(path))
             return;
         
-        var snap = StaticTintManager.GetCachedSnapshot(path, roomName);
+        var snap = SettingsSnapshot.GetCached(path, roomName);
         if (snap == null)
             return;
         
@@ -261,25 +287,35 @@ public static partial class SettingsBlendController
     }
 
     // ============================================================
-    // MÉTODOS PÚBLICOS PARA OTROS ARCHIVOS
+    // IS BLEND ROOM
     // ============================================================
-
     public static bool IsBlendRoom(Room room)
     {
         if (room?.roomSettings?.filePath == null) return false;
-        var snap = StaticTintManager.GetCachedSnapshot(room);
+        var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
         return snap != null && snap.HasRcType && snap.RcType == RcType.Blend;
     }
 
+    // ============================================================
+    // GET VIEW FROM LOADED SETTINGS
+    // ============================================================
     private static SkyType GetViewFromLoadedSettings(Room room)
     {
         if (room?.roomSettings?.filePath == null) return SkyType.None;
-        var snap = StaticTintManager.GetCachedSnapshot(room);
+        var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
         if (snap == null) return SkyType.None;
         
         return snap.ViewType == ViewType.ACV ? SkyType.ACV
             : snap.ViewType == ViewType.RTV ? SkyType.RTV
             : snap.ViewType == ViewType.PSV ? SkyType.PSV
             : SkyType.None;
+    }
+
+    // ============================================================
+    // CLEAR CACHED FOG
+    // ============================================================
+    public static void ClearCachedVanillaFog()
+    {
+        _cachedVanillaFog = null;
     }
 }

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 using MonoMod.RuntimeDetour;
+using Watcher; // <-- NUEVO: para OuterRimView y AncientUrbanView
 
 namespace RainCycles.Core;
 
@@ -44,17 +45,11 @@ public static class TintManager
     private static int _atmosphereColorID;
     private static int _multiplyColorID;
     
-    // ============================================================
-    // MODO BLOQUEO (solo para salas estáticas)
-    // ============================================================
     private static bool _inStaticRoom = false;
     private static string _currentStaticRoom = null;
     private static Vector4 _lockedAtmosphere;
     private static bool _hasLockedAtmosphere = false;
     
-    // ============================================================
-    // CONDITIONAL WEAK TABLE - Estado original de vistas
-    // ============================================================
     private static ConditionalWeakTable<BackgroundScene, ViewOriginalState> _originalViewStates 
         = new ConditionalWeakTable<BackgroundScene, ViewOriginalState>();
     
@@ -125,6 +120,16 @@ public static class TintManager
         
         On.OverWorld.Update += OnOverWorldUpdate;
         
+        // ============================================================
+        // OUTERRIMVIEW (Watcher) - captura incondicional
+        // ============================================================
+        On.Watcher.OuterRimView.ctor += OnOuterRimViewCtor;
+        
+        // ============================================================
+        // ANCIENTURBANVIEW (Watcher) - captura incondicional
+        // ============================================================
+        On.Watcher.AncientUrbanView.ctor += OnAncientUrbanViewCtor;
+        
         _initialized = true;
     }
     
@@ -140,6 +145,8 @@ public static class TintManager
         _roofTopViewCtorHook?.Dispose();
         _aboveCloudsViewOriginalUpdateHook?.Dispose();
         On.OverWorld.Update -= OnOverWorldUpdate;
+        On.Watcher.OuterRimView.ctor -= OnOuterRimViewCtor;
+        On.Watcher.AncientUrbanView.ctor -= OnAncientUrbanViewCtor; // <-- NUEVO
         
         _initialized = false;
     }
@@ -150,6 +157,20 @@ public static class TintManager
         _currentStaticRoom = null;
         _hasLockedAtmosphere = false;
         _lockedAtmosphere = default;
+    }
+    
+    // ============================================================
+    // GUARDAR ESTADO ORIGINAL DE UNA VISTA
+    // ============================================================
+    public static void SaveOriginalViewStateDirect(BackgroundScene scene, Color atmosphere, Color multiply)
+    {
+        if (scene == null) return;
+        
+        if (_originalViewStates.TryGetValue(scene, out _))
+            return;
+        
+        var originalState = new ViewOriginalState(atmosphere, multiply);
+        _originalViewStates.Add(scene, originalState);
     }
     
     // ============================================================
@@ -181,8 +202,11 @@ public static class TintManager
         Color originalAtmo = self.atmosphereColor;
         Color originalMult = Shader.GetGlobalVector(_multiplyColorID);
         
-        var originalState = new ViewOriginalState(originalAtmo, originalMult);
-        _originalViewStates.Add(self, originalState);
+        if (!_originalViewStates.TryGetValue(self, out _))
+        {
+            var originalState = new ViewOriginalState(originalAtmo, originalMult);
+            _originalViewStates.Add(self, originalState);
+        }
         
         Shader.SetGlobalVector(_atmosphereColorID, currentAtmo);
         Shader.SetGlobalVector(_multiplyColorID, currentMult);
@@ -201,8 +225,57 @@ public static class TintManager
         Color originalAtmo = Shader.GetGlobalVector(_atmosphereColorID);
         Color originalMult = Shader.GetGlobalVector(_multiplyColorID);
         
-        var originalState = new ViewOriginalState(originalAtmo, originalMult);
-        _originalViewStates.Add(self, originalState);
+        if (!_originalViewStates.TryGetValue(self, out _))
+        {
+            var originalState = new ViewOriginalState(originalAtmo, originalMult);
+            _originalViewStates.Add(self, originalState);
+        }
+        
+        Shader.SetGlobalVector(_atmosphereColorID, currentAtmo);
+        Shader.SetGlobalVector(_multiplyColorID, currentMult);
+    }
+    
+    // ============================================================
+    // GUARDAR ESTADO ORIGINAL DE OUTERRIMVIEW (Watcher)
+    // ============================================================
+    private static void OnOuterRimViewCtor(On.Watcher.OuterRimView.orig_ctor orig, Watcher.OuterRimView self, Room room, RoomSettings.RoomEffect effect)
+    {
+        Color currentAtmo = Shader.GetGlobalVector(_atmosphereColorID);
+        Color currentMult = Shader.GetGlobalVector(_multiplyColorID);
+        
+        orig(self, room, effect);
+        
+        Color originalAtmo = Shader.GetGlobalVector(_atmosphereColorID);
+        Color originalMult = Shader.GetGlobalVector(_multiplyColorID);
+        
+        if (!_originalViewStates.TryGetValue(self, out _))
+        {
+            var originalState = new ViewOriginalState(originalAtmo, originalMult);
+            _originalViewStates.Add(self, originalState);
+        }
+        
+        Shader.SetGlobalVector(_atmosphereColorID, currentAtmo);
+        Shader.SetGlobalVector(_multiplyColorID, currentMult);
+    }
+    
+    // ============================================================
+    // GUARDAR ESTADO ORIGINAL DE ANCIENTURBANVIEW (Watcher)
+    // ============================================================
+    private static void OnAncientUrbanViewCtor(On.Watcher.AncientUrbanView.orig_ctor orig, Watcher.AncientUrbanView self, Room room, RoomSettings.RoomEffect effect)
+    {
+        Color currentAtmo = Shader.GetGlobalVector(_atmosphereColorID);
+        Color currentMult = Shader.GetGlobalVector(_multiplyColorID);
+        
+        orig(self, room, effect);
+        
+        Color originalAtmo = Shader.GetGlobalVector(_atmosphereColorID);
+        Color originalMult = Shader.GetGlobalVector(_multiplyColorID);
+        
+        if (!_originalViewStates.TryGetValue(self, out _))
+        {
+            var originalState = new ViewOriginalState(originalAtmo, originalMult);
+            _originalViewStates.Add(self, originalState);
+        }
         
         Shader.SetGlobalVector(_atmosphereColorID, currentAtmo);
         Shader.SetGlobalVector(_multiplyColorID, currentMult);
@@ -214,7 +287,7 @@ public static class TintManager
     private static void OnSetAtmosphereColor(Action<AboveCloudsView, Color> orig, AboveCloudsView self, Color value)
     {
         string roomName = self.room?.abstractRoom?.name;
-        bool isStatic = roomName != null && StaticTintManager.IsStaticViewRoom(self.room);
+        bool isStatic = roomName != null && SettingsBlendController.IsStaticViewRoom(self.room);
         
         ViewOriginalState originalState = null;
         bool hasOriginal = _originalViewStates.TryGetValue(self, out originalState);
@@ -291,9 +364,9 @@ public static class TintManager
     }
     
     // ============================================================
-    // RESTAURAR ESTADO ORIGINAL DE UNA VISTA
+    // RESTAURAR ESTADO ORIGINAL DE UNA VISTA - PÚBLICO
     // ============================================================
-    private static void RestoreOriginalViewState(Room room)
+    public static void RestoreOriginalViewState(Room room)
     {
         if (room == null) return;
         
@@ -326,8 +399,36 @@ public static class TintManager
     }
     
     // ============================================================
-    // ROOMCAMERA.UPDATE - DETECCIÓN DE ENTRADA/SALIDA
+    // OBTENER COLORES ORIGINALES VANILLA DE UNA SALA
     // ============================================================
+    public static bool TryGetOriginalColors(Room room, out Color multiply, out Color atmosphere)
+    {
+        multiply = Color.white;
+        atmosphere = Color.white;
+        
+        if (room == null) return false;
+        
+        for (int i = 0; i < room.updateList.Count; i++)
+        {
+            var scene = room.updateList[i] as BackgroundScene;
+            if (scene == null) continue;
+            
+            if (_originalViewStates.TryGetValue(scene, out ViewOriginalState state))
+            {
+                multiply = state.multiplyColor;
+                atmosphere = state.atmosphereColor;
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // ============================================================
+    // ROOMCAMERA.UPDATE - MANEJA ENTRADA/SALIDA DE SALAS
+    // ============================================================
+    private static string _lastRoomName = null;
+    private static bool _wasStaticRoom = false;
+    
     private static void OnRoomCameraUpdate(Action<RoomCamera> orig, RoomCamera self)
     {
         orig(self);
@@ -335,39 +436,80 @@ public static class TintManager
         if (self?.room == null) return;
         
         string roomName = self.room.abstractRoom?.name;
-        bool isStatic = StaticTintManager.IsStaticViewRoom(self.room);
+        bool isStatic = SettingsBlendController.IsStaticViewRoom(self.room);
         bool isBlend = SettingsBlendController.IsBlendRoom(self.room);
-        bool hasPinkSky = RoomHasPinkSky(self.room);
+        bool roomChanged = (roomName != _lastRoomName);
+        _lastRoomName = roomName;
+        
+        var snap = SettingsSnapshot.GetCached(self.room.roomSettings?.filePath, self.room.abstractRoom?.name);
+        bool hasTint = snap != null && snap.HasTint;
         
         // ============================================================
-        // ENTRADA A SALA ESTÁTICA
+        // ENTRADA A SALA ESTÁTICA (solo cuando cambia la sala)
         // ============================================================
-        if (isStatic && !_inStaticRoom)
+        if (isStatic && !_inStaticRoom && roomChanged)
         {
             _inStaticRoom = true;
             _currentStaticRoom = roomName;
             _hasLockedAtmosphere = false;
             
-            SettingsBlendController.ApplyStaticTints(self.room);
+            if (snap != null && snap.HasTint)
+            {
+                SettingsBlendController.ApplyStaticTints(self.room);
+            }
         }
         // ============================================================
-        // SALIDA DE SALA ESTÁTICA
+        // SALIDA DE SALA ESTÁTICA (solo cuando cambia la sala)
         // ============================================================
-        else if (!isStatic && _inStaticRoom)
+        else if (!isStatic && _inStaticRoom && roomChanged)
         {
-            RestoreOriginalViewState(self.room);
-            
             _inStaticRoom = false;
             _hasLockedAtmosphere = false;
             _currentStaticRoom = null;
         }
         
         // ============================================================
-        // SALA VANILLA
+        // SALA VANILLA O BLEND SIN TINT - RESTAURAR VANILLA
+        // SOLO CUANDO LA SALA CAMBIA
         // ============================================================
-        if (!isStatic && !isBlend)
+        if (roomChanged)
         {
-            RestoreOriginalViewState(self.room);
+            if (!isStatic && !isBlend)
+            {
+                RestoreOriginalViewState(self.room);
+            }
+            else if (!isStatic && isBlend && !hasTint)
+            {
+                RestoreOriginalViewState(self.room);
+            }
         }
+        
+        // ============================================================
+        // DETECTAR CUANDO SE DEJA DE ESTAR EN UNA SALA ESTÁTICA
+        // ============================================================
+        if (!isStatic && _wasStaticRoom && roomChanged)
+        {
+            _wasStaticRoom = false;
+        }
+        _wasStaticRoom = isStatic;
+    }
+
+    // ================================================================
+    // INTERPOLACIÓN DE TINTES (migrado desde SettingsSnapshotLerp)
+    // ================================================================
+    public static SettingsSnapshot InterpolateTints(SettingsSnapshot a, SettingsSnapshot b, float t, Color? vanillaMultiply = null, Color? vanillaAtmosphere = null)
+    {
+        t = Mathf.Clamp01(t);
+        var snap = new SettingsSnapshot();
+
+        Color aMultiply = a.TintMultiply ?? vanillaMultiply ?? Color.white;
+        Color bMultiply = b.TintMultiply ?? vanillaMultiply ?? Color.white;
+        Color aAtmosphere = a.TintAtmosphere ?? vanillaAtmosphere ?? Color.white;
+        Color bAtmosphere = b.TintAtmosphere ?? vanillaAtmosphere ?? Color.white;
+
+        snap.TintMultiply = Color.Lerp(aMultiply, bMultiply, t);
+        snap.TintAtmosphere = Color.Lerp(aAtmosphere, bAtmosphere, t);
+
+        return snap;
     }
 }

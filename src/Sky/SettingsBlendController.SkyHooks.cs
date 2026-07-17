@@ -4,12 +4,15 @@ using RainCycles.Settings;
 using RainCycles.Snapshot;
 using RainCycles.Clock;
 using RainCycles.Core;
+using Watcher;
 
 namespace RainCycles.Core;
 
 public static partial class SettingsBlendController
 {
-    // ── RoofTopView ──────────────────────────────────────────────────────
+    // ============================================================
+    // ROOFTOPVIEW
+    // ============================================================
 
     private static void OnRoofTopViewCtor(
         On.RoofTopView.orig_ctor orig, RoofTopView self,
@@ -34,6 +37,13 @@ public static partial class SettingsBlendController
         var savedAtmosphere = Shader.GetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor);
 
         orig(self, room, effect);
+
+        if (isBlendManaged)
+        {
+            Color originalAtmo = Shader.GetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor);
+            Color originalMult = Shader.GetGlobalVector(RainWorld.ShadPropMultiplyColor);
+            TintManager.SaveOriginalViewStateDirect(self, originalAtmo, originalMult);
+        }
 
         var cam = room.game?.cameras?[0];
         if (cam == null || cam.room != room)
@@ -132,7 +142,9 @@ public static partial class SettingsBlendController
         orig(self, eu);
     }
 
-    // ── AboveCloudsView ──────────────────────────────────────────────────
+    // ============================================================
+    // ABOVECLOUDSVIEW
+    // ============================================================
 
     private static void OnAboveCloudsViewCtor(
         On.AboveCloudsView.orig_ctor orig, AboveCloudsView self,
@@ -157,6 +169,13 @@ public static partial class SettingsBlendController
         var savedAtmosphere = Shader.GetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor);
 
         orig(self, room, effect);
+
+        if (isBlendManaged)
+        {
+            Color originalAtmo = self.atmosphereColor;
+            Color originalMult = Shader.GetGlobalVector(RainWorld.ShadPropMultiplyColor);
+            TintManager.SaveOriginalViewStateDirect(self, originalAtmo, originalMult);
+        }
 
         var cam = room.game?.cameras?[0];
         if (cam == null || cam.room != room)
@@ -306,23 +325,32 @@ public static partial class SettingsBlendController
             orig(self, eu);
             if (camIsHere)
             {
-                StaticTintManager.ApplyForRoom(self.room);
+                // ═══════════════════════════════════════════════════════════════
+                // OCULTAR FOG Y SUN VANILLA SOLO SI ES PSV
+                // ═══════════════════════════════════════════════════════════════
+                var snapLocal = SettingsSnapshot.GetCached(self.room.roomSettings?.filePath, self.room.abstractRoom?.name);
+                bool isPsv = snapLocal != null && snapLocal.HasView && snapLocal.ViewType == ViewType.PSV;
 
-                foreach (var el in self.elements)
+                if (isPsv)
                 {
-                    if (el is AboveCloudsView.HorizonFog hf && hf.illustrationName?.StartsWith("pnk_") == true)
+                    foreach (var el in self.elements)
                     {
-                        foreach (var sl in cam.spriteLeasers)
+                        if (el is AboveCloudsView.HorizonFog hf && hf.illustrationName?.StartsWith("pnk_") == true)
                         {
-                            if (sl.drawableObject == hf && sl.sprites != null && sl.sprites.Length > 0)
+                            foreach (var sl in cam.spriteLeasers)
                             {
-                                sl.sprites[0].alpha = 0f;
-                                sl.sprites[0].isVisible = false;
+                                if (sl.drawableObject == hf && sl.sprites != null && sl.sprites.Length > 0)
+                                {
+                                    sl.sprites[0].alpha = 0f;
+                                    sl.sprites[0].isVisible = false;
+                                }
                             }
                         }
+                        if (el is BackgroundScene.AdditiveBackgroundIllustration abi && abi.illustrationName?.StartsWith("pnk_") == true)
+                        {
+                            abi.alpha = 0f;
+                        }
                     }
-                    if (el is BackgroundScene.AdditiveBackgroundIllustration abi && abi.illustrationName?.StartsWith("pnk_") == true)
-                        abi.alpha = 0f;
                 }
 
                 var skyType = GetViewFromLoadedSettings(self.room);
@@ -360,21 +388,138 @@ public static partial class SettingsBlendController
         foreach (var el in self.elements)
             if (el is AboveCloudsView.DistantBuilding db) db.alpha = 1f;
 
-        foreach (var el in self.elements)
+        // ═══════════════════════════════════════════════════════════════
+        // OCULTAR FOG Y SUN VANILLA SOLO SI ES PSV
+        // ═══════════════════════════════════════════════════════════════
+        var snapLocal2 = SettingsSnapshot.GetCached(self.room.roomSettings?.filePath, self.room.abstractRoom?.name);
+        bool isPsv2 = snapLocal2 != null && snapLocal2.HasView && snapLocal2.ViewType == ViewType.PSV;
+
+        if (isPsv2)
         {
-            if (el is AboveCloudsView.HorizonFog hf && hf.illustrationName?.StartsWith("pnk_") == true)
+            foreach (var el in self.elements)
             {
-                foreach (var sl in cam.spriteLeasers)
+                if (el is AboveCloudsView.HorizonFog hf && hf.illustrationName?.StartsWith("pnk_") == true)
                 {
-                    if (sl.drawableObject == hf && sl.sprites != null && sl.sprites.Length > 0)
+                    foreach (var sl in cam.spriteLeasers)
                     {
-                        sl.sprites[0].alpha = 0f;
-                        sl.sprites[0].isVisible = false;
+                        if (sl.drawableObject == hf && sl.sprites != null && sl.sprites.Length > 0)
+                        {
+                            sl.sprites[0].alpha = 0f;
+                            sl.sprites[0].isVisible = false;
+                        }
                     }
                 }
+                if (el is BackgroundScene.AdditiveBackgroundIllustration abi && abi.illustrationName?.StartsWith("pnk_") == true)
+                    abi.alpha = 0f;
             }
-            if (el is BackgroundScene.AdditiveBackgroundIllustration abi && abi.illustrationName?.StartsWith("pnk_") == true)
-                abi.alpha = 0f;
+        }
+    }
+
+    // ============================================================
+    // OUTERRIMVIEW (Watcher)
+    // ============================================================
+
+    private static void OnOuterRimViewCtor(
+        On.Watcher.OuterRimView.orig_ctor orig, Watcher.OuterRimView self,
+        Room room, RoomSettings.RoomEffect effect)
+    {
+        string settingsPath = room?.roomSettings?.filePath;
+        var snap = !string.IsNullOrEmpty(settingsPath) && System.IO.File.Exists(settingsPath)
+            ? SettingsSnapshot.FromFile(settingsPath)
+            : null;
+
+        bool hasRcType = snap != null && snap.HasRcType;
+        bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
+
+        if (!hasRcType)
+        {
+            orig(self, room, effect);
+            return;
+        }
+
+        var savedMultiply = Shader.GetGlobalVector(RainWorld.ShadPropMultiplyColor);
+        var savedAtmosphere = Shader.GetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor);
+
+        orig(self, room, effect);
+
+        if (isBlendManaged)
+        {
+            Color originalAtmo = Shader.GetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor);
+            Color originalMult = Shader.GetGlobalVector(RainWorld.ShadPropMultiplyColor);
+            TintManager.SaveOriginalViewStateDirect(self, originalAtmo, originalMult);
+        }
+
+        var cam = room.game?.cameras?[0];
+        if (cam == null || cam.room != room)
+        {
+            Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, savedMultiply);
+            Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, savedAtmosphere);
+        }
+    }
+
+    // ============================================================
+    // ANCIENTURBANVIEW (Watcher)
+    // ============================================================
+
+    private static void OnAncientUrbanViewCtor(
+        On.Watcher.AncientUrbanView.orig_ctor orig, Watcher.AncientUrbanView self,
+        Room room, RoomSettings.RoomEffect effect)
+    {
+        string settingsPath = room?.roomSettings?.filePath;
+        var snap = !string.IsNullOrEmpty(settingsPath) && System.IO.File.Exists(settingsPath)
+            ? SettingsSnapshot.FromFile(settingsPath)
+            : null;
+
+        bool hasRcType = snap != null && snap.HasRcType;
+        bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
+
+        if (!hasRcType)
+        {
+            orig(self, room, effect);
+            return;
+        }
+
+        var savedMultiply = Shader.GetGlobalVector(RainWorld.ShadPropMultiplyColor);
+        var savedAtmosphere = Shader.GetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor);
+
+        orig(self, room, effect);
+
+        if (isBlendManaged)
+        {
+            Color originalAtmo = Shader.GetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor);
+            Color originalMult = Shader.GetGlobalVector(RainWorld.ShadPropMultiplyColor);
+            TintManager.SaveOriginalViewStateDirect(self, originalAtmo, originalMult);
+        }
+
+        var cam = room.game?.cameras?[0];
+        if (cam == null || cam.room != room)
+        {
+            Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, savedMultiply);
+            Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, savedAtmosphere);
+        }
+    }
+
+    // ============================================================
+    // HOOK: Ocultar DistantCloud con depth >= 195f en PSV (solo una vez)
+    // ============================================================
+    private static void OnDistantCloudInitiateSprites(
+        On.AboveCloudsView.DistantCloud.orig_InitiateSprites orig,
+        AboveCloudsView.DistantCloud self,
+        RoomCamera.SpriteLeaser sLeaser,
+        RoomCamera rCam)
+    {
+        orig(self, sLeaser, rCam);
+
+        if (self.AboveCloudsScene.PinkSky && self.depth >= 195f)
+        {
+            foreach (var sprite in sLeaser.sprites)
+            {
+                if (sprite != null)
+                {
+                    sprite.isVisible = false;
+                    sprite.alpha = 0f;
+                }
+            }
         }
     }
 }

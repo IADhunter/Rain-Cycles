@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using UnityEngine;
 
 namespace RainCycles.Snapshot;
 
@@ -16,19 +17,20 @@ public partial class SettingsSnapshot
         var sb = new StringBuilder();
         bool poWritten = false;
 
-        // PRIMERO: Escribir RC_TYPE si existe (antes que cualquier otra línea RC_*)
-        if (HasRcType && RcType != RcType.None)
-        {
-            string typeValue = RcType == RcType.Static ? "Static" : "Blend";
-            sb.AppendLine($"RC_TYPE: {typeValue}");
-        }
+        // ============================================================
+        // RAINCYCLES: - NUEVO FORMATO MODULAR
+        // ============================================================
+        string rainCyclesLine = BuildRainCyclesLine();
+        bool hasRainCycles = !string.IsNullOrEmpty(rainCyclesLine);
+
+        // Si hay RainCycles, se escribe al principio (después de Template)
+        bool templateWritten = false;
 
         foreach (string rawLine in lines)
         {
             string line = rawLine.TrimEnd('\r');
 
-            // Saltar líneas RC_TYPE, RC_VIEW, RC_TINT originales
-            // porque las vamos a reescribir con el orden correcto
+            // Saltar líneas antiguas RC_*
             if (line.StartsWith("RC_TYPE:") || line.StartsWith("RC_VIEW:") || line.StartsWith("RC_TINT:"))
                 continue;
 
@@ -36,6 +38,15 @@ public partial class SettingsSnapshot
             {
                 poWritten = true;
                 sb.AppendLine(BuildPlacedObjectsLine());
+                continue;
+            }
+
+            // Escribir RainCycles justo después de Template
+            if (line.StartsWith("Template:") && hasRainCycles && !templateWritten)
+            {
+                templateWritten = true;
+                sb.AppendLine(line);
+                sb.AppendLine(rainCyclesLine);
                 continue;
             }
 
@@ -49,7 +60,19 @@ public partial class SettingsSnapshot
             else if (line.StartsWith("EffectColorA: "))          sb.AppendLine("EffectColorA: " + EffectColorA);
             else if (line.StartsWith("EffectColorB: "))          sb.AppendLine("EffectColorB: " + EffectColorB);
             else if (line.StartsWith("DangerType: "))            sb.AppendLine("DangerType: " + DangerType);
-            else if (line.StartsWith("Template: "))              sb.AppendLine("Template: " + Template);
+            else if (line.StartsWith("Template: "))              
+            {
+                if (hasRainCycles && !templateWritten)
+                {
+                    templateWritten = true;
+                    sb.AppendLine(line);
+                    sb.AppendLine(rainCyclesLine);
+                }
+                else
+                {
+                    sb.AppendLine(line);
+                }
+            }
             else if (line.StartsWith("Effects: "))               sb.AppendLine("Effects: " + Effects);
             else if (line.StartsWith("Triggers: "))              sb.AppendLine("Triggers: " + Triggers);
             else if (line.StartsWith("AmbientSounds: "))         sb.AppendLine("AmbientSounds: " + AmbientSounds);
@@ -57,25 +80,37 @@ public partial class SettingsSnapshot
             else                                                sb.AppendLine(line);
         }
 
-        // DESPUÉS: Escribir RC_VIEW y RC_TINT si hay RC_TYPE
-        if (HasRcType && RcType != RcType.None)
+        // Si no había Template pero hay RainCycles, añadirlo al final
+        if (hasRainCycles && !templateWritten)
         {
-            if (ViewType != ViewType.None)
-            {
-                string viewValue = ViewType == ViewType.ACV ? "ACV" :
-                                   ViewType == ViewType.RTV ? "RTV" : "PSV";
-                sb.AppendLine($"RC_VIEW: {viewValue}");
-            }
-            sb.AppendLine(BuildRcTintLine());
-        }
-        else if (!RawText.Contains("RC_TINT:"))
-        {
-            // Solo por compatibilidad con archivos antiguos que no tienen RC_TYPE
-            // pero ya existía RC_TINT. Normalmente esto no debería ocurrir.
-            sb.AppendLine(BuildRcTintLine());
+            sb.AppendLine(rainCyclesLine);
         }
 
         return sb.ToString();
+    }
+
+    // ============================================================
+    // BUILD RAINCYCLES LINE - NUEVO FORMATO MODULAR
+    // ============================================================
+    private string BuildRainCyclesLine()
+    {
+        if (!HasRcType) return null;
+
+        var parts = new List<string> { $"Type:{RcType}" };
+
+        if (HasView)
+        {
+            parts.Add($"View:{ViewType}");
+
+            if (HasTint)
+            {
+                string mul = TintMultiply.HasValue ? ColorToHex(TintMultiply.Value) : "FFFFFF";
+                string atm = TintAtmosphere.HasValue ? ColorToHex(TintAtmosphere.Value) : "FFFFFF";
+                parts.Add($"Tint:#{mul} #{atm}");
+            }
+        }
+
+        return $"RainCycles: <{string.Join("><", parts)}>";
     }
 
     private string BuildFadePaletteLine()
@@ -111,7 +146,7 @@ public partial class SettingsSnapshot
         int tp = obj.IndexOf('~');
         if (tp < 0) return obj;
         string header = obj.Substring(0, tp);
-        string rest   = obj.Substring(tp);
+        string rest = obj.Substring(tp);
         string[] parts = header.Split('>');
         for (int i = parts.Length - 1; i >= 0; i--)
         {
@@ -127,16 +162,8 @@ public partial class SettingsSnapshot
     private static string SFL(string key, float v) =>
         key + ": " + v.ToString("F7", SINV);
 
-    private string BuildRcTintLine()
+    private static string ColorToHex(Color color)
     {
-        string mul = TintMultiply.HasValue        ? ColorToHex(TintMultiply.Value)        : "#FFFFFF";
-        string atm = TintAtmosphere.HasValue      ? ColorToHex(TintAtmosphere.Value)      : "#FFFFFF";
-        // Solo 2 colores: Multiply y Atmosphere
-        return $"RC_TINT: {mul} {atm}";
-    }
-
-    private static string ColorToHex(Color c)
-    {
-        return $"#{Mathf.RoundToInt(c.r * 255f):X2}{Mathf.RoundToInt(c.g * 255f):X2}{Mathf.RoundToInt(c.b * 255f):X2}";
+        return $"#{Mathf.RoundToInt(color.r * 255f):X2}{Mathf.RoundToInt(color.g * 255f):X2}{Mathf.RoundToInt(color.b * 255f):X2}";
     }
 }

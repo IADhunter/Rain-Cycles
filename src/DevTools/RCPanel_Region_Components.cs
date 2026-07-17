@@ -315,6 +315,17 @@ public class ModSelectPanel : Panel, IDevUISignals
         var modList = new List<ModInfo>();
         foreach (string path in modPaths)
         {
+            if (path == RCPanel_RegionPage.DEFAULT_MOD_SENTINEL)
+            {
+                modList.Add(new ModInfo
+                {
+                    Path = path,
+                    DisplayName = RCPanel_RegionPage.DEFAULT_MOD_DISPLAY_NAME,
+                    ModId = RCPanel_RegionPage.DEFAULT_MOD_DISPLAY_NAME
+                });
+                continue;
+            }
+            
             string displayName = GetModNameFromModInfo(path);
             if (!string.IsNullOrEmpty(displayName))
             {

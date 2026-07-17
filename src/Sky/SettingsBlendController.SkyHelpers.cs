@@ -229,7 +229,10 @@ public static partial class SettingsBlendController
                 string fog = settings.GetBkgFogForState(state);
                 int idx = state - 1;
                 if (!string.IsNullOrEmpty(fog) && _rcSlotsPSVFog[idx].illustrationName != Path.GetFileNameWithoutExtension(fog))
+                {
                     RefreshSlotSprite(_rcSlotsPSVFog[idx], Path.GetFileNameWithoutExtension(fog), cam);
+                    _rcSlotsPSVFog[idx].depth = 195f;
+                }
             }
         }
 
@@ -340,7 +343,7 @@ public static partial class SettingsBlendController
     }
 
     // ============================================================
-    // REFRESH SLOT SPRITE - SIN PREFIJOS, USANDO LA IMAGEN CARGADA
+    // REFRESH SLOT SPRITE
     // ============================================================
     private static bool RefreshSlotSprite(
         BackgroundScene.Simple2DBackgroundIllustration slot,
@@ -427,10 +430,18 @@ public static partial class SettingsBlendController
     // ================================================================
     // RESOLVER RUTA DE IMAGEN
     // ================================================================
+    private const string DEFAULT_MOD_NAME = "Default";
+
     private static string ResolveIllustrationPath(string modName, string imageName)
     {
         if (string.IsNullOrEmpty(modName) || string.IsNullOrEmpty(imageName))
             return null;
+
+        if (string.Equals(modName, DEFAULT_MOD_NAME, System.StringComparison.OrdinalIgnoreCase))
+        {
+            string basePath = Path.Combine(Application.streamingAssetsPath, "Illustrations", imageName + ".png");
+            return File.Exists(basePath) ? basePath : null;
+        }
 
         foreach (var mod in ModManager.ActiveMods)
         {
@@ -460,6 +471,66 @@ public static partial class SettingsBlendController
     }
 
     // ============================================================
+    // SYNC FOG POSITION - Copia la posición X e Y del fog vanilla al slot RC
+    // ============================================================
+    private static void SyncFogSlotPosition(RoomCamera cam)
+    {
+        if (_psvScene == null || _rcSlotsPSVFog == null || _rcSlotsPSVFog.Count == 0)
+            return;
+
+        const float Y_OFFSET = 68f;
+        const float X_OFFSET = 0f;
+
+        if (_cachedVanillaFog == null)
+        {
+            foreach (var elem in _psvScene.elements)
+            {
+                if (elem is AboveCloudsView.HorizonFog fog)
+                {
+                    _cachedVanillaFog = fog;
+                    break;
+                }
+            }
+            if (_cachedVanillaFog == null)
+                return;
+        }
+
+        FSprite vanillaSprite = null;
+        for (int i = 0; i < cam.spriteLeasers.Count; i++)
+        {
+            if (cam.spriteLeasers[i].drawableObject == _cachedVanillaFog)
+            {
+                if (cam.spriteLeasers[i].sprites != null && cam.spriteLeasers[i].sprites.Length > 0)
+                    vanillaSprite = cam.spriteLeasers[i].sprites[0];
+                break;
+            }
+        }
+        if (vanillaSprite == null)
+            return;
+
+        for (int j = 0; j < _rcSlotsPSVFog.Count; j++)
+        {
+            var slot = _rcSlotsPSVFog[j];
+            if (slot.alpha <= 0.01f)
+                continue;
+
+            for (int k = 0; k < cam.spriteLeasers.Count; k++)
+            {
+                if (cam.spriteLeasers[k].drawableObject == slot)
+                {
+                    var sprites = cam.spriteLeasers[k].sprites;
+                    if (sprites != null && sprites.Length > 0)
+                    {
+                        sprites[0].x = vanillaSprite.x + X_OFFSET;
+                        sprites[0].y = vanillaSprite.y + Y_OFFSET;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // ============================================================
     // CLEAR ALL SLOTS
     // ============================================================
     public static void ClearAllSlots()
@@ -480,5 +551,58 @@ public static partial class SettingsBlendController
         _rcSlotsStaticPSV = null;
 
         _forceSkyRefresh = false;
+        ClearCachedVanillaFog();
+    }
+
+    // ============================================================
+    // HOOK: Sincronizar fog RC durante DrawSprites del vanilla
+    // (se ejecuta DESPUÉS de que el vanilla calcule su posición final)
+    // ============================================================
+    private static void OnHorizonFogDrawSprites(
+        On.AboveCloudsView.HorizonFog.orig_DrawSprites orig,
+        AboveCloudsView.HorizonFog self,
+        RoomCamera.SpriteLeaser sLeaser,
+        RoomCamera rCam,
+        float timeStacker,
+        Vector2 camPos)
+    {
+        // 1. Llamar al original para que el vanilla calcule su posición
+        orig(self, sLeaser, rCam, timeStacker, camPos);
+
+        // 2. Ahora el sprite del vanilla tiene su posición final
+        //    Sincronizar el fog RC inmediatamente
+        if (_psvScene != null && _rcSlotsPSVFog != null && _rcSlotsPSVFog.Count > 0)
+        {
+            const float Y_OFFSET = 68f;
+            const float X_OFFSET = 0f;
+
+            if (sLeaser.sprites != null && sLeaser.sprites.Length > 0)
+            {
+                float vanillaX = sLeaser.sprites[0].x;
+                float vanillaY = sLeaser.sprites[0].y;
+                _cachedVanillaFog = self;
+
+                for (int j = 0; j < _rcSlotsPSVFog.Count; j++)
+                {
+                    var slot = _rcSlotsPSVFog[j];
+                    if (slot.alpha <= 0.01f)
+                        continue;
+
+                    for (int k = 0; k < rCam.spriteLeasers.Count; k++)
+                    {
+                        if (rCam.spriteLeasers[k].drawableObject == slot)
+                        {
+                            var sprites = rCam.spriteLeasers[k].sprites;
+                            if (sprites != null && sprites.Length > 0)
+                            {
+                                sprites[0].x = vanillaX + X_OFFSET;
+                                sprites[0].y = vanillaY + Y_OFFSET;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 }

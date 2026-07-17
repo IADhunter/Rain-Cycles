@@ -49,26 +49,23 @@ public class RSPlugin : BaseUnityPlugin
             bool ok = MachineConnector.SetRegisteredOI(ID, _options);
             Logger.LogDebug($"[RC] SetRegisteredOI result: {ok}");
 
-            // ════════════════════════════════════════════════════════════════
-            // CREAR TEXTURA TRANSPARENTE PARA PLACEHOLDER DE SLOTS
-            // ════════════════════════════════════════════════════════════════
             CreateTransparentPlaceholder();
 
-            // NUEVO: Sistema centralizado de limpieza
             ModResetter.Init();
-            
             RCDEVTools.Init();
             StateFileResolver.Init();
             SettingsBlendController.Init();
-            StaticTintManager.Init();
             BlendSettingsLoader.Init();
             BlendClockUpdater.Init();
             ArenaBlendController.Init();
             RoomSettingsPatches.Init();
             RainTimerHudController.Init();
+            SnowLightController.Init();
             RoomCameraExtensions.InitPreloadHooks();
             TintManager.Init();
-            
+            RoomCameraExtensions.InitLights();
+            DayNightBlocker.Init();
+
             Logger.LogInfo($"[{NAME}] {VER} loaded successfully!");
         }
         catch (Exception ex)
@@ -77,23 +74,17 @@ public class RSPlugin : BaseUnityPlugin
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    // CREAR TEXTURA TRANSPARENTE DE 1x1 PARA USAR COMO PLACEHOLDER
-    // EN SLOTS DE BACKGROUND ANTES DE QUE SE ASIGNE LA IMAGEN REAL
-    // ════════════════════════════════════════════════════════════════════
+    // ============================================================
+    // CREAR TEXTURA TRANSPARENTE PARA SLOTS
+    // ============================================================
     private static void CreateTransparentPlaceholder()
     {
         try
         {
-            // Crear textura de 1x1 completamente transparente
             var tex = new Texture2D(1, 1, TextureFormat.RGBA32, false);
             tex.SetPixel(0, 0, new Color(0f, 0f, 0f, 0f));
             tex.Apply();
-            
-            // Registrar en Futile como atlas
             Futile.atlasManager.LoadAtlasFromTexture("RC_Transparent", tex, false);
-            
-            log.LogInfo("[RC] Textura transparente RC_Transparent creada para placeholder de slots");
         }
         catch (Exception ex)
         {

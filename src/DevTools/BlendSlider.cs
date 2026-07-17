@@ -80,7 +80,8 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
             BlendFactor = 0f;
             _wasMoving  = false;
             SettingsBlendController.Detach();
-            _panel?.ResetRelaySystem();
+            // Clear manual - mantiene el estado actual
+            _panel?.ClearBlendOnly();
         }
     }
 

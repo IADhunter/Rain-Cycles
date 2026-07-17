@@ -2,6 +2,7 @@ using DevInterface;
 using UnityEngine;
 using System.IO;
 using RainCycles.Patches;
+using RainCycles.Snapshot;
 
 namespace FilesSetting;
 
@@ -111,6 +112,9 @@ public class ModeButton : Button
 
 // ──────────────────────────────────────────────────────────────────────────
 
+// ════════════════════════════════════════════════════════════════════════
+// EditModeButton - MODIFICADO
+// ════════════════════════════════════════════════════════════════════════
 public class EditModeButton : Button
 {
     private static readonly Color COLOR_ON  = new Color(0.2f, 0.7f, 0.3f);
@@ -126,7 +130,50 @@ public class EditModeButton : Button
     public override void Clicked()
     {
         base.Clicked();
-        BlendClock.SetEditMode(!BlendClock.EditMode);
+
+        var panel = parentNode as RCPanel;
+
+        if (BlendClock.EditMode)
+        {
+            // ════════════════════════════════════════════════════════════════
+            // DESACTIVAR EDIT MODE: restaurar al estado original del ciclo
+            // ════════════════════════════════════════════════════════════════
+            if (panel != null)
+            {
+                panel.ResetToCycleState();
+            }
+            BlendClock.SetEditMode(false);
+        }
+        else
+        {
+            // ════════════════════════════════════════════════════════════════
+            // ACTIVAR EDIT MODE: activar modo edición y seleccionar estado actual
+            // ════════════════════════════════════════════════════════════════
+            if (panel != null)
+            {
+                // 1. Activar modo edición
+                BlendClock.SetEditMode(true);
+                
+                // 2. Obtener el estado actual del ciclo
+                int currentState = StateFileResolver.GetCurrentCycleState();
+                if (currentState < 1 || currentState > 4) currentState = 1;
+                
+                // 3. Buscar el botón correspondiente y simular click
+                foreach (var node in panel.subNodes)
+                {
+                    if (node is SelectButton btn && btn.IDstring == $"RCA_{currentState}")
+                    {
+                        btn.Clicked();
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                BlendClock.SetEditMode(true);
+            }
+        }
+
         UpdateVisual();
     }
 
@@ -150,54 +197,37 @@ public class SkyTypeButton : Button
     private static readonly Color COLOR_INACTIVE = new Color(1f, 1f, 1f);
 
     public readonly ViewType Type;
-    private string _roomName;
+    private bool _isActive;
 
     public SkyTypeButton(DevUI owner, string IDstring, DevUINode parentNode,
-                         Vector2 pos, float width, ViewType type, string roomName)
+                         Vector2 pos, float width, ViewType type, bool isActive)
         : base(owner, IDstring, parentNode, pos, width,
                type == ViewType.ACV ? "ACV" : (type == ViewType.RTV ? "RTV" : "PSV"))
     {
         Type = type;
-        _roomName = roomName;
+        _isActive = isActive;
+        UpdateVisual();
+    }
+
+    public void SetActive(bool active)
+    {
+        _isActive = active;
         UpdateVisual();
     }
 
     public override void Update()
     {
         base.Update();
-        UpdateVisual();
-    }
-
-    public void Refresh(ViewType currentView)
-    {
-        this.colorA = currentView == Type ? COLOR_ACTIVE : COLOR_INACTIVE;
     }
 
     private void UpdateVisual()
     {
-        Room room = null;
-        var devUI = this.owner as DevUI;
-        if (devUI?.room != null)
-            room = devUI.room;
-
-        if (room != null)
-        {
-            // Leer de memoria (RoomSettingsExtensions) en lugar del archivo
-            var rs = room.roomSettings;
-            if (rs != null)
-            {
-                ViewType currentView = rs.GetViewType();
-                this.colorA = currentView == Type ? COLOR_ACTIVE : COLOR_INACTIVE;
-                return;
-            }
-        }
-
-        this.colorA = COLOR_INACTIVE;
+        this.colorA = _isActive ? COLOR_ACTIVE : COLOR_INACTIVE;
     }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// RC_TYPE Button - Ahora lee de memoria (RoomSettingsExtensions)
+// RC_TYPE Button - usa _isActive como fuente de verdad
 // ──────────────────────────────────────────────────────────────────────────
 
 public class RcTypeButton : Button
@@ -216,7 +246,7 @@ public class RcTypeButton : Button
         {
             "STATIC" => RcType.Static,
             "BLEND" => RcType.Blend,
-            _ => RcType.None  // Vanilla
+            _ => RcType.None
         };
         _isActive = isActive;
         UpdateVisual();
@@ -231,34 +261,10 @@ public class RcTypeButton : Button
     public override void Update()
     {
         base.Update();
-        UpdateVisual();
     }
 
     private void UpdateVisual()
     {
-        // ================================================================
-        // LEER DE MEMORIA (RoomSettingsExtensions) en lugar del archivo
-        // ================================================================
-        Room room = null;
-        var devUI = this.owner as DevUI;
-        if (devUI?.room != null)
-            room = devUI.room;
-
-        RcType currentRcType = RcType.None;
-
-        if (room != null)
-        {
-            var rs = room.roomSettings;
-            if (rs != null && rs.HasRcType())
-            {
-                currentRcType = rs.GetRcType();
-            }
-        }
-
-        bool shouldBeActive = (Type == RcType.Static && currentRcType == RcType.Static) ||
-                              (Type == RcType.Blend && currentRcType == RcType.Blend) ||
-                              (Type == RcType.None && currentRcType == RcType.None);
-
-        this.colorA = shouldBeActive ? COLOR_ACTIVE : COLOR_INACTIVE;
+        this.colorA = _isActive ? COLOR_ACTIVE : COLOR_INACTIVE;
     }
 }

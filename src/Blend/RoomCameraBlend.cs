@@ -52,11 +52,15 @@ public static partial class RoomCameraExtensions
         public int lastStateA = -1;
         public int lastStateB = -1;
 
-        // === Terrain ===
-        public Texture2D terrainTexA;
-        public Texture2D terrainTexB;
-        public string lastTerrainPalA;
-        public string lastTerrainPalB;
+        // === Terrain blend (ver RoomCameraBlend.Terrain.cs) ===
+        public Texture2D terrainBlendedTexture;
+        public int lastTerrainStateA = -1;
+        public int lastTerrainStateB = -1;
+        public float lastTerrainT = -1f;
+        public Color[] terrainScratchA;
+        public Color[] terrainScratchB;
+        public Color[] terrainResultScratch;
+        public int terrainScratchTotal = -1;
     }
 
     public static CameraBlendData GetBlendData(this RoomCamera cam)
@@ -78,7 +82,6 @@ public static partial class RoomCameraExtensions
         data.lastStateB = -1;
 
         ClearPaletteData(cam);
-        ClearTerrainData(cam);
         ClearEffectData(cam);
 
         cam.paletteBlend = 0f;
@@ -117,75 +120,8 @@ public static partial class RoomCameraExtensions
     }
 
     // ═════════════════════════════════════════════════════════════════════
-    //  LIGHT SOURCE COLOR INTERPOLATION - Para luces Environment durante blend
+    //  LIGHT SOURCE COLOR INTERPOLATION
+    //  MOVIDO a RoomCameraBlend.Lights.cs (junto con los patches que lo
+    //  consumen: LightBeam.Update / LightSource.Update). Ver ese archivo.
     // ═════════════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// Obtiene el color interpolado de un píxel usando los datos de blend actuales.
-    /// Útil para luces Environment durante el blend.
-    /// </summary>
-    public static Color GetInterpolatedPixelColor(this RoomCamera cam, Vector2 pos, float t)
-    {
-        var data = GetBlendData(cam);
-        if (data == null || data.mainPixelsA == null || data.mainPixelsB == null)
-            return cam.PixelColorAtCoordinate(pos);
-        
-        Vector2 vector = pos - cam.CamPos(cam.currentCameraPosition);
-        Color pixel = cam.levelTexture.GetPixel(Mathf.FloorToInt(vector.x), Mathf.FloorToInt(vector.y));
-        
-        float dark = GetDarkPalette(cam);
-        
-        if (pixel.r == 1f && pixel.g == 1f && pixel.b == 1f)
-            return GetPalettePixelInterpolated(data, 0, 7, t, dark);
-        
-        int num = Mathf.FloorToInt(pixel.r * 255f);
-        float num2 = 0f;
-        if (num > 90) num -= 90;
-        else num2 = 1f;
-        
-        int num3 = Mathf.FloorToInt((float)num / 30f);
-        int num4 = (num - 1) % 30;
-        
-        Color c0 = GetPalettePixelInterpolated(data, num4, num3, t, dark);
-        Color c1 = GetPalettePixelInterpolated(data, num4, num3 + 3, t, dark);
-        Color sky = GetPalettePixelInterpolated(data, 1, 7, t, dark);
-        float skyF = GetPalettePixelInterpolated(data, 9, 7, t, dark).r;
-        float t2 = (float)num4 * (1f - skyF) / 30f;
-        
-        return Color.Lerp(Color.Lerp(c1, c0, num2), sky, t2);
-    }
-
-    private static Color GetPalettePixelInterpolated(CameraBlendData data, int x, int y, float t, float darkPalette)
-    {
-        const int W = 32;
-        
-        Color32 a1 = data.mainPixelsA[(y + 8) * W + x];
-        Color32 a2 = data.mainPixelsB[(y + 8) * W + x];
-        Color32 a1_dark = data.mainPixelsA[y * W + x];
-        Color32 a2_dark = data.mainPixelsB[y * W + x];
-        
-        Color lit = new Color(
-            (a1.r + (a2.r - a1.r) * t) / 255f,
-            (a1.g + (a2.g - a1.g) * t) / 255f,
-            (a1.b + (a2.b - a1.b) * t) / 255f);
-        Color dark = new Color(
-            (a1_dark.r + (a2_dark.r - a1_dark.r) * t) / 255f,
-            (a1_dark.g + (a2_dark.g - a1_dark.g) * t) / 255f,
-            (a1_dark.b + (a2_dark.b - a1_dark.b) * t) / 255f);
-        
-        return Color.Lerp(lit, dark, darkPalette);
-    }
-
-    private static float GetDarkPalette(RoomCamera cam)
-    {
-        var room = cam.room;
-        if (room == null) return 0f;
-        var rs = room.roomSettings;
-        if (rs.DangerType != RoomRain.DangerType.None)
-            return room.world.rainCycle.RainDarkPalette * rs.RainIntensity;
-        if (rs.GetEffectAmount(RoomSettings.RoomEffect.Type.BrokenZeroG) > 0f
-            && room.world.rainCycle.brokenAntiGrav != null)
-            return 1f - room.world.rainCycle.brokenAntiGrav.CurrentLightsOn;
-        return 0f;
-    }
 }

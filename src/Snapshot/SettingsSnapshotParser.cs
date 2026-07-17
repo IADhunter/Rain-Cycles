@@ -29,37 +29,12 @@ public partial class SettingsSnapshot
             string key = line.Substring(0, sep);
             string val = line.Substring(sep + 2);
 
-            if (key == "RC_TYPE")
+            // ============================================================
+            // RAINCYCLES - NUEVO FORMATO MODULAR
+            // ============================================================
+            if (key == "RainCycles")
             {
-                snap.HasRcType = true;
-                snap.RcType = val.Trim().ToUpperInvariant() switch
-                {
-                    "STATIC" => RcType.Static,
-                    "BLEND" => RcType.Blend,
-                    _ => RcType.None
-                };
-                continue;
-            }
-
-            if (key == "RC_VIEW" && snap.HasRcType)
-            {
-                snap.ViewType = val.Trim().ToUpperInvariant() switch
-                {
-                    "ACV" => ViewType.ACV,
-                    "RTV" => ViewType.RTV,
-                    "PSV" => ViewType.PSV,
-                    _ => ViewType.None
-                };
-                continue;
-            }
-
-            if (key == "RC_TINT" && snap.HasRcType)
-            {
-                string[] hexes = val.Trim().Split(' ');
-                // Solo 2 colores: Multiply y Atmosphere
-                if (hexes.Length >= 1) snap.TintMultiply = ParseHexColor(hexes[0]);
-                if (hexes.Length >= 2) snap.TintAtmosphere = ParseHexColor(hexes[1]);
-                // Ya no hay tercer color
+                ParseRainCyclesContent(snap, val.Trim());
                 continue;
             }
 
@@ -85,10 +60,7 @@ public partial class SettingsSnapshot
                 case "TerrainWaves": if (float.TryParse(val.Trim(), NF, INV, out float tw)) snap.TerrainWaves = tw; break;
                 case "TerrainLight": if (float.TryParse(val.Trim(), NF, INV, out float tl)) snap.TerrainLight = tl; break;
                 case "TerrainGrain": if (float.TryParse(val.Trim(), NF, INV, out float tg)) snap.TerrainGrain = tg; break;
-                case "TerrainDepth": if (float.TryParse(val.Trim(), NF, INV, out float td)) snap.TerrainDepth = td; break;
                 case "TerrainSkyFade": if (float.TryParse(val.Trim(), NF, INV, out float ts)) snap.TerrainSkyFade = ts; break;
-                case "TerrainEdgeRadius": if (float.TryParse(val.Trim(), NF, INV, out float te)) snap.TerrainEdgeRadius = te; break;
-                case "TerrainGooHeight": if (float.TryParse(val.Trim(), NF, INV, out float th)) snap.TerrainGooHeight = th; break;
                 case "TerrainStainAmount": if (float.TryParse(val.Trim(), NF, INV, out float ta)) snap.TerrainStainAmount = ta; break;
                 case "TerrainStainBrightness": if (float.TryParse(val.Trim(), NF, INV, out float tb)) snap.TerrainStainBrightness = tb; break;
                 case "TerrainStainHeight": if (float.TryParse(val.Trim(), NF, INV, out float tsh)) snap.TerrainStainHeight = tsh; break;
@@ -128,6 +100,62 @@ public partial class SettingsSnapshot
         }
 
         return snap;
+    }
+
+    // ============================================================
+    // PARSEAR RAINCYCLES - FORMATO MODULAR
+    // ============================================================
+    private static void ParseRainCyclesContent(SettingsSnapshot snap, string content)
+    {
+        int pos = 0;
+        while (pos < content.Length)
+        {
+            int start = content.IndexOf('<', pos);
+            if (start < 0) break;
+            int end = content.IndexOf('>', start);
+            if (end < 0) break;
+
+            string segment = content.Substring(start + 1, end - start - 1);
+            int sep = segment.IndexOf(':');
+            if (sep > 0)
+            {
+                string field = segment.Substring(0, sep).Trim();
+                string value = segment.Substring(sep + 1).Trim();
+
+                switch (field)
+                {
+                    case "Type":
+                        snap.RcType = value.ToUpperInvariant() switch
+                        {
+                            "STATIC" => RcType.Static,
+                            "BLEND" => RcType.Blend,
+                            _ => RcType.None
+                        };
+                        break;
+                    case "View":
+                        if (snap.HasRcType)
+                        {
+                            snap.ViewType = value.ToUpperInvariant() switch
+                            {
+                                "ACV" => ViewType.ACV,
+                                "RTV" => ViewType.RTV,
+                                "PSV" => ViewType.PSV,
+                                _ => ViewType.None
+                            };
+                        }
+                        break;
+                    case "Tint":
+                        if (snap.HasView)
+                        {
+                            string[] hexes = value.Split(' ');
+                            if (hexes.Length >= 1) snap.TintMultiply = ParseHexColor(hexes[0]);
+                            if (hexes.Length >= 2) snap.TintAtmosphere = ParseHexColor(hexes[1]);
+                        }
+                        break;
+                }
+            }
+            pos = end + 1;
+        }
     }
 
     public static SettingsSnapshot FromFileWithTemplate(string path, string roomName)
@@ -177,7 +205,7 @@ public partial class SettingsSnapshot
         RSPlugin.log.LogInfo($"[Template] {roomName}: cargando desde {Path.GetFileName(templatePath)}");
 
         SettingsSnapshot tmpl;
-        if (!StaticTintManager.TryGetCachedPath(templatePath, out tmpl))
+        if (!TryGetCached(templatePath, out tmpl))
             tmpl = FromFile(templatePath);
 
         if (!snap._hasPalette) snap.Palette = tmpl.Palette;
@@ -196,10 +224,7 @@ public partial class SettingsSnapshot
         if (snap.TerrainWaves == null) snap.TerrainWaves = tmpl.TerrainWaves;
         if (snap.TerrainLight == null) snap.TerrainLight = tmpl.TerrainLight;
         if (snap.TerrainGrain == null) snap.TerrainGrain = tmpl.TerrainGrain;
-        if (snap.TerrainDepth == null) snap.TerrainDepth = tmpl.TerrainDepth;
         if (snap.TerrainSkyFade == null) snap.TerrainSkyFade = tmpl.TerrainSkyFade;
-        if (snap.TerrainEdgeRadius == null) snap.TerrainEdgeRadius = tmpl.TerrainEdgeRadius;
-        if (snap.TerrainGooHeight == null) snap.TerrainGooHeight = tmpl.TerrainGooHeight;
         if (snap.TerrainStainAmount == null) snap.TerrainStainAmount = tmpl.TerrainStainAmount;
         if (snap.TerrainStainBrightness == null) snap.TerrainStainBrightness = tmpl.TerrainStainBrightness;
         if (snap.TerrainStainHeight == null) snap.TerrainStainHeight = tmpl.TerrainStainHeight;
@@ -256,7 +281,7 @@ public partial class SettingsSnapshot
                     return first;
                 }
             }
-            
+
             RSPlugin.log.LogInfo($"[Template] {region}: sin línea 'Room Setting Templates:' en properties.txt");
             return null;
         }
@@ -279,7 +304,7 @@ public partial class SettingsSnapshot
                 if (sep < 0) continue;
                 string templatesLine = line.Substring(sep + 1).Trim();
                 string[] templates = templatesLine.Split(',');
-                
+
                 var templateList = new List<string>();
                 foreach (string t in templates)
                 {
@@ -287,7 +312,7 @@ public partial class SettingsSnapshot
                     if (!string.IsNullOrEmpty(clean))
                         templateList.Add(clean);
                 }
-                
+
                 if (templateList.Count > 0)
                 {
                     RSPlugin.log.LogInfo($"[Template] {Path.GetFileName(propertiesPath)}: templates disponibles = {string.Join(", ", templateList)}");
@@ -304,16 +329,13 @@ public partial class SettingsSnapshot
 
     private static string ResolveTemplatePath(string region, string templateName, string settingsModDir)
     {
-        // Buscar ignorando mayúsculas/minúsculas
         string templateFile = $"{region}_settingstemplate_{templateName}.txt";
-        
+
         if (!string.IsNullOrEmpty(settingsModDir) && Directory.Exists(settingsModDir))
         {
-            // Búsqueda exacta primero
             string candidate = Path.Combine(settingsModDir, templateFile);
             if (File.Exists(candidate)) return candidate;
-            
-            // Búsqueda con ignore case
+
             foreach (string file in Directory.GetFiles(settingsModDir, "*.txt"))
             {
                 if (string.Equals(Path.GetFileName(file), templateFile, StringComparison.OrdinalIgnoreCase))
@@ -327,8 +349,7 @@ public partial class SettingsSnapshot
             if (ModManager.ActiveMods[i] == null) continue;
             string candidate = Path.Combine(ModManager.ActiveMods[i].path, templateRelative);
             if (File.Exists(candidate)) return candidate;
-            
-            // Búsqueda con ignore case en mods
+
             string modDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region);
             if (Directory.Exists(modDir))
             {
@@ -342,8 +363,7 @@ public partial class SettingsSnapshot
 
         string basePath = Path.Combine(Application.streamingAssetsPath, templateRelative);
         if (File.Exists(basePath)) return basePath;
-        
-        // Búsqueda con ignore case en vanilla
+
         string vanillaDir = Path.Combine(Application.streamingAssetsPath, "World", region);
         if (Directory.Exists(vanillaDir))
         {
@@ -353,7 +373,7 @@ public partial class SettingsSnapshot
                     return file;
             }
         }
-        
+
         return null;
     }
 
@@ -478,20 +498,14 @@ public partial class SettingsSnapshot
         string header = tildePos >= 0 ? obj.Substring(0, tildePos) : obj;
         string[] parts = header.Split('>');
 
+        // Extraer intensidad
         if (parts.Length > 3 && float.TryParse(parts[3].TrimStart('<').Trim(), NF, INV, out float v))
         {
             snap.LightIntensities[idx] = v;
-            return;
         }
 
-        for (int i = parts.Length - 1; i >= 0; i--)
-        {
-            if (float.TryParse(parts[i].TrimStart('<').Trim(), NF, INV, out v))
-            {
-                snap.LightIntensities[idx] = v;
-                return;
-            }
-        }
+        // NOTA: El modo de color (Environment, White, EffectColor1, EffectColor2)
+        // lo maneja vanilla automáticamente. No necesitamos extraerlo.
     }
 
     private static void ExtractLightBeam(SettingsSnapshot snap, int idx, string obj)

@@ -1,10 +1,23 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using UnityEngine;
 
 namespace RainCycles.Snapshot;
 
-// Estructura de datos de un settings_N.txt
+// ================================================================
+// SETTINGS SNAPSHOT - ESTRUCTURA DE DATOS
+// ================================================================
+
 public partial class SettingsSnapshot
 {
+    // ── Cache estática ────────────────────────────────────────────────
+    private static readonly Dictionary<string, SettingsSnapshot> _snapshotCache = 
+        new Dictionary<string, SettingsSnapshot>(StringComparer.OrdinalIgnoreCase);
+
+    // ── Propiedades ────────────────────────────────────────────────────
     public int    Palette;
     public float  Grime;
     public float  Clouds;
@@ -41,7 +54,6 @@ public partial class SettingsSnapshot
     public Dictionary<int, float>         LightIntensities  = new Dictionary<int, float>();
     public Dictionary<int, LightBeamData> LightBeams        = new Dictionary<int, LightBeamData>();
 
-    // Efectos escalares (-1 = no declarado)
     public float EffectDarkness         = -1f;
     public float EffectBrightness       = -1f;
     public float EffectContrast         = -1f;
@@ -55,7 +67,6 @@ public partial class SettingsSnapshot
     public float EffectBloom            = -1f;
     public float EffectSurfaceSandstorm = -1f;
 
-    // ModifyEffectColorA/B parameters (Hue, Saturation, Value) - null = no declarado
     public float? ModifyEffectColorA_Hue = null;
     public float? ModifyEffectColorA_Saturation = null;
     public float? ModifyEffectColorA_Value = null;
@@ -63,37 +74,101 @@ public partial class SettingsSnapshot
     public float? ModifyEffectColorB_Saturation = null;
     public float? ModifyEffectColorB_Value = null;
 
-    // Terrain Palette
     public string  TerrainPaletteName     = null;
     public string  TerrainFadePaletteName = null;
     public float[] TerrainFadeOpacities   = new float[0];
     public bool    _hasTerrainPalette;
     public bool    _hasTerrainFadePalette;
 
-    // Terrain scalars (null = no declarado)
+    // ============================================================
+    // TERRAIN SCALARS - SOLO LOS QUE MANEJAMOS
+    // ============================================================
     public float? TerrainWaves           = null;
     public float? TerrainLight           = null;
     public float? TerrainGrain           = null;
-    public float? TerrainDepth           = null;
     public float? TerrainSkyFade         = null;
-    public float? TerrainEdgeRadius      = null;
-    public float? TerrainGooHeight       = null;
     public float? TerrainStainAmount     = null;
     public float? TerrainStainBrightness = null;
     public float? TerrainStainHeight     = null;
 
     public string RawText = "";
 
-    // RC_TINT - SOLO DOS COLORES (Multiply y Atmosphere)
-    public UnityEngine.Color? TintMultiply   = null;
-    public UnityEngine.Color? TintAtmosphere = null;
-
-    // RC_VIEW
-    public ViewType ViewType = ViewType.None;
-
-    // RC_TYPE - Nueva fuente de verdad
+    // ============================================================
+    // RAINCYCLES DATA
+    // ============================================================
     public RcType RcType = RcType.None;
-    public bool HasRcType = false;
+    public ViewType ViewType = ViewType.None;
+    public Color? TintMultiply = null;
+    public Color? TintAtmosphere = null;
+
+    public bool HasRcType => RcType != RcType.None;
+    public bool HasView => HasRcType && ViewType != ViewType.None;
+    public bool HasTint => HasView && (TintMultiply.HasValue || TintAtmosphere.HasValue);
+
+    // ============================================================
+    // CACHE API
+    // ============================================================
+
+    public static SettingsSnapshot GetCached(string path, string roomName = null)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        
+        if (!_snapshotCache.TryGetValue(path, out var snap))
+        {
+            snap = string.IsNullOrEmpty(roomName) 
+                ? FromFile(path) 
+                : FromFileWithTemplate(path, roomName);
+            _snapshotCache[path] = snap;
+        }
+        return snap;
+    }
+
+    public static bool TryGetCached(string path, out SettingsSnapshot snap)
+    {
+        return _snapshotCache.TryGetValue(path, out snap);
+    }
+
+    public static void InvalidateCache(string path)
+    {
+        if (!string.IsNullOrEmpty(path))
+            _snapshotCache.Remove(path);
+    }
+
+    public static void InvalidateAllCache()
+    {
+        _snapshotCache.Clear();
+    }
+
+    public static void PreloadRegionTemplates(string regionCode)
+    {
+        if (string.IsNullOrEmpty(regionCode)) return;
+        string upper = regionCode.ToUpperInvariant();
+        string searchPattern = $"{upper}_settingstemplate_*.txt";
+        string regionFolder = Path.Combine("World", upper);
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string dir = Path.Combine(ModManager.ActiveMods[i].path, regionFolder);
+            if (Directory.Exists(dir))
+            {
+                foreach (string file in Directory.GetFiles(dir, searchPattern))
+                {
+                    if (!_snapshotCache.ContainsKey(file))
+                        _snapshotCache[file] = FromFile(file);
+                }
+            }
+        }
+
+        string vanillaDir = Path.Combine(Application.streamingAssetsPath, regionFolder);
+        if (Directory.Exists(vanillaDir))
+        {
+            foreach (string file in Directory.GetFiles(vanillaDir, searchPattern))
+            {
+                if (!_snapshotCache.ContainsKey(file))
+                    _snapshotCache[file] = FromFile(file);
+            }
+        }
+    }
 }
 
 public class LightBeamData
@@ -111,10 +186,9 @@ public enum ViewType
     PSV
 }
 
-// Nuevo enum para RC_TYPE
 public enum RcType
 {
-    None,   // No declarado → sala vanilla
-    Static, // Sala estática (tintes fijos, sin blend)
-    Blend   // Sala participa en blend system
+    None,
+    Static,
+    Blend
 }

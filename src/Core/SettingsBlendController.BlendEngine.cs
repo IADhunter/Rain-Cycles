@@ -11,11 +11,10 @@ public static partial class SettingsBlendController
 {
     private static void ApplyBlend(float t)
     {
-        // ================================================================
-        // Si la sala actual es estática, NO hacer nada
-        // Las salas estáticas son completamente independientes del blend
-        // ================================================================
-        if (_room != null && StaticTintManager.IsStaticViewRoom(_room))
+        // ============================================================
+        // SALAS ESTÁTICAS - COMPLETAMENTE INDEPENDIENTES
+        // ============================================================
+        if (_room != null && IsStaticViewRoom(_room))
         {
             return;
         }
@@ -27,20 +26,32 @@ public static partial class SettingsBlendController
         if (cam == null)
             return;
 
-        // ================================================================
-        // 1. PALETAS — COMPLETAMENTE AUTÓNOMAS
-        // ================================================================
+        // ============================================================
+        // PALETAS
+        // ============================================================
         var blendData = cam.GetBlendData();
         if (blendData == null || !blendData.isBlendActive)
             cam.SetBlendActive(_room.abstractRoom.name);
         
         cam.UpdateBlendPalette();
 
-        // ================================================================
-        // 2. TINTES — Shaders globales + ACV.atmosphereColor
-        // ================================================================
-        var lerped = SettingsSnapshot.Lerp(_snapA, _snapB, t);
+        // ============================================================
+        // TINTES - SHADERS GLOBALES + ACV
+        // ============================================================
+        Color vanillaMultiply = Color.white;
+        Color vanillaAtmosphere = Color.white;
+        if (_room != null)
+        {
+            TintManager.TryGetOriginalColors(_room, out vanillaMultiply, out vanillaAtmosphere);
+        }
+
+        var lerped = TintManager.InterpolateTints(_snapA, _snapB, t, vanillaMultiply, vanillaAtmosphere);
         _activeSnapshot = lerped;
+
+        // ============================================================
+        // TERRAIN SCALARS
+        // ============================================================
+        _room.ApplyTerrainScalars(_snapA, _snapB, t);
 
         if (lerped.TintMultiply.HasValue)
         {
@@ -52,7 +63,6 @@ public static partial class SettingsBlendController
             var c = lerped.TintAtmosphere.Value;
             Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, new Vector4(c.r, c.g, c.b, 1f));
             
-            // Aplicar también a ACV si existe en la sala
             if (_room != null)
             {
                 for (int i = 0; i < _room.updateList.Count; i++)
@@ -66,55 +76,31 @@ public static partial class SettingsBlendController
             }
         }
 
-        // ================================================================
-        // 3. ROOMSETTINGS — Propiedades escalares
-        // ================================================================
-        var rs = _room.roomSettings;
-        rs.Grime = lerped.Grime;
-        if (!RoomHasWeatherController(_room))
-            rs.Clouds = lerped.Clouds;
-        rs.CeilingDrips = lerped.CeilingDrips;
-        rs.BkgDroneVolume = lerped.BkgDroneVolume;
-        rs.RandomItemDensity = lerped.RandomItemDensity;
-        rs.RandomItemSpearChance = lerped.RandomItemSpearChance;
-        rs.WaterReflectionAlpha = lerped.WaterReflectionAlpha;
+        // ============================================================
+        // ROOM SCALARS
+        // ============================================================
+        _room.ApplyRoomScalars(_snapA, _snapB, t);
 
-        // ================================================================
-        // 4. MIXANDAPPLY — Decals, luces, efectos, terrain
-        // ================================================================
-        MixAndApply(cam, t, lerped);
-
-        if (!_externalT)
+        // ============================================================
+        // DECALS - SOLO PARA SALAS BLEND
+        // ============================================================
+        if (IsBlendRoom(_room))
         {
-            RoomEffectsApplier.ApplyLightSources(_room, lerped);
-            RoomEffectsApplier.ApplyLightBeams(_room, lerped);
+            var lerpedDecals = RoomCameraExtensions.LerpDecals(_snapA, _snapB, t);
+            _room.ApplyDecalOpacities(lerpedDecals);
         }
 
-        // Crossfade alpha en slots de fondo
+        // ============================================================
+        // SCALAR EFFECTS (RoomSettings.RoomEffect)
+        // ============================================================
+        _room.ApplyScalarEffects(_snapA, _snapB, t);
+
         if (_room != null)
         {
             var skyType = GetViewFromLoadedSettings(_room);
             if (skyType != SkyType.None)
                 ApplyRcSlotsAlpha(skyType, t, isBlending: true);
         }
-    }
-
-    private static void MixAndApply(RoomCamera cam, float t, SettingsSnapshot lerped)
-    {
-        RoomEffectsApplier.ApplyDecalOpacities(_room, lerped);
-        RoomEffectsApplier.ApplyScalarEffects(_room, lerped);
-        RoomEffectsApplier.ApplyTerrainScalars(_room, lerped);
-
-        if (BlendTextureManager.TerrainReady)
-            BlendTextureManager.MixTerrainPalette(cam, t, _snapA, _snapB);
-    }
-
-    private static bool RoomHasWeatherController(Room room)
-    {
-        if (room == null) return false;
-        for (int i = 0; i < room.updateList.Count; i++)
-            if (room.updateList[i]?.GetType().Name == "WeatherController") return true;
-        return false;
     }
 
     private static void OnChangeBothPalettes(
@@ -149,11 +135,12 @@ public static partial class SettingsBlendController
     {
         orig(self);
 
-        if (_active && BlendTextureManager.TerrainReady && self.terrainPalette != null)
-        {
-            float t = _externalT ? _forcedT : BlendClock.SubPhaseLocalT;
-            BlendTextureManager.MixTerrainPalette(self, t, _snapA, _snapB);
-        }
+        // ============================================================
+        // TERRAIN BLEND - LA ACTUALIZACIÓN SE HACE EN OnRoomCameraUpdate
+        // ============================================================
+        // La textura terrainBlendedTexture se aplica al shader en
+        // SettingsBlendController.CameraHooks.cs -> OnRoomCameraUpdate
+        // ============================================================
     }
 
     public static void OnApplyFade(On.RoomCamera.orig_ApplyFade orig, RoomCamera self)

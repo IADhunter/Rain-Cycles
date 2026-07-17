@@ -15,8 +15,8 @@ public static partial class SettingsBlendController
         _pathA = pathA;
         _pathB = pathB;
         _snapOriginal = SettingsSnapshot.FromFile(room.roomSettings.filePath ?? "");
-        _snapA = StaticTintManager.GetCachedSnapshot(pathA, room.abstractRoom.name);
-        _snapB = StaticTintManager.GetCachedSnapshot(pathB, room.abstractRoom.name);
+        _snapA = SettingsSnapshot.GetCached(pathA, room.abstractRoom.name);
+        _snapB = SettingsSnapshot.GetCached(pathB, room.abstractRoom.name);
         _active = true;
         _lastT = -1f;
 
@@ -28,18 +28,18 @@ public static partial class SettingsBlendController
             cam.UpdateBlendPalette(0f);
             cam.ApplyFade();
 
-            if (BlendTextureManager.TerrainReady)
-                BlendTextureManager.MixTerrainPalette(cam, 0f, _snapA, _snapB);
+            // ════════════════════════════════════════════════════════════════
+            // ⚠️ TERRAIN BLEND ELIMINADO - A LA ESPERA DE NUEVA IMPLEMENTACIÓN
+            // ════════════════════════════════════════════════════════════════
+            // cam.SetBlendTerrain(_snapA, _snapB);  ← ELIMINADO
+            // cam.UpdateBlendTerrain(0f, _snapA, _snapB);  ← ELIMINADO
         }
-        RoomEffectsApplier.BuildLightIndex(room);
+        RoomCameraExtensions.BuildLightIndex(room);
         ApplyBlend(0f);
     }
 
     public static void Detach()
     {
-        // ════════════════════════════════════════════════════════════════════
-        // INVALIDAR CACHE DE LA SALA AL DETENER BLEND
-        // ════════════════════════════════════════════════════════════════════
         if (_room != null)
         {
             string roomName = _room.abstractRoom?.name;
@@ -52,6 +52,7 @@ public static partial class SettingsBlendController
             if (cam != null && cam.room == _room)
             {
                 cam.paletteB = -1;
+                cam.ClearBlendSnapshots();
             }
         }
 
@@ -64,9 +65,7 @@ public static partial class SettingsBlendController
         _snapOriginal = null;
         _lastLightT = -1f;
         _forceSkyRefresh = false;
-        RoomEffectsApplier.ClearLightIndex();
-
-        BlendTextureManager.DestroyTerrainTextures();
+        RoomCameraExtensions.ClearLightIndex();
     }
 
     public static void ResetFull()

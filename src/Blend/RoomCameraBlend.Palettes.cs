@@ -56,9 +56,9 @@ public static partial class RoomCameraExtensions
         string roomName = data.roomName ?? cam.room?.abstractRoom?.name;
         if (string.IsNullOrEmpty(roomName)) return;
 
-        // ====================================================================
-        // DETECTAR MODO MANUAL (SLIDER) - Cuando el blend es controlado por DevTools
-        // ====================================================================
+        // ============================================================
+        // DETECTAR MODO MANUAL (SLIDER)
+        // ============================================================
         bool isManualBlend = SettingsBlendController.IsActive && 
                              SettingsBlendController.IsExternalT &&
                              SettingsBlendController.ActiveRoom == cam.room;
@@ -70,19 +70,16 @@ public static partial class RoomCameraExtensions
 
         if (isManualBlend)
         {
-            // Modo manual: usar datos del controlador (vienen del slider)
             stateA = SettingsBlendController.ManualStateA;
             stateB = SettingsBlendController.ManualStateB;
             t = forcedT >= 0f ? forcedT : SettingsBlendController.ForcedT;
             isIdle = (stateA == stateB);
             
-            // Usar snapshots ya precargados en el controlador (AttachWithExternalT los cargó)
             snapA = SettingsBlendController.ManualSnapA;
             snapB = SettingsBlendController.ManualSnapB;
         }
         else
         {
-            // Modo normal: usar BlendClock (automático por ciclos)
             stateA = BlendClock.StateA;
             stateB = BlendClock.StateB;
             t = forcedT >= 0f ? forcedT : BlendClock.SubPhaseLocalT;
@@ -91,14 +88,14 @@ public static partial class RoomCameraExtensions
             if (isIdle)
             {
                 string idlePath = StateFileResolver.GetRainStateSettingsFile(roomName, stateA);
-                snapA = StaticTintManager.GetCachedSnapshot(idlePath, roomName);
+                snapA = SettingsSnapshot.GetCached(idlePath, roomName);
             }
             else
             {
                 string pathA = StateFileResolver.GetRainStateSettingsFile(roomName, stateA);
                 string pathB = StateFileResolver.GetRainStateSettingsFile(roomName, stateB);
-                snapA = StaticTintManager.GetCachedSnapshot(pathA, roomName);
-                snapB = StaticTintManager.GetCachedSnapshot(pathB, roomName);
+                snapA = SettingsSnapshot.GetCached(pathA, roomName);
+                snapB = SettingsSnapshot.GetCached(pathB, roomName);
             }
         }
 
@@ -159,6 +156,7 @@ public static partial class RoomCameraExtensions
 
         cam.ApplyFade();
         cam.ApplyPalette();
+        cam.UpdateBlendTerrain(t, stateA, stateB, isIdle);
         cam.lastFadeCoord = cam.fadeCoord;
     }
 

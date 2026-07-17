@@ -24,20 +24,15 @@ public static partial class RoomCameraExtensions
     
     private static bool _preloadHooksInitialized = false;
     
-    // ════════════════════════════════════════════════════════════════════
-    //  CACHE PARA ISBLENDROOM Y HASFULLSTATES
-    // ════════════════════════════════════════════════════════════════════
-    
+    // ============================================================
+    // CACHE PARA ISBLENDROOM Y HASFULLSTATES
+    // ============================================================
     private static readonly Dictionary<string, bool> _blendRoomCache = 
         new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
     
     private static readonly Dictionary<string, bool> _fullStatesCache = 
         new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
     
-    /// <summary>
-    /// Versión cacheada de SettingsBlendController.IsBlendRoom()
-    /// Solo recalcula si la sala no está en cache o si se fuerza refresh
-    /// </summary>
     public static bool IsBlendRoomCached(Room room, bool forceRefresh = false)
     {
         if (room == null) return false;
@@ -52,10 +47,6 @@ public static partial class RoomCameraExtensions
         return result;
     }
     
-    /// <summary>
-    /// Versión cacheada de StateFileResolver.HasFullStates()
-    /// Solo recalcula si la sala no está en cache o si se fuerza refresh
-    /// </summary>
     public static bool HasFullStatesCached(string roomName, bool forceRefresh = false)
     {
         if (string.IsNullOrEmpty(roomName)) return false;
@@ -68,9 +59,6 @@ public static partial class RoomCameraExtensions
         return result;
     }
     
-    /// <summary>
-    /// Invalida el cache para una sala específica
-    /// </summary>
     public static void InvalidateRoomCache(string roomName)
     {
         if (string.IsNullOrEmpty(roomName)) return;
@@ -78,9 +66,6 @@ public static partial class RoomCameraExtensions
         _fullStatesCache.Remove(roomName);
     }
     
-    /// <summary>
-    /// Invalida TODOS los caches (útil para reset completo)
-    /// </summary>
     public static void InvalidateAllRoomCaches()
     {
         _blendRoomCache.Clear();
@@ -119,6 +104,7 @@ public static partial class RoomCameraExtensions
         if (!SettingsBlendController.IsBlendRoom(self)) return;
         
         PreloadRoomStates(roomName);
+        GetOrCreateTerrainGrid(roomName);
     }
     
     private static void OnRoomUnloaded(On.Room.orig_Unloaded orig, Room self)
@@ -127,7 +113,7 @@ public static partial class RoomCameraExtensions
         if (!string.IsNullOrEmpty(roomName))
         {
             UnloadRoomCache(roomName);
-            // Invalidar caches al descargar sala
+            UnloadRoomTerrainCache(roomName);
             InvalidateRoomCache(roomName);
         }
         
@@ -141,7 +127,7 @@ public static partial class RoomCameraExtensions
             string path = StateFileResolver.GetRainStateSettingsFile(roomName, state);
             if (path != null)
             {
-                var snap = StaticTintManager.GetCachedSnapshot(path, roomName);
+                var snap = SettingsSnapshot.GetCached(path, roomName);
                 if (snap != null)
                 {
                     GetOrLoadState(roomName, state, snap, out _, out _, out _, out _);
@@ -163,7 +149,37 @@ public static partial class RoomCameraExtensions
     {
         _stateCache.Clear();
         InvalidateAllRoomCaches();
+        ClearAllTerrainCaches();
     }
+    
+    // ============================================================
+    // MÉTODOS PÚBLICOS PARA RECARGA DE TERRAIN CACHE
+    // ============================================================
+    
+    /// <summary>
+    /// Invalida la cache de terrain para una sala específica.
+    /// </summary>
+    public static void InvalidateRoomTerrainCache(string roomName)
+    {
+        if (string.IsNullOrEmpty(roomName)) return;
+        UnloadRoomTerrainCache(roomName);
+        RSPlugin.log.LogDebug($"[TerrainBlend] Cache invalidada para sala: {roomName}");
+    }
+    
+    /// <summary>
+    /// Recarga la cache de terrain para una sala específica desde disco.
+    /// </summary>
+    public static void ReloadRoomTerrainCache(string roomName)
+    {
+        if (string.IsNullOrEmpty(roomName)) return;
+        UnloadRoomTerrainCache(roomName);
+        GetOrCreateTerrainGrid(roomName);
+        RSPlugin.log.LogDebug($"[TerrainBlend] Cache recargada para sala: {roomName}");
+    }
+    
+    // ============================================================
+    // MÉTODOS PRIVADOS - ROOM PALETTE
+    // ============================================================
     
     private static void GetOrLoadState(string roomName, int state, SettingsSnapshot snap,
         out Color32[] mainPixels, out Color32[] fadePixels, out int fadePaletteId, out float[] fadeOpacities)

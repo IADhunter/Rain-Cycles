@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using RainCycles.Snapshot;
+using RainCycles.Blend;
 
 namespace RainCycles.Patches;
 
@@ -20,13 +21,13 @@ public static class RoomSettingsPatches
     private static bool OnLoad(On.RoomSettings.orig_Load_Timeline orig, RoomSettings self, SlugcatStats.Timeline timelinePoint)
     {
         self.ClearExtendedData();
-        
+
         string filePath = self.filePath;
         if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
         {
             ParseExtendedData(self, filePath);
         }
-        
+
         return orig(self, timelinePoint);
     }
 
@@ -37,19 +38,17 @@ public static class RoomSettingsPatches
             orig(self);
             return;
         }
-        
+
         _isSaving = true;
         orig(self);
         PreserveExtendedData(self);
         _isSaving = false;
-        
+
         string filePath = self.filePath;
         if (!string.IsNullOrEmpty(filePath))
         {
-            RSPlugin.log.LogDebug($"[RoomSettingsPatches] Settings guardado: {Path.GetFileName(filePath)}");
-            
-            StaticTintManager.InvalidateCache(filePath);
-            
+            SettingsSnapshot.InvalidateCache(filePath);
+
             var rw = UnityEngine.Object.FindObjectOfType<RainWorld>();
             var game = rw?.processManager?.currentMainLoop as RainWorldGame;
             if (game?.cameras != null)
@@ -58,46 +57,59 @@ public static class RoomSettingsPatches
                 {
                     if (cam?.room?.roomSettings?.filePath == filePath)
                     {
-                        RSPlugin.log.LogDebug($"[RoomSettingsPatches] Recargando efectos visuales para sala {cam.room.abstractRoom?.name}");
-                        
-                        var freshSnap = StaticTintManager.GetCachedSnapshot(cam.room);
-                        
+                        string roomName = cam.room.abstractRoom?.name;
+
+                        // ============================================================
+                        // RECARGAR TERRAIN CACHE
+                        // RefreshActiveSnapshots() se encarga del blend
+                        // ============================================================
+                        if (!string.IsNullOrEmpty(roomName))
+                        {
+                            RSPlugin.log.LogDebug($"[TerrainBlend] Recargando cache terrain para sala: {roomName}");
+                            RoomCameraExtensions.ReloadRoomTerrainCache(roomName);
+                        }
+
+                        // ============================================================
+                        // RECARGA ROOM PALETTE (código existente)
+                        // ============================================================
+                        var freshSnap = SettingsSnapshot.GetCached(filePath, cam.room.abstractRoom?.name);
+
                         if (freshSnap != null)
                         {
                             var rs = cam.room.roomSettings;
-                            Color? tintMultiply = rs.GetTintMultiply();
-                            Color? tintAtmosphere = rs.GetTintAtmosphere();
-                            
-                            if (tintMultiply.HasValue)
+
+                            if (rs.HasTint())
                             {
-                                var c = tintMultiply.Value;
-                                Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, new Vector4(c.r, c.g, c.b, 1f));
-                                RSPlugin.log.LogDebug($"[RoomSettingsPatches] TintMultiply aplicado: {c}");
-                            }
-                            if (tintAtmosphere.HasValue)
-                            {
-                                var c = tintAtmosphere.Value;
-                                Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, new Vector4(c.r, c.g, c.b, 1f));
-                                RSPlugin.log.LogDebug($"[RoomSettingsPatches] TintAtmosphere aplicado: {c}");
-                                
-                                // También aplicar a ACV si existe en la sala
-                                for (int i = 0; i < cam.room.updateList.Count; i++)
+                                Color? tintMultiply = rs.GetTintMultiply();
+                                Color? tintAtmosphere = rs.GetTintAtmosphere();
+
+                                if (tintMultiply.HasValue)
                                 {
-                                    if (cam.room.updateList[i] is AboveCloudsView acv)
+                                    var c = tintMultiply.Value;
+                                    Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, new Vector4(c.r, c.g, c.b, 1f));
+                                }
+                                if (tintAtmosphere.HasValue)
+                                {
+                                    var c = tintAtmosphere.Value;
+                                    Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, new Vector4(c.r, c.g, c.b, 1f));
+
+                                    for (int i = 0; i < cam.room.updateList.Count; i++)
                                     {
-                                        acv.atmosphereColor = c;
-                                        RSPlugin.log.LogDebug($"[RoomSettingsPatches] TintAtmosphere aplicado a ACV: {c}");
-                                        break;
+                                        if (cam.room.updateList[i] is AboveCloudsView acv)
+                                        {
+                                            acv.atmosphereColor = c;
+                                            break;
+                                        }
                                     }
                                 }
                             }
-                            
+
                             if (freshSnap.HasRcType && freshSnap.RcType == RcType.Blend)
                             {
                                 if (SettingsBlendController.IsActive && SettingsBlendController.ActiveRoom == cam.room)
                                 {
-                                    RSPlugin.log.LogDebug($"[RoomSettingsPatches] Sala blend activa, refrescando snapshots del blend");
                                     SettingsBlendController.RefreshActiveSnapshots();
+                                    RSPlugin.log.LogDebug($"[TerrainBlend] RefreshActiveSnapshots completado para sala: {roomName}");
                                 }
                                 else
                                 {
@@ -107,29 +119,30 @@ public static class RoomSettingsPatches
                                         if (freshSnap._hasFadePalette)
                                         {
                                             int fadePal = freshSnap.FadePaletteID;
-                                            float fadeOp = cam.currentCameraPosition < freshSnap.FadePaletteOpacities.Length 
-                                                ? freshSnap.FadePaletteOpacities[cam.currentCameraPosition] 
+                                            float fadeOp = cam.currentCameraPosition < freshSnap.FadePaletteOpacities.Length
+                                                ? freshSnap.FadePaletteOpacities[cam.currentCameraPosition]
                                                 : 0f;
                                             cam.ChangeFadePalette(fadePal, fadeOp);
                                         }
                                         cam.ApplyFade();
-                                        RSPlugin.log.LogDebug($"[RoomSettingsPatches] Paleta recargada: {freshSnap.Palette}");
                                     }
                                 }
                             }
-                            
-                            RoomEffectsApplier.ApplyScalarEffects(cam.room, freshSnap);
-                            RoomEffectsApplier.ApplyTerrainScalars(cam.room, freshSnap);
+
+                            cam.room.ApplyScalarEffects(freshSnap, freshSnap, 0f);
                             Shader.SetGlobalFloat(RainWorld.ShadPropGrime, cam.room.roomSettings.Grime);
                         }
                     }
                 }
             }
-            
+
             SettingsBlendController.ForceRefreshSkySlots();
         }
     }
 
+    // ============================================================
+    // PARSEAR RAINCYCLES
+    // ============================================================
     private static void ParseExtendedData(RoomSettings self, string filePath)
     {
         try
@@ -137,38 +150,12 @@ public static class RoomSettingsPatches
             foreach (string line in File.ReadAllLines(filePath, Encoding.UTF8))
             {
                 string trimmed = line.TrimEnd('\r');
-                
-                if (trimmed.StartsWith("RC_TYPE:"))
+
+                if (trimmed.StartsWith("RainCycles:"))
                 {
-                    string value = trimmed.Substring("RC_TYPE:".Length).Trim().ToUpperInvariant();
-                    self.SetRcType(value switch
-                    {
-                        "STATIC" => RcType.Static,
-                        "BLEND" => RcType.Blend,
-                        _ => RcType.None
-                    });
-                }
-                else if (trimmed.StartsWith("RC_VIEW:"))
-                {
-                    string value = trimmed.Substring("RC_VIEW:".Length).Trim().ToUpperInvariant();
-                    self.SetViewType(value switch
-                    {
-                        "ACV" => ViewType.ACV,
-                        "RTV" => ViewType.RTV,
-                        "PSV" => ViewType.PSV,
-                        _ => ViewType.None
-                    });
-                }
-                else if (trimmed.StartsWith("RC_TINT:"))
-                {
-                    string hexes = trimmed.Substring("RC_TINT:".Length).Trim();
-                    string[] parts = hexes.Split(' ');
-                    // Solo 2 colores: Multiply y Atmosphere
-                    if (parts.Length >= 1)
-                        self.SetTintMultiply(ParseHexColor(parts[0]));
-                    if (parts.Length >= 2)
-                        self.SetTintAtmosphere(ParseHexColor(parts[1]));
-                    // Ya no hay tercer color
+                    string content = trimmed.Substring("RainCycles:".Length).Trim();
+                    ParseRainCyclesContent(self, content);
+                    break;
                 }
             }
         }
@@ -178,61 +165,141 @@ public static class RoomSettingsPatches
         }
     }
 
+    private static void ParseRainCyclesContent(RoomSettings self, string content)
+    {
+        bool hasType = false;
+        bool hasView = false;
+        RcType type = RcType.None;
+        ViewType view = ViewType.None;
+        Color? tintMultiply = null;
+        Color? tintAtmosphere = null;
+
+        int pos = 0;
+        while (pos < content.Length)
+        {
+            int start = content.IndexOf('<', pos);
+            if (start < 0) break;
+            int end = content.IndexOf('>', start);
+            if (end < 0) break;
+
+            string segment = content.Substring(start + 1, end - start - 1);
+            int sep = segment.IndexOf(':');
+            if (sep > 0)
+            {
+                string field = segment.Substring(0, sep).Trim();
+                string value = segment.Substring(sep + 1).Trim();
+
+                switch (field)
+                {
+                    case "Type":
+                        hasType = true;
+                        type = value.ToUpperInvariant() switch
+                        {
+                            "STATIC" => RcType.Static,
+                            "BLEND" => RcType.Blend,
+                            _ => RcType.None
+                        };
+                        break;
+                    case "View":
+                        if (hasType)
+                        {
+                            hasView = true;
+                            view = value.ToUpperInvariant() switch
+                            {
+                                "ACV" => ViewType.ACV,
+                                "RTV" => ViewType.RTV,
+                                "PSV" => ViewType.PSV,
+                                _ => ViewType.None
+                            };
+                        }
+                        break;
+                    case "Tint":
+                        if (hasView)
+                        {
+                            string[] hexes = value.Split(' ');
+                            if (hexes.Length >= 1) tintMultiply = ParseHexColor(hexes[0]);
+                            if (hexes.Length >= 2) tintAtmosphere = ParseHexColor(hexes[1]);
+                        }
+                        break;
+                }
+            }
+            pos = end + 1;
+        }
+
+        if (hasType)
+        {
+            self.SetRcType(type);
+            if (hasView)
+                self.SetViewType(view);
+            else
+                self.SetViewType(ViewType.None);
+
+            if (hasView && (tintMultiply.HasValue || tintAtmosphere.HasValue))
+            {
+                self.SetTintMultiply(tintMultiply);
+                self.SetTintAtmosphere(tintAtmosphere);
+            }
+            else
+            {
+                self.SetTintMultiply(null);
+                self.SetTintAtmosphere(null);
+            }
+        }
+        else
+        {
+            self.ClearExtendedData();
+        }
+    }
+
     private static void PreserveExtendedData(RoomSettings self)
     {
         string filePath = self.filePath;
         if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return;
-        
+
         try
         {
             string content = File.ReadAllText(filePath, Encoding.UTF8);
             var lines = new List<string>(content.Split('\n'));
-            
-            lines.RemoveAll(l => l.Trim().StartsWith("RC_TYPE:"));
-            lines.RemoveAll(l => l.Trim().StartsWith("RC_VIEW:"));
-            lines.RemoveAll(l => l.Trim().StartsWith("RC_TINT:"));
-            
-            while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[lines.Count - 1]))
-                lines.RemoveAt(lines.Count - 1);
-            
-            var newLinesList = new List<string>();
-            
-            if (self.HasRcType() && self.GetRcType() != RcType.None)
+
+            lines.RemoveAll(l => l.Trim().StartsWith("RainCycles:"));
+
+            string newLine = BuildRainCyclesLine(self);
+            if (!string.IsNullOrEmpty(newLine))
             {
-                string typeValue = self.GetRcType() == RcType.Static ? "Static" : "Blend";
-                newLinesList.Add($"RC_TYPE: {typeValue}");
+                while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[lines.Count - 1]))
+                    lines.RemoveAt(lines.Count - 1);
+                lines.Add(newLine);
             }
-            
-            if (self.GetViewType() != ViewType.None)
-            {
-                string viewValue = self.GetViewType() == ViewType.ACV ? "ACV" :
-                                   self.GetViewType() == ViewType.RTV ? "RTV" : "PSV";
-                newLinesList.Add($"RC_VIEW: {viewValue}");
-            }
-            
-            Color? tintMultiply = self.GetTintMultiply();
-            Color? tintAtmosphere = self.GetTintAtmosphere();
-            
-            // Solo 2 colores: Multiply y Atmosphere
-            if (tintMultiply.HasValue || tintAtmosphere.HasValue)
-            {
-                string mul = tintMultiply.HasValue ? ColorToHex(tintMultiply.Value) : "FFFFFF";
-                string atm = tintAtmosphere.HasValue ? ColorToHex(tintAtmosphere.Value) : "FFFFFF";
-                newLinesList.Add($"RC_TINT: #{mul} #{atm}");
-                RSPlugin.log.LogDebug($"[RoomSettingsPatches] RC_TINT guardado: #{mul} #{atm}");
-            }
-            
-            if (newLinesList.Count > 0)
-            {
-                lines.AddRange(newLinesList);
-                File.WriteAllText(filePath, string.Join("\n", lines), Encoding.UTF8);
-                RSPlugin.log.LogDebug($"[RoomSettingsPatches] Datos RC_* guardados en archivo");
-            }
+
+            File.WriteAllText(filePath, string.Join("\n", lines), Encoding.UTF8);
         }
         catch (Exception ex)
         {
             RSPlugin.log.LogWarning($"[RoomSettingsPatches] Error preserving: {ex.Message}");
         }
+    }
+
+    private static string BuildRainCyclesLine(RoomSettings self)
+    {
+        if (!self.HasRcType()) return null;
+
+        var parts = new List<string> { $"Type:{self.GetRcType()}" };
+
+        if (self.HasView())
+        {
+            parts.Add($"View:{self.GetViewType()}");
+
+            if (self.HasTint())
+            {
+                Color? tintMultiply = self.GetTintMultiply();
+                Color? tintAtmosphere = self.GetTintAtmosphere();
+                string mul = tintMultiply.HasValue ? ColorToHex(tintMultiply.Value) : "FFFFFF";
+                string atm = tintAtmosphere.HasValue ? ColorToHex(tintAtmosphere.Value) : "FFFFFF";
+                parts.Add($"Tint:#{mul} #{atm}");
+            }
+        }
+
+        return $"RainCycles: <{string.Join("><", parts)}>";
     }
 
     private static Color ParseHexColor(string hex)

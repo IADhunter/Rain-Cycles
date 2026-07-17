@@ -34,6 +34,9 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private const float ROW_MOD_Y = 53f;
     private const float ROW_BKG_Y = 28f;
     
+    public const string DEFAULT_MOD_SENTINEL = "\0__RC_DEFAULT__";
+    public const string DEFAULT_MOD_DISPLAY_NAME = "Default";
+    
     public RCPanel ParentPanel { get; set; }
     private RegionLogic _logic;
     
@@ -317,7 +320,6 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         
         if (sender.IDstring.StartsWith("RC_ModSelect_") && _modSelectPanel != null)
         {
-            // message es el nombre real del mod (de modinfo.json)
             _logic.SelectedModName = message;
             _logic.SavedModName = message;
             _modButton.Text = string.IsNullOrEmpty(message) ? "Select Mod" : message;
@@ -416,34 +418,32 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         }
     }
 
-    // ================================================================
+    // ============================================================
     // OBTENER MODS CON CARPETA ILLUSTRATIONS
-    // ================================================================
+    // ============================================================
     private string[] GetModsWithIllustrations()
     {
         var mods = new List<string>();
+        // Entrada sintética para las ilustraciones del propio juego (no es un mod real)
+        mods.Add(DEFAULT_MOD_SENTINEL);
+        
         foreach (var mod in ModManager.ActiveMods)
         {
             if (Directory.Exists(Path.Combine(mod.path, "Illustrations")))
             {
-                // Verificar que tiene modinfo.json válido
                 string modInfoPath = Path.Combine(mod.path, "modinfo.json");
                 if (File.Exists(modInfoPath))
                 {
                     mods.Add(mod.path);
-                }
-                else
-                {
-                    RSPlugin.log.LogDebug($"[GetModsWithIllustrations] Mod {Path.GetFileName(mod.path)} no tiene modinfo.json, omitido");
                 }
             }
         }
         return mods.ToArray();
     }
 
-    // ================================================================
-    // OBTENER NOMBRE REAL DEL MOD DESDE MODINFO.JSON
-    // ================================================================
+    // ============================================================
+    // OBTENER NOMBRE DEL MOD DESDE MODINFO.JSON
+    // ============================================================
     private string GetModNameFromModInfo(string modPath)
     {
         try
@@ -486,10 +486,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         
         var modPaths = GetModsWithIllustrations();
         if (modPaths.Length == 0)
-        {
-            RSPlugin.log.LogWarning("[RegionPage] No mods with Illustrations folder and modinfo.json found");
             return;
-        }
         
         Vector2 panelPos = new Vector2(_modButton.pos.x + 10f, _modButton.pos.y - 150f);
         
@@ -510,30 +507,29 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
             return;
         }
         
-        // Resolver la ruta del mod usando el nombre (de modinfo.json)
-        string modPath = ResolveModPathFromName(_logic.SelectedModName);
-        if (string.IsNullOrEmpty(modPath))
+        string illustrationsPath;
+        if (string.Equals(_logic.SelectedModName, DEFAULT_MOD_DISPLAY_NAME, StringComparison.OrdinalIgnoreCase))
         {
-            RSPlugin.log.LogWarning($"[RegionPage] Mod '{_logic.SelectedModName}' no encontrado");
-            return;
+            illustrationsPath = Path.Combine(Application.streamingAssetsPath, "Illustrations");
+        }
+        else
+        {
+            string modPath = ResolveModPathFromName(_logic.SelectedModName);
+            if (string.IsNullOrEmpty(modPath))
+                return;
+            
+            illustrationsPath = Path.Combine(modPath, "Illustrations");
         }
         
-        string illustrationsPath = Path.Combine(modPath, "Illustrations");
         if (!Directory.Exists(illustrationsPath))
-        {
-            RSPlugin.log.LogWarning($"[RegionPage] Illustrations no encontrado: {illustrationsPath}");
             return;
-        }
         
         var images = Directory.GetFiles(illustrationsPath, "*.png")
             .Select(f => Path.GetFileName(f))
             .ToArray();
         
         if (images.Length == 0)
-        {
-            RSPlugin.log.LogWarning($"[RegionPage] No PNG images in {illustrationsPath}");
             return;
-        }
         
         string currentImage = "";
         if (_logic.CurrentViewType == ViewType.PSV)
@@ -557,9 +553,9 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         _imageSelectPanel.Refresh();
     }
     
-    // ================================================================
-    // RESOLVER RUTA DEL MOD POR NOMBRE (de modinfo.json)
-    // ================================================================
+    // ============================================================
+    // RESOLVER RUTA DEL MOD POR NOMBRE
+    // ============================================================
     private string ResolveModPathFromName(string modName)
     {
         if (string.IsNullOrEmpty(modName)) return null;

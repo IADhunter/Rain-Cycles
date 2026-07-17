@@ -3,7 +3,6 @@ using System.IO;
 
 namespace RainCycles.Sky;
 
-// Registra y descarga atlas de cielo por región para evitar acumulación en VRAM.
 public static class BlendSkyAtlasCache
 {
     private static readonly Dictionary<string, HashSet<string>> _cache =
@@ -58,48 +57,38 @@ public static class BlendSkyAtlasCache
         if (string.IsNullOrEmpty(file)) return;
         
         string baseName = Path.GetFileNameWithoutExtension(file);
-        
-        // ================================================================
-        // CARGAR DIRECTAMENTE DESDE EL MOD ESPECIFICADO
-        // Solo si el mod existe (tiene modinfo.json válido)
-        // ================================================================
         string imagePath = ResolveIllustrationPath(modName, baseName);
         if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath))
-        {
-            RSPlugin.log.LogDebug($"[BlendSkyAtlasCache] No se encontró imagen: {baseName} en mod {modName}");
             return;
-        }
 
-        // Verificar si ya está cargado
         if (Futile.atlasManager.DoesContainAtlas(baseName))
         {
             Register(regionKey, baseName);
-            RSPlugin.log.LogDebug($"[BlendSkyAtlasCache] Imagen ya cargada: {baseName}");
             return;
         }
 
-        // Cargar textura directamente desde el archivo
         var tex = new UnityEngine.Texture2D(1, 1, UnityEngine.TextureFormat.RGBA32, false);
         AssetManager.SafeWWWLoadTexture(ref tex, "file:///" + imagePath, true, true);
-        
-        // Cargar en Futile con el nombre base
         HeavyTexturesCache.LoadAndCacheAtlasFromTexture(baseName, tex, false);
         Register(regionKey, baseName);
-        
-        RSPlugin.log.LogInfo($"[BlendSkyAtlasCache] Imagen cargada DESDE: {imagePath} → {baseName}");
     }
 
-    // ================================================================
-    // RESOLVER RUTA DE IMAGEN SEGÚN EL MOD
-    // ================================================================
+    // ============================================================
+    // RESOLVER RUTA DE IMAGEN
+    // ============================================================
+    private const string DEFAULT_MOD_NAME = "Default";
+
     private static string ResolveIllustrationPath(string modName, string imageName)
     {
         if (string.IsNullOrEmpty(modName) || string.IsNullOrEmpty(imageName))
             return null;
 
-        RSPlugin.log.LogDebug($"[BlendSkyAtlasCache] Buscando {imageName}.png en mod: {modName}");
+        if (string.Equals(modName, DEFAULT_MOD_NAME, System.StringComparison.OrdinalIgnoreCase))
+        {
+            string basePath = Path.Combine(UnityEngine.Application.streamingAssetsPath, "Illustrations", imageName + ".png");
+            return File.Exists(basePath) ? basePath : null;
+        }
 
-        // 1. Buscar por nombre del mod (modinfo.json "name")
         foreach (var mod in ModManager.ActiveMods)
         {
             string realModName = GetModNameFromModInfo(mod.path);
@@ -109,31 +98,27 @@ public static class BlendSkyAtlasCache
             {
                 string candidate = Path.Combine(mod.path, "Illustrations", imageName + ".png");
                 if (File.Exists(candidate))
-                {
-                    RSPlugin.log.LogDebug($"[BlendSkyAtlasCache] Encontrada imagen en mod: {mod.path}");
                     return candidate;
-                }
                 
-                // Buscar en subcarpetas de Illustrations
                 string illustrationsDir = Path.Combine(mod.path, "Illustrations");
                 if (Directory.Exists(illustrationsDir))
                 {
                     foreach (string file in Directory.GetFiles(illustrationsDir, imageName + ".png", SearchOption.AllDirectories))
-                    {
-                        RSPlugin.log.LogDebug($"[BlendSkyAtlasCache] Encontrada imagen en subcarpeta: {file}");
                         return file;
-                    }
                 }
             }
         }
 
-        RSPlugin.log.LogWarning($"[BlendSkyAtlasCache] No se encontró el mod '{modName}' con modinfo.json válido");
+        string fallback = AssetManager.ResolveFilePath("Illustrations" + Path.DirectorySeparatorChar + imageName + ".png");
+        if (!string.IsNullOrEmpty(fallback) && File.Exists(fallback))
+            return fallback;
+
         return null;
     }
 
-    // ================================================================
-    // OBTENER NOMBRE REAL DEL MOD DESDE MODINFO.JSON
-    // ================================================================
+    // ============================================================
+    // OBTENER NOMBRE DEL MOD DESDE MODINFO.JSON
+    // ============================================================
     private static string GetModNameFromModInfo(string modPath)
     {
         try
@@ -143,7 +128,6 @@ public static class BlendSkyAtlasCache
 
             string json = File.ReadAllText(modInfoPath);
             
-            // Buscar "name": "xxx"
             int nameIndex = json.IndexOf("\"name\"", System.StringComparison.OrdinalIgnoreCase);
             if (nameIndex < 0) return null;
 

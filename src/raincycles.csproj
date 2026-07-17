@@ -26,17 +26,19 @@
       <HintPath>../lib/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    
+    <!-- AÑADIR ESTA REFERENCIA PARA ASSETBUNDLE -->
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>../lib/UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>../lib/UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-
     <Reference Include="UnityEngine.IMGUIModule">
       <HintPath>../lib/UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-
     <Reference Include="Assembly-CSharp">
       <HintPath>../lib/PUBLIC-Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
@@ -45,7 +47,6 @@
       <HintPath>../lib/HOOKS-Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
-
     <Reference Include="BepInEx">
       <HintPath>../lib/BepInEx.dll</HintPath>
       <Private>false</Private>

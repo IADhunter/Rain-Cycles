@@ -14,9 +14,6 @@ public class RegionLogic
 {
     private RCPanel_RegionPage _page;
     
-    // ============================================================
-    // PROPIEDADES PRINCIPALES
-    // ============================================================
     public BlendMode CurrentMode { get; set; } = BlendMode.Loop;
     public bool ClockEnabled { get; set; } = false;
     public float IdleValue { get; set; } = 5f;
@@ -27,9 +24,6 @@ public class RegionLogic
     public int SettingValue { get; set; } = 0;
     public ViewType CurrentViewType { get; set; } = ViewType.ACV;
     
-    // ============================================================
-    // BACKGROUNDS
-    // ============================================================
     public string[] BkgValues { get; private set; }
     public string[] FogValues { get; private set; }
     public string[] SunValues { get; private set; }
@@ -49,9 +43,6 @@ public class RegionLogic
         set => DurationValue = value;
     }
 
-    // ============================================================
-    // CONSTRUCTOR
-    // ============================================================
     public RegionLogic(RCPanel_RegionPage page)
     {
         _page = page;
@@ -85,9 +76,9 @@ public class RegionLogic
         return parts.Length >= 2 ? parts[0].ToUpperInvariant() : null;
     }
     
-    // ================================================================
-    // OBTENER NOMBRE REAL DEL MOD DESDE MODINFO.JSON
-    // ================================================================
+    // ============================================================
+    // OBTENER NOMBRE DEL MOD DESDE MODINFO.JSON
+    // ============================================================
     private string GetModNameFromModInfo(string modPath)
     {
         try
@@ -117,9 +108,9 @@ public class RegionLogic
         }
     }
     
-    // ================================================================
-    // RESOLVER RUTA DEL MOD POR NOMBRE (de modinfo.json)
-    // ================================================================
+    // ============================================================
+    // RESOLVER RUTA DEL MOD POR NOMBRE
+    // ============================================================
     private string ResolveModPathFromName(string modName)
     {
         if (string.IsNullOrEmpty(modName)) return null;
@@ -462,7 +453,6 @@ public class RegionLogic
         sb.AppendLine($"Duration: {SubDurationValue:F1}");
         sb.AppendLine($"Setting: {SettingValue}");
         
-        // Guardar el nombre real del mod (de modinfo.json)
         if (!string.IsNullOrEmpty(SavedModName))
             sb.AppendLine($"Mod: {SavedModName}");
         
@@ -510,8 +500,18 @@ public class RegionLogic
         try
         {
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+            
+            // ============================================================
+            // INVALIDAR CACHÉ PARA QUE LA REGIÓN SE RECARGUE DESDE DISCO
+            // ============================================================
             if (!string.IsNullOrEmpty(RegionCode))
+            {
+                BlendSettingsLoader.InvalidateCache(RegionCode);
+                // También forzamos la recarga inmediata para que el Active refleje los cambios
                 BlendSettingsLoader.LoadRegion(RegionCode);
+            }
+            
+            RSPlugin.log.LogDebug($"[RegionLogic] Configuración guardada en {path}, caché invalidada");
         }
         catch (Exception ex)
         {

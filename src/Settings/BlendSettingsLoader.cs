@@ -30,10 +30,29 @@ public static class BlendSettingsLoader
         orig(self);
     }
 
+    /// <summary>
+    /// Invalida la caché para una región, forzando recarga desde disco en la próxima LoadRegion.
+    /// </summary>
+    public static void InvalidateCache(string regionCode)
+    {
+        if (string.IsNullOrEmpty(regionCode)) return;
+        regionCode = regionCode.ToUpperInvariant();
+        if (_cache.Remove(regionCode))
+        {
+            RSPlugin.log.LogDebug($"[BlendSettingsLoader] Caché invalidada para región {regionCode}");
+        }
+        // Si la región activa es la que se invalida, también la recargamos inmediatamente para mantener coherencia.
+        if (_activeRegion == regionCode)
+        {
+            _activeSettings = null;
+        }
+    }
+
     public static void LoadRegion(string regionCode)
     {
         regionCode = regionCode.ToUpperInvariant();
 
+        // Si la caché no tiene la región o se ha invalidado, se carga de disco.
         if (!_cache.TryGetValue(regionCode, out var settings))
         {
             settings = LoadFromDisk(regionCode);
