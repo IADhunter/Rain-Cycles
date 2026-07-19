@@ -82,6 +82,16 @@ public static class BlendClockUpdater
             _lastRegion = regionAfter;
             RoomCameraExtensions.ClearAllCaches();
             StateFileResolver.InvalidatePathCache(); // ⭐ NUEVO
+
+            var settings = BlendSettingsLoader.Active;
+            bool isClockEnabled = settings != null && settings.Clock;
+            int initialState = ResolveInitial(settings);
+
+            RainCyclesEventDispatcher.DispatchRegionEnter(
+                regionAfter,
+                isClockEnabled ? settings?.Mode : null,
+                isClockEnabled,
+                initialState);
         }
     }
 

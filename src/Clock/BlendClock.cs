@@ -52,6 +52,8 @@ public static class BlendClock
     private static int       _lastTransitionIndex = -1;
     private static float     _subIdleDuration;
     private static float     _subBlendDuration;
+    private static float     _lastCheckedT = -1f;
+    private static bool     _didReset = false;
 
     public static void SetCustomPendingStop()
     {
@@ -82,6 +84,7 @@ public static class BlendClock
         StateA = state.StateA;
         StateB = state.StateB;
         _timer = state.Timer;
+        _lastCheckedT = T;
     }
 
     public static void Start(string regionCode, int initialState = 1)
@@ -110,6 +113,21 @@ public static class BlendClock
                 break;
         }
         
+        _lastCheckedT = 0f;
+
+        if (IsRunning)
+        {
+            if (RainCyclesEventDispatcher.TransferApplied)
+            {
+                RainCyclesEventDispatcher.TransferApplied = false;
+            }
+            else
+            {
+                RainCyclesEventDispatcher.DispatchStateChanged(
+                    RainCyclesEventDispatcher.ThresholdToSetting(0f, _mode), 0f, true, 0f);
+            }
+        }
+
         RSPlugin.log.LogInfo($"[BlendClock] Iniciado - Región: {_regionCode}, Modo: {_mode}, Estado inicial: {initialState}");
     }
 
@@ -119,7 +137,9 @@ public static class BlendClock
     public static void Stop()
     {
         if (!IsRunning) return;
-        
+
+        _lastCheckedT = -1f;
+
         IsRunning = false;
         T = 0f;
         CurrentPhase = Phase.Idle;
@@ -128,7 +148,7 @@ public static class BlendClock
         _customPendingStop = false;
         _regionCode = null;
         _lastTransitionIndex = -1;
-        
+
         RSPlugin.log.LogInfo("[BlendClock] Detenido");
     }
 
@@ -141,6 +161,7 @@ public static class BlendClock
         _rainTimer = rainTimer;
         _rainCycleLen = Mathf.Max(1, rainCycleLength);
         _timer += dt;
+        _didReset = false;
 
         switch (_mode)
         {
@@ -154,6 +175,8 @@ public static class BlendClock
                 TickEndCycle(s);
                 break;
         }
+
+        CheckAndDispatchThresholds();
     }
 
     // ============================================================
@@ -275,6 +298,7 @@ public static class BlendClock
                     T = 0f;
                     _lastTransitionIndex = -1;
                     UpdateStatesFromT();
+                    _didReset = true;
                 }
             }
         }
@@ -364,5 +388,53 @@ public static class BlendClock
                 RSPlugin.log.LogInfo("[BlendClock] EndCycle completado - Blend detenido");
             }
         }
+    }
+
+    // ============================================================
+    // DETECCIÓN DE UMBRALES PARA LA API
+    // ============================================================
+
+    private static void CheckAndDispatchThresholds()
+    {
+        if (!IsRunning || EditMode) return;
+
+        float prevT = _lastCheckedT;
+        float currT = T;
+
+        if (prevT < 0f)
+        {
+            _lastCheckedT = currT;
+            return;
+        }
+
+        bool isLoop = (_mode == BlendMode.Loop);
+        float[] thresholds = isLoop
+            ? new float[] { 0.00f, 0.25f, 0.50f, 0.75f }
+            : new float[] { 0.00f, 1f / 3f, 2f / 3f };
+
+        foreach (float threshold in thresholds)
+        {
+            bool crossed = false;
+
+            if (threshold == 0.00f)
+            {
+                crossed = isLoop && (_didReset || (prevT > 0.65f && currT < 0.15f));
+            }
+            else
+            {
+                crossed = prevT < threshold && currT >= threshold;
+            }
+
+            if (!crossed) continue;
+
+            int setting = RainCyclesEventDispatcher.ThresholdToSetting(threshold, _mode);
+            bool isIdle = RainCyclesEventDispatcher.IsThresholdIdle(threshold, _mode);
+            float progress = isIdle ? 0f : threshold;
+
+            RainCyclesEventDispatcher.DispatchStateChanged(
+                setting, progress, isIdle, threshold);
+        }
+
+        _lastCheckedT = currT;
     }
 }

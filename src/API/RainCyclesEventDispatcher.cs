@@ -13,6 +13,8 @@ public static class RainCyclesEventDispatcher
 
     internal static bool TransferApplied = false;
 
+    // Placeholder intencional: aquí se suscribirían hooks propios
+    // si el dispatcher necesitara reaccionar a eventos del juego.
     public static void Init()
     {
     }
@@ -101,7 +103,7 @@ public static class RainCyclesEventDispatcher
         };
 
         string phase = isIdle ? "Idle" : "Blending";
-        RSPlugin.log.LogInfo(
+        RSPlugin.log.LogDebug(
             $"[RainCycles] T={globalT:F2} \u2192 Setting: {setting}, " +
             $"Progress: {progress:F2}, Phase: {phase}");
 

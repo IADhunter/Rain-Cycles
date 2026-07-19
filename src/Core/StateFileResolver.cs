@@ -263,18 +263,8 @@ public static class StateFileResolver
         return candidates;
     }
     
-    // ============================================================
-    // MÉTODOS LEGACY
-    // ============================================================
-    
     public static string GetRainStateSettingsFile(string roomName, int number)
         => ResolveSettingsPath(roomName, number);
-    
-    public static string GetRainStateFilePath(string roomName, int cycle)
-    {
-        int stateNumber = _currentCycleState;
-        return ResolveSettingsPath(roomName, stateNumber);
-    }
     
     // ============================================================
     // MÉTODOS DE UTILIDAD

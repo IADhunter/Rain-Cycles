@@ -27,6 +27,7 @@ public static class ModResetter
         typeof(BlendSettingsLoader),
         typeof(RoomCameraExtensions),
         typeof(BlendSkyAtlasCache),
+        typeof(RainCyclesEventDispatcher),
     };
     
     public static void Init()

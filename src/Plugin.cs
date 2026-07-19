@@ -65,6 +65,7 @@ public class RSPlugin : BaseUnityPlugin
             TintManager.Init();
             RoomCameraExtensions.InitLights();
             DayNightBlocker.Init();
+            RainCyclesEventDispatcher.Init();
 
             Logger.LogInfo($"[{NAME}] {VER} loaded successfully!");
         }
