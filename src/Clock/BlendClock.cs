@@ -49,10 +49,9 @@ public static class BlendClock
     private static int       _rainCycleLen = 1;
     private static bool      _customPendingStop = false;
     private static string    _regionCode = null;
-    private static int       _lastTransitionIndex = -1;
+    private static int       _lastEmittedSetting = -1;
     private static float     _subIdleDuration;
     private static float     _subBlendDuration;
-    private static int      _lastEmittedSetting = -1;
     private static bool     _lastEmittedIsIdle = false;
 
     public static void SetCustomPendingStop()
@@ -149,7 +148,6 @@ public static class BlendClock
         _sequence = null;
         _customPendingStop = false;
         _regionCode = null;
-        _lastTransitionIndex = -1;
 
         RSPlugin.log.LogInfo("[BlendClock] Detenido");
     }
@@ -239,9 +237,6 @@ public static class BlendClock
         
         StateA = _sequence[transIdx];
         StateB = _sequence[nextIdx];
-
-        if (transIdx != _lastTransitionIndex)
-            _lastTransitionIndex = transIdx;
     }
 
     // ============================================================
@@ -255,7 +250,6 @@ public static class BlendClock
 
         T = 0f;
         _timer = 0f;
-        _lastTransitionIndex = -1;
         CurrentPhase = Phase.Idle;
         UpdateStatesFromT();
         IsRunning = true;
@@ -297,7 +291,6 @@ public static class BlendClock
                         return;
                     }
                     T = 0f;
-                    _lastTransitionIndex = -1;
                     UpdateStatesFromT();
                 }
             }
@@ -315,7 +308,6 @@ public static class BlendClock
 
         T = 0f;
         _timer = 0f;
-        _lastTransitionIndex = -1;
         CurrentPhase = Phase.Blending;
         UpdateStatesFromT();
         IsRunning = true;
@@ -348,7 +340,6 @@ public static class BlendClock
 
         T = 0f;
         _timer = 0f;
-        _lastTransitionIndex = -1;
 
         if (_idleDuration > 0f)
         {
