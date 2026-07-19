@@ -9,6 +9,8 @@ public static class RainCyclesEventDispatcher
 {
     private static int _lastEmittedSetting = -1;
     private static float _lastEmittedGlobalT = -1f;
+    private static float _lastEmittedProgress = 0f;
+    private static bool _lastEmittedIsIdle = true;
     private static string _lastDispatchedRegion = null;
 
     internal static bool TransferApplied = false;
@@ -24,6 +26,8 @@ public static class RainCyclesEventDispatcher
         _lastDispatchedRegion = null;
         _lastEmittedSetting = -1;
         _lastEmittedGlobalT = -1f;
+        _lastEmittedProgress = 0f;
+        _lastEmittedIsIdle = true;
         TransferApplied = false;
     }
 
@@ -35,21 +39,20 @@ public static class RainCyclesEventDispatcher
         BlendMode? prevMode = RainCyclesAPI.CurrentMode;
         int prevSetting = _lastEmittedSetting;
         float prevGlobalT = _lastEmittedGlobalT;
-        float prevProgress = RainCyclesAPI.CurrentProgress;
-        bool prevIsIdle = RainCyclesAPI.IsIdle;
+        float prevProgress = _lastEmittedProgress;
+        bool prevIsIdle = _lastEmittedIsIdle;
 
         _lastDispatchedRegion = regionCode;
         _lastEmittedSetting = -1;
         _lastEmittedGlobalT = -1f;
+        _lastEmittedProgress = 0f;
+        _lastEmittedIsIdle = true;
         TransferApplied = false;
 
         RainCyclesAPI.InitialSetting = initialSetting;
         RainCyclesAPI.CurrentRegion = regionCode;
         RainCyclesAPI.CurrentMode = mode;
         RainCyclesAPI.IsClockEnabled = isClockEnabled;
-        RainCyclesAPI.CurrentSetting = initialSetting;
-        RainCyclesAPI.CurrentProgress = 0f;
-        RainCyclesAPI.IsIdle = true;
 
         var args = new RainCyclesRegionEventArgs
         {
@@ -89,10 +92,8 @@ public static class RainCyclesEventDispatcher
 
         _lastEmittedSetting = setting;
         _lastEmittedGlobalT = globalT;
-
-        RainCyclesAPI.CurrentSetting = setting;
-        RainCyclesAPI.CurrentProgress = progress;
-        RainCyclesAPI.IsIdle = isIdle;
+        _lastEmittedProgress = progress;
+        _lastEmittedIsIdle = isIdle;
 
         var args = new RainCyclesStateEventArgs
         {
@@ -121,34 +122,10 @@ public static class RainCyclesEventDispatcher
     {
         if (!BlendClock.IsRunning) return;
 
-        float t = BlendClock.T;
-        float globalT = t % 1f;
-        if (globalT < 0f) globalT += 1f;
+        bool isIdle = BlendClock.CurrentPhase == BlendClock.Phase.Idle;
+        float progress = isIdle ? 0f : BlendClock.SubPhaseLocalT;
 
-        BlendMode mode = RainCyclesAPI.CurrentMode ?? BlendMode.Loop;
-        int setting = ThresholdToSetting(globalT, mode);
-        bool isIdle = IsThresholdIdle(globalT, mode);
-        float progress = isIdle ? 0f : globalT;
-
-        DispatchStateChanged(setting, progress, isIdle, globalT);
+        DispatchStateChanged(BlendClock.StateA, progress, isIdle, BlendClock.T);
     }
 
-    internal static int ThresholdToSetting(float threshold, BlendMode mode)
-    {
-        int initial = RainCyclesAPI.InitialSetting;
-        if (initial < 1 || initial > 4) initial = 1;
-
-        int steps = (mode == BlendMode.Loop) ? 4 : 3;
-        int index = Mathf.RoundToInt(threshold * steps);
-        index = Mathf.Clamp(index, 0, steps - 1);
-
-        return ((initial - 1 + index) % 4) + 1;
-    }
-
-    internal static bool IsThresholdIdle(float threshold, BlendMode mode)
-    {
-        if (Mathf.Abs(threshold) < 0.0001f) return true;
-        if (mode == BlendMode.Loop && Mathf.Abs(threshold - 0.50f) < 0.0001f) return true;
-        return false;
-    }
 }

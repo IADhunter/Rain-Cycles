@@ -8,9 +8,13 @@ public static class RainCyclesAPI
     public static event Action<RainCyclesStateEventArgs> OnStateChanged;
 
     public static string CurrentRegion { get; internal set; }
-    public static int CurrentSetting { get; internal set; }
-    public static float CurrentProgress { get; internal set; }
-    public static bool IsIdle { get; internal set; }
+    public static int CurrentSetting => BlendClock.IsRunning ? BlendClock.StateA : 0;
+    public static int NextSetting => BlendClock.IsRunning ? BlendClock.StateB : 0;
+    public static float CurrentProgress =>
+        BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending
+            ? BlendClock.SubPhaseLocalT : 0f;
+    public static bool IsIdle => !BlendClock.IsRunning || BlendClock.CurrentPhase == BlendClock.Phase.Idle;
+    public static float CurrentGlobalT => BlendClock.IsRunning ? BlendClock.T : 0f;
     public static bool IsClockEnabled { get; internal set; }
     public static BlendMode? CurrentMode { get; internal set; }
     public static int InitialSetting { get; internal set; }
