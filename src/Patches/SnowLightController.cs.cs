@@ -30,7 +30,7 @@ namespace RainCycles.Patches
             new RoomSettings.RoomEffect.Type("SnowLight", true);
         
         public static readonly RoomSettings.RoomEffect.Type SnowGrainEffect = 
-            new RoomSettings.RoomEffect.Type("SnowGrain", true);
+            new RoomSettings.RoomEffect.Type("SnowSparkle", true);
         
         public static void Init()
         {
