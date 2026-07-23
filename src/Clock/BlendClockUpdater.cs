@@ -24,6 +24,7 @@ public static class BlendClockUpdater
     private static bool _startFailed = false;
     private static bool _lastDeathRainHasHit = false;
     private static bool _winHandledThisSession = false;
+    private static bool _loggedRainCycleThisSession = false;
     private static BlendClock.ClockState _savedState;
 
     public static void Init()
@@ -144,6 +145,15 @@ public static class BlendClockUpdater
             {
                 rainTimer = self.world.rainCycle.timer;
                 rainLen = self.world.rainCycle.cycleLength;
+
+                if (!_loggedRainCycleThisSession)
+                {
+                    _loggedRainCycleThisSession = true;
+                    float cycleLenSeconds = rainLen / 40f;
+                    RSPlugin.log.LogInfo(
+                        $"[RainCycleCheck] cycleLength={rainLen} ticks " +
+                        $"(~{cycleLenSeconds:F1}s) | timer inicial={self.world.rainCycle.timer}");
+                }
             }
             BlendClock.Tick(GameDelta(self), rainTimer, rainLen);
         }
@@ -341,12 +351,18 @@ public static class BlendClockUpdater
         if (!was && self.deathRainHasHit && !_lastDeathRainHasHit)
         {
             _lastDeathRainHasHit = true;
+            BlendClock.OnDeathRainTriggered();
             OnDeathRainHit();
         }
         else if (!self.deathRainHasHit)
         {
             _lastDeathRainHasHit = false;
         }
+    }
+
+    public static void ResetRainCycleLogFlag()
+    {
+        _loggedRainCycleThisSession = false;
     }
 
     private static void OnDeathRainHit()

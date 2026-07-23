@@ -15,17 +15,23 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private const float ROW_HEIGHT = 22f;
     private const float BUTTON_WIDTH = 45f;
     private const float MOD_BUTTON_WIDTH = 120f;
-    private const float BKG_BUTTON_WIDTH = 70f;
+    private const float BKG_BUTTON_WIDTH = 30f;
     private const float FIELD_WIDTH = 60f;
     
-    private const float VIEWTYPE_ARROW_X = 4f;
-    private const float VIEWTYPE_LABEL_X = 25f;
-    private const float VIEWTYPE_ARROW2_X = 60f;
+    private const float VIEWTYPE_ARROW_X = 5f;
+    private const float VIEWTYPE_LABEL_X = 26f;
+    private const float VIEWTYPE_ARROW2_X = 61f;
     private const float VIEWTYPE_Y = 78f;
     
     private const float SLOT_ARROW_X = 100f;
     private const float SLOT_LABEL_X = 121f;
     private const float SLOT_ARROW2_X = 156f;
+    
+    private const float TRIGGER_ARROW_X = 100f;
+    private const float TRIGGER_LABEL_X = 121f;
+    private const float TRIGGER_ARROW2_X = 156f;
+    
+    private const float WAITTIME_X = 100f;
     
     private const float ROW_CLOCK_Y = 180f;
     private const float ROW_MODE_Y = 155f;
@@ -41,9 +47,11 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private RegionLogic _logic;
     
     private ClockToggleButton _clockToggle;
-    private ModeButton _loopModeBtn;
-    private ModeButton _rainModeBtn;
-    private ModeButton _cycleModeBtn;
+    private EditModeButton _editModeButton;
+
+    private ArrowButton _modePrevArrow;
+    private ArrowButton _modeNextArrow;
+    private DevUILabel _modeLabel;
     private EditableFloatField _idleField;
     private EditableFloatField _durationField;
     private Button _modButton;
@@ -58,12 +66,17 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private DevUILabel _slotLabel;
     private int _currentSlot = 0;
     
+    private ArrowButton _triggerPrevArrow;
+    private ArrowButton _triggerNextArrow;
+    private DevUILabel _triggerLabel;
+    private EditableFloatField _waitTimeField;
+    
     private ModSelectPanel _modSelectPanel;
     private ImageSelectPanel _imageSelectPanel;
     private int _editingBkgIndex = -1;
     
     private static readonly Color BKG_COLOR_HAS_IMAGE = new Color(0.2f, 0.7f, 0.3f);
-    private static readonly Color BKG_COLOR_NO_IMAGE = new Color(0.5f, 0.5f, 0.5f);
+    private static readonly Color BKG_COLOR_NO_IMAGE = new Color(1f, 1f, 1f);
     private static readonly Color BKG_COLOR_HAS_FOG = new Color(0.2f, 0.5f, 0.8f);
     private static readonly Color BKG_COLOR_HAS_SUN = new Color(0.8f, 0.5f, 0.2f);
 
@@ -85,15 +98,19 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
             new Vector2(MARGIN, ROW_CLOCK_Y), 60f, _logic.ClockEnabled);
         subNodes.Add(_clockToggle);
         
-        _loopModeBtn = new ModeButton(owner, "RC_Mode_Loop", this,
-            new Vector2(MARGIN, ROW_MODE_Y), BUTTON_WIDTH, BlendMode.Loop, _logic.CurrentMode == BlendMode.Loop);
-        _rainModeBtn = new ModeButton(owner, "RC_Mode_EndCycle", this,
-            new Vector2(MARGIN + BUTTON_WIDTH + 5f, ROW_MODE_Y), BUTTON_WIDTH, BlendMode.EndCycle, _logic.CurrentMode == BlendMode.EndCycle);
-        _cycleModeBtn = new ModeButton(owner, "RC_Mode_Cycle", this,
-            new Vector2(MARGIN + (BUTTON_WIDTH + 5f) * 2, ROW_MODE_Y), BUTTON_WIDTH, BlendMode.Cycle, _logic.CurrentMode == BlendMode.Cycle);
-        subNodes.Add(_loopModeBtn);
-        subNodes.Add(_rainModeBtn);
-        subNodes.Add(_cycleModeBtn);
+        _editModeButton = new EditModeButton(owner, "RC_EditMode", this,
+            new Vector2(5f, 5f), 30f);
+        subNodes.Add(_editModeButton);
+        
+        _modePrevArrow = new ArrowButton(owner, "RC_Mode_Prev", this,
+            new Vector2(MARGIN, ROW_MODE_Y), 270f);
+        _modeNextArrow = new ArrowButton(owner, "RC_Mode_Next", this,
+            new Vector2(MARGIN + 56f, ROW_MODE_Y), 90f);
+        _modeLabel = new DevUILabel(owner, "RC_Mode_Label", this,
+            new Vector2(MARGIN + 21f, ROW_MODE_Y), 30f, _logic.GetModeDisplay());
+        subNodes.Add(_modePrevArrow);
+        subNodes.Add(_modeNextArrow);
+        subNodes.Add(_modeLabel);
         
         _idleField = new EditableFloatField(owner, "RC_IdleField", this,
             new Vector2(MARGIN, ROW_IDLE_Y), FIELD_WIDTH, _logic.IdleValue, 0f, 999f);
@@ -112,6 +129,25 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
             _logic.SaveToBlendSettings();
         };
         subNodes.Add(_durationField);
+        
+        _waitTimeField = new EditableFloatField(owner, "RC_WaitTimeField", this,
+            new Vector2(WAITTIME_X, ROW_IDLE_Y), FIELD_WIDTH, _logic.WaitTimeValue, 0f, 999f);
+        _waitTimeField.OnSubmit = (float newValue) => {
+            if (!BlendClock.EditMode) return;
+            _logic.WaitTimeValue = newValue;
+            _logic.SaveToBlendSettings();
+        };
+        subNodes.Add(_waitTimeField);
+        
+        _triggerPrevArrow = new ArrowButton(owner, "RC_Trigger_Prev", this,
+            new Vector2(TRIGGER_ARROW_X, ROW_MODE_Y), 270f);
+        _triggerNextArrow = new ArrowButton(owner, "RC_Trigger_Next", this,
+            new Vector2(TRIGGER_ARROW2_X, ROW_MODE_Y), 90f);
+        _triggerLabel = new DevUILabel(owner, "RC_Trigger_Label", this,
+            new Vector2(TRIGGER_LABEL_X, ROW_MODE_Y), 30f, _logic.GetTriggerDisplay());
+        subNodes.Add(_triggerPrevArrow);
+        subNodes.Add(_triggerNextArrow);
+        subNodes.Add(_triggerLabel);
         
         _viewTypePrevArrow = new ArrowButton(owner, "RC_ViewType_Prev", this,
             new Vector2(VIEWTYPE_ARROW_X, VIEWTYPE_Y), 270f);
@@ -140,11 +176,10 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         for (int i = 0; i < 4; i++)
         {
             int state = i + 1;
-            float x = MARGIN + (i % 2) * (BKG_BUTTON_WIDTH + 10f);
-            float y = ROW_BKG_Y - (i / 2) * (ROW_HEIGHT + 5f);
+            float x = MARGIN + i * (BKG_BUTTON_WIDTH + 5f);
             
             _bkgButtons[i] = new Button(owner, $"RC_BkgButton_{state}", this,
-                new Vector2(x, y), BKG_BUTTON_WIDTH, $"bkg0{state}");
+                new Vector2(x, ROW_BKG_Y), BKG_BUTTON_WIDTH, $"bkg{state}");
             UpdateBkgButtonColor(i);
             subNodes.Add(_bkgButtons[i]);
         }
@@ -170,6 +205,16 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         
         string slotName = _currentSlot == 0 ? "Sky" : (_currentSlot == 1 ? "Fog" : "Sun");
         _slotLabel.Text = slotName;
+    }
+    
+    private void UpdateModeLabel()
+    {
+        _modeLabel.Text = _logic.GetModeDisplay();
+    }
+
+    private void UpdateTriggerLabel()
+    {
+        _triggerLabel.Text = _logic.GetTriggerDisplay();
     }
     
     private void CycleSlot(int delta)
@@ -231,39 +276,24 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
             return;
         }
         
-        if (sender.IDstring == "RC_Mode_Loop")
+        if (sender.IDstring == "RC_Mode_Prev")
         {
             if (!BlendClock.EditMode && BlendClock.IsRunning) return;
-            _logic.CurrentMode = BlendMode.Loop;
-            _loopModeBtn.SetActive(true);
-            _rainModeBtn.SetActive(false);
-            _cycleModeBtn.SetActive(false);
+            _logic.CycleMode(-1);
+            UpdateModeLabel();
+            UpdateTriggerLabel();
             _logic.SaveToBlendSettings();
             SettingsBlendController.ResetFull();
             if (BlendClock.IsRunning) BlendClock.Stop();
             return;
         }
         
-        if (sender.IDstring == "RC_Mode_EndCycle")
+        if (sender.IDstring == "RC_Mode_Next")
         {
             if (!BlendClock.EditMode && BlendClock.IsRunning) return;
-            _logic.CurrentMode = BlendMode.EndCycle;
-            _loopModeBtn.SetActive(false);
-            _rainModeBtn.SetActive(true);
-            _cycleModeBtn.SetActive(false);
-            _logic.SaveToBlendSettings();
-            SettingsBlendController.ResetFull();
-            if (BlendClock.IsRunning) BlendClock.Stop();
-            return;
-        }
-        
-        if (sender.IDstring == "RC_Mode_Cycle")
-        {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
-            _logic.CurrentMode = BlendMode.Cycle;
-            _loopModeBtn.SetActive(false);
-            _rainModeBtn.SetActive(false);
-            _cycleModeBtn.SetActive(true);
+            _logic.CycleMode(1);
+            UpdateModeLabel();
+            UpdateTriggerLabel();
             _logic.SaveToBlendSettings();
             SettingsBlendController.ResetFull();
             if (BlendClock.IsRunning) BlendClock.Stop();
@@ -299,6 +329,20 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         if (sender.IDstring == "RC_Slot_Next")
         {
             CycleSlot(1);
+            return;
+        }
+        
+        if (sender.IDstring == "RC_Trigger_Prev")
+        {
+            _logic.CycleTrigger(-1);
+            UpdateTriggerLabel();
+            return;
+        }
+        
+        if (sender.IDstring == "RC_Trigger_Next")
+        {
+            _logic.CycleTrigger(1);
+            UpdateTriggerLabel();
             return;
         }
         
@@ -586,6 +630,12 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
             if (_durationField != null && Math.Abs(_logic.DurationValue - _durationField.Value) > 0.01f)
             {
                 _logic.DurationValue = _durationField.Value;
+                _logic.SaveToBlendSettings();
+            }
+            
+            if (_waitTimeField != null && Math.Abs(_logic.WaitTimeValue - _waitTimeField.Value) > 0.01f)
+            {
+                _logic.WaitTimeValue = _waitTimeField.Value;
                 _logic.SaveToBlendSettings();
             }
         }

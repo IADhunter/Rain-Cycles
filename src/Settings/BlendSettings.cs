@@ -9,6 +9,13 @@ public enum BlendMode
     EndCycle
 }
 
+public enum LoopTrigger
+{
+    None,
+    Cycle,
+    Rain
+}
+
 public partial class BlendSettings
 {
     // ============================================================
@@ -20,11 +27,10 @@ public partial class BlendSettings
     public float Duration = 10f;
 
     // ============================================================
-    // SUBMODO (solo relevante para EndCycle)
+    // TRIGGER DE ACTIVACIÓN PARA LOOP
     // ============================================================
-    public BlendMode Submode = BlendMode.Loop;
-    public float SubIdleTime = 5f;
-    public float SubDuration = 10f;
+    public LoopTrigger Trigger = LoopTrigger.None;
+    public float WaitTime = 0f;
 
     // ============================================================
     // REDIRECCIÓN DE ESTADO VANILLA

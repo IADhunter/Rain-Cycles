@@ -131,24 +131,23 @@ public static class BlendSettingsLoader
                         break;
                     case "idle_time":
                         if (float.TryParse(val, out float idle))
-                        {
-                            if (currentView != ViewType.None)
-                                settings.SubIdleTime = idle;
-                            else
-                                settings.IdleTime = idle;
-                        }
+                            settings.IdleTime = idle;
                         break;
                     case "duration":
                         if (float.TryParse(val, out float dur))
-                        {
-                            if (currentView != ViewType.None)
-                                settings.SubDuration = dur;
-                            else
-                                settings.Duration = dur;
-                        }
+                            settings.Duration = dur;
                         break;
-                    case "submode":
-                        settings.Submode = ParseMode(val);
+                    case "trigger":
+                        settings.Trigger = val.Trim().ToLowerInvariant() switch
+                        {
+                            "cycle" => LoopTrigger.Cycle,
+                            "rain"  => LoopTrigger.Rain,
+                            _       => LoopTrigger.None
+                        };
+                        break;
+                    case "wait_time":
+                        if (float.TryParse(val, out float wt))
+                            settings.WaitTime = wt;
                         break;
                     case "setting":
                         if (int.TryParse(val, out int set) && set >= 0 && set <= 4) settings.Setting = set;

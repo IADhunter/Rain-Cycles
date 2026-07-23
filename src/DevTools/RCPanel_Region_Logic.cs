@@ -18,9 +18,8 @@ public class RegionLogic
     public bool ClockEnabled { get; set; } = false;
     public float IdleValue { get; set; } = 5f;
     public float DurationValue { get; set; } = 10f;
-    public BlendMode CurrentSubmode { get; set; } = BlendMode.Loop;
-    public float SubIdleValue { get; set; } = 5f;
-    public float SubDurationValue { get; set; } = 10f;
+    public LoopTrigger CurrentTrigger { get; set; } = LoopTrigger.None;
+    public float WaitTimeValue { get; set; } = 0f;
     public int SettingValue { get; set; } = 0;
     public ViewType CurrentViewType { get; set; } = ViewType.ACV;
     
@@ -220,6 +219,70 @@ public class RegionLogic
         LoadCurrentViewFromDictionary();
     }
     
+    private static readonly BlendMode[] _modes = { BlendMode.Loop, BlendMode.Cycle, BlendMode.EndCycle };
+    private int _modeIndex = 0;
+
+    private static readonly LoopTrigger[] _triggers = { LoopTrigger.None, LoopTrigger.Cycle, LoopTrigger.Rain };
+    private int _triggerIndex = 0;
+
+    public void CycleTrigger(int delta)
+    {
+        if (CurrentMode != BlendMode.Loop)
+        {
+            CurrentTrigger = LoopTrigger.None;
+            _triggerIndex = 0;
+            SaveToBlendSettings();
+            return;
+        }
+
+        SaveToBlendSettings();
+
+        _triggerIndex += delta;
+        if (_triggerIndex < 0) _triggerIndex = _triggers.Length - 1;
+        if (_triggerIndex >= _triggers.Length) _triggerIndex = 0;
+        CurrentTrigger = _triggers[_triggerIndex];
+
+        SaveToBlendSettings();
+    }
+
+    public string GetTriggerDisplay()
+    {
+        return CurrentTrigger switch
+        {
+            LoopTrigger.Cycle => "Cycle",
+            LoopTrigger.Rain  => "Rain",
+            _                 => "None"
+        };
+    }
+
+    public void CycleMode(int delta)
+    {
+        SaveToBlendSettings();
+
+        _modeIndex += delta;
+        if (_modeIndex < 0) _modeIndex = _modes.Length - 1;
+        if (_modeIndex >= _modes.Length) _modeIndex = 0;
+        CurrentMode = _modes[_modeIndex];
+
+        if (CurrentMode != BlendMode.Loop)
+        {
+            CurrentTrigger = LoopTrigger.None;
+            _triggerIndex = 0;
+        }
+
+        SaveToBlendSettings();
+    }
+
+    public string GetModeDisplay()
+    {
+        return CurrentMode switch
+        {
+            BlendMode.Cycle => "Cycle",
+            BlendMode.EndCycle => "Rain",
+            _ => "Loop"
+        };
+    }
+
     public void LoadImagesForCurrentView()
     {
         LoadCurrentViewFromDictionary();
@@ -276,24 +339,23 @@ public class RegionLogic
                         break;
                     case "idle_time":
                         if (float.TryParse(val, out float idle))
-                        {
-                            if (currentView != ViewType.None)
-                                SubIdleValue = idle;
-                            else
-                                IdleValue = idle;
-                        }
+                            IdleValue = idle;
                         break;
                     case "duration":
                         if (float.TryParse(val, out float dur))
-                        {
-                            if (currentView != ViewType.None)
-                                SubDurationValue = dur;
-                            else
-                                DurationValue = dur;
-                        }
+                            DurationValue = dur;
                         break;
-                    case "submode":
-                        CurrentSubmode = ParseModeFromString(val);
+                    case "trigger":
+                        CurrentTrigger = val.Trim().ToLowerInvariant() switch
+                        {
+                            "cycle" => LoopTrigger.Cycle,
+                            "rain"  => LoopTrigger.Rain,
+                            _       => LoopTrigger.None
+                        };
+                        break;
+                    case "wait_time":
+                        if (float.TryParse(val, out float wt))
+                            WaitTimeValue = wt;
                         break;
                     case "setting":
                         if (int.TryParse(val, out int set)) SettingValue = set;
@@ -343,6 +405,17 @@ public class RegionLogic
         CurrentViewType = DetermineCurrentViewType();
         _viewTypeIndex = Array.IndexOf(_viewTypes, CurrentViewType);
         if (_viewTypeIndex < 0) _viewTypeIndex = 0;
+        
+        _modeIndex = Array.IndexOf(_modes, CurrentMode);
+        if (_modeIndex < 0) _modeIndex = 0;
+
+        if (CurrentMode != BlendMode.Loop)
+        {
+            CurrentTrigger = LoopTrigger.None;
+        }
+        
+        _triggerIndex = Array.IndexOf(_triggers, CurrentTrigger);
+        if (_triggerIndex < 0) _triggerIndex = 0;
         
         LoadCurrentViewFromDictionary();
     }
@@ -409,12 +482,13 @@ public class RegionLogic
         ClockEnabled = false;
         IdleValue = 5f;
         DurationValue = 10f;
-        CurrentSubmode = BlendMode.Loop;
-        SubIdleValue = 5f;
-        SubDurationValue = 10f;
+        CurrentTrigger = LoopTrigger.None;
+        WaitTimeValue = 0f;
         SettingValue = 0;
         CurrentViewType = ViewType.ACV;
         _viewTypeIndex = 0;
+        _modeIndex = 0;
+        _triggerIndex = 0;
         _allBackgrounds.Clear();
         _allFogs.Clear();
         _allSuns.Clear();
@@ -448,9 +522,8 @@ public class RegionLogic
         sb.AppendLine($"Mode: {ModeToString(CurrentMode)}");
         sb.AppendLine($"Idle_time: {IdleValue:F1}");
         sb.AppendLine($"Duration: {DurationValue:F1}");
-        sb.AppendLine($"Submode: {ModeToString(CurrentSubmode)}");
-        sb.AppendLine($"Idle_time: {SubIdleValue:F1}");
-        sb.AppendLine($"Duration: {SubDurationValue:F1}");
+        sb.AppendLine($"Trigger: {CurrentTrigger.ToString().ToLowerInvariant()}");
+        sb.AppendLine($"wait_time: {WaitTimeValue:F1}");
         sb.AppendLine($"Setting: {SettingValue}");
         
         if (!string.IsNullOrEmpty(SavedModName))

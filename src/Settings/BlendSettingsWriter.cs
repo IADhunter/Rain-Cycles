@@ -58,9 +58,8 @@ public static partial class BlendSettingsWriter
         sb.AppendLine($"Mode: {ModeToString(settings.Mode)}");
         sb.AppendLine($"Idle_time: {settings.IdleTime:F1}");
         sb.AppendLine($"Duration: {settings.Duration:F1}");
-        sb.AppendLine($"Submode: {ModeToString(settings.Submode)}");
-        sb.AppendLine($"Idle_time: {settings.SubIdleTime:F1}");
-        sb.AppendLine($"Duration: {settings.SubDuration:F1}");
+        sb.AppendLine($"Trigger: {settings.Trigger.ToString().ToLowerInvariant()}");
+        sb.AppendLine($"wait_time: {settings.WaitTime:F1}");
         sb.AppendLine($"Setting: {settings.Setting}");
 
         if (settings.HasBackgroundsSection && settings.BackgroundAliases.Count > 0)
@@ -88,9 +87,8 @@ public static partial class BlendSettingsWriter
 Mode: loop
 Idle_time: 5.0
 Duration: 10.0
-Submode: none
-Idle_time: 5.0
-Duration: 10.0
+Trigger: none
+wait_time: 0.0
 Setting: 0";
     }
 

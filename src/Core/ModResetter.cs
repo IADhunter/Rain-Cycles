@@ -92,6 +92,8 @@ public static class ModResetter
             
             SettingsSnapshot.PreloadRegionTemplates(regionCode);
             RoomCameraExtensions.ClearAllCaches();
+
+            BlendClockUpdater.ResetRainCycleLogFlag();
         }
         else
         {

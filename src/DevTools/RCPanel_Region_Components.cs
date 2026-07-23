@@ -247,6 +247,14 @@ public class EditableFloatField : PositionedDevUINode
                 return;
             }
             
+            if (owner.mouseClick &&
+                (owner.mousePos.x < absPos.x || owner.mousePos.x > absPos.x + _width ||
+                 owner.mousePos.y < absPos.y || owner.mousePos.y > absPos.y + _height))
+            {
+                StopEditing(true);
+                return;
+            }
+            
             return;
         }
         

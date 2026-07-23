@@ -19,6 +19,7 @@ public static class BlendClock
         public int StateA;
         public int StateB;
         public float Timer;
+        public bool LoopActivated;
     }
 
     public static Phase CurrentPhase { get; private set; } = Phase.Idle;
@@ -50,9 +51,32 @@ public static class BlendClock
     private static bool      _customPendingStop = false;
     private static string    _regionCode = null;
     private static int       _lastEmittedSetting = -1;
-    private static float     _subIdleDuration;
-    private static float     _subBlendDuration;
-    private static bool     _lastEmittedIsIdle = false;
+    private static bool      _lastEmittedIsIdle = false;
+
+    // ============================================================
+    // TRIGGER DE ACTIVACIÓN PARA LOOP
+    // ============================================================
+    private static bool      _waitingForThreshold  = false;
+    private static bool      _waitingForDeathRain  = false;
+    private static bool      _waitingPostRainDelay = false;
+    private static bool      _loopActivated        = false;
+    private static bool      _deathRainTriggered   = false;
+
+    public static void OnDeathRainTriggered()
+    {
+        _deathRainTriggered = true;
+    }
+
+    private static float ResolveEffectiveDuration(float configValue, float fallbackDefault)
+    {
+        if (configValue > 0f)
+            return configValue;
+
+        if (_rainCycleLen > 0)
+            return _rainCycleLen / 40f;
+
+        return fallbackDefault;
+    }
 
     public static void SetCustomPendingStop()
     {
@@ -70,12 +94,19 @@ public static class BlendClock
             StateA = StateA,
             StateB = StateB,
             Timer = _timer,
+            LoopActivated = _loopActivated,
         };
     }
 
     public static void RestoreState(ClockState state)
     {
         if (state.Mode != _mode) return;
+
+        // Si Loop no se había activado de verdad (estaba en espera), no se restaura
+        // nada — la región nueva empieza su propio trigger desde cero.
+        if (state.Mode == BlendMode.Loop && !state.LoopActivated)
+            return;
+
         _mode = state.Mode;
         IsRunning = state.IsRunning;
         T = state.T;
@@ -83,6 +114,11 @@ public static class BlendClock
         StateA = state.StateA;
         StateB = state.StateB;
         _timer = state.Timer;
+        _loopActivated = state.LoopActivated;
+
+        _waitingForThreshold = false;
+        _waitingForDeathRain = false;
+        _waitingPostRainDelay = false;
     }
 
     public static void Start(string regionCode, int initialState = 1)
@@ -93,15 +129,43 @@ public static class BlendClock
         _regionCode = regionCode?.ToUpperInvariant();
         _mode = s.Mode;
 
-        _idleDuration = s.IdleTime;
-        _blendDuration = s.Duration;
-        _subIdleDuration = s.SubIdleTime;
-        _subBlendDuration = s.SubDuration;
+        _idleDuration = ResolveEffectiveDuration(s.IdleTime, 5f);
+        _blendDuration = ResolveEffectiveDuration(s.Duration, 10f);
+
+        // Resetear flags de trigger
+        _deathRainTriggered = false;
+        _waitingForThreshold = false;
+        _waitingForDeathRain = false;
+        _waitingPostRainDelay = false;
 
         switch (_mode)
         {
             case BlendMode.Loop:
-                StartLoop(s, initialState);
+                if (s.Trigger == LoopTrigger.None)
+                {
+                    _loopActivated = true;
+                    StartLoop(s, initialState);
+                }
+                else
+                {
+                    _loopActivated = false;
+                    StateA = initialState;
+                    StateB = initialState;
+                    T = 0f;
+                    CurrentPhase = Phase.Idle;
+                    IsRunning = true;
+
+                    if (s.Trigger == LoopTrigger.Cycle)
+                    {
+                        _waitingForThreshold = true;
+                        RSPlugin.log.LogInfo($"[BlendClock] Loop iniciado - esperando umbral {s.WaitTime}% (Trigger: Cycle)");
+                    }
+                    else if (s.Trigger == LoopTrigger.Rain)
+                    {
+                        _waitingForDeathRain = true;
+                        RSPlugin.log.LogInfo($"[BlendClock] Loop iniciado - esperando deathRain (Trigger: Rain, wait_time={s.WaitTime}s)");
+                    }
+                }
                 break;
             case BlendMode.Cycle:
                 StartCycle(s, initialState);
@@ -148,6 +212,12 @@ public static class BlendClock
         _sequence = null;
         _customPendingStop = false;
         _regionCode = null;
+
+        _waitingForThreshold = false;
+        _waitingForDeathRain = false;
+        _waitingPostRainDelay = false;
+        _loopActivated = false;
+        _deathRainTriggered = false;
 
         RSPlugin.log.LogInfo("[BlendClock] Detenido");
     }
@@ -255,8 +325,80 @@ public static class BlendClock
         IsRunning = true;
     }
 
+    private static void ActivateLoopDirectToBlend(int initialState)
+    {
+        _loopActivated = true;
+        _sequence = BuildLoopSequence(initialState);
+        if (_sequence == null || _sequence.Count < 4)
+            _sequence = new List<int> { 1, 2, 3, 4 };
+
+        T = 0f;
+        _timer = 0f;
+        CurrentPhase = Phase.Blending;
+        UpdateStatesFromT();
+        IsRunning = true;
+    }
+
     private static void TickLoop(BlendSettings s)
     {
+        // ============================================================
+        // TRIGGER: cycle — esperando umbral %
+        // ============================================================
+        if (_waitingForThreshold)
+        {
+            if (_rainCycleLen <= 0) return;
+            float progress = (_rainTimer / _rainCycleLen) * 100f;
+
+            if (progress >= s.WaitTime)
+            {
+                _waitingForThreshold = false;
+                ActivateLoopDirectToBlend(StateA);
+                RSPlugin.log.LogInfo("[BlendClock] Loop activado (Trigger: Cycle cumplido)");
+            }
+            return;
+        }
+
+        // ============================================================
+        // TRIGGER: rain — fase 1: esperando deathRainHasHit
+        // ============================================================
+        if (_waitingForDeathRain)
+        {
+            if (_deathRainTriggered)
+            {
+                _waitingForDeathRain = false;
+
+                if (s.WaitTime <= 0f)
+                {
+                    _loopActivated = true;
+                    StartLoop(s, StateA);
+                    RSPlugin.log.LogInfo("[BlendClock] Loop activado (Trigger: Rain, wait_time<=0 → idle normal)");
+                }
+                else
+                {
+                    _waitingPostRainDelay = true;
+                    _timer = 0f;
+                    RSPlugin.log.LogInfo($"[BlendClock] deathRain detectado - esperando {s.WaitTime}s antes de activar Loop (Trigger: Rain)");
+                }
+            }
+            return;
+        }
+
+        // ============================================================
+        // TRIGGER: rain — fase 2: retraso post-deathRain
+        // ============================================================
+        if (_waitingPostRainDelay)
+        {
+            if (_timer < s.WaitTime) return;
+
+            _waitingPostRainDelay = false;
+            ActivateLoopDirectToBlend(StateA);
+            RSPlugin.log.LogInfo("[BlendClock] Loop activado (Trigger: Rain, retraso cumplido)");
+            return;
+        }
+
+        // ============================================================
+        // CUERPO EXISTENTE — SIN CAMBIOS
+        // ============================================================
         if (CurrentPhase == Phase.Idle)
         {
             if (_timer < _idleDuration) return;

@@ -13,19 +13,19 @@ namespace FilesSetting;
 
 public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 {
-    private const float VIEWTYPE_ARROW_X = 4f;
-    private const float VIEWTYPE_LABEL_X = 25f;
-    private const float VIEWTYPE_ARROW2_X = 60f;
+    private const float VIEWTYPE_ARROW_X = 5f;
+    private const float VIEWTYPE_LABEL_X = 26f;
+    private const float VIEWTYPE_ARROW2_X = 61f;
     private const float VIEWTYPE_Y = 119f;
 
     private const float TINT_BTN_Y = 29f;
-    private const float TINT_BTN_WIDTH = 60f;
+    private const float TINT_BTN_WIDTH = 35f;
     private const float TINT_BTN_SPACING = 5f;
     private const float TINT_MULTIPLY_X = 5f;
     private const float TINT_ATMOSPHERE_X = TINT_MULTIPLY_X + TINT_BTN_WIDTH + TINT_BTN_SPACING;
 
     private const float TINT_TOGGLE_WIDTH = 30f;
-    private const float TINT_TOGGLE_X = 115f - 5f - TINT_TOGGLE_WIDTH;
+    private const float TINT_TOGGLE_X = 116f - 5f - TINT_TOGGLE_WIDTH;
 
     private const float HSV_SLIDER_X = 5f;
     private const float HSV_SLIDER_Y = 56f;
@@ -38,7 +38,7 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
     private const float FREE_COLOR_PICKER_Y = 57f;
     private const float FREE_COLOR_PICKER_SIZE = 56f;
 
-    private const float COLOR_PICKER_X = 115f;
+    private const float COLOR_PICKER_X = 116f;
     private const float COLOR_PICKER_Y = 119f;
     private const float COLOR_PICKER_SIZE = 16f;
 
@@ -106,9 +106,9 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         subNodes.Add(_tintToggleBtn);
 
         _multiplyBtn = new Button(owner, "RC_Tint_Multiply", this,
-            new Vector2(TINT_MULTIPLY_X, TINT_BTN_Y), TINT_BTN_WIDTH, "Multiply");
+            new Vector2(TINT_MULTIPLY_X, TINT_BTN_Y), TINT_BTN_WIDTH, "Multi");
         _atmosphereBtn = new Button(owner, "RC_Tint_Atmosphere", this,
-            new Vector2(TINT_ATMOSPHERE_X, TINT_BTN_Y), TINT_BTN_WIDTH, "Atmosphere");
+            new Vector2(TINT_ATMOSPHERE_X, TINT_BTN_Y), TINT_BTN_WIDTH, "Atmos");
         
         subNodes.Add(_multiplyBtn);
         subNodes.Add(_atmosphereBtn);
