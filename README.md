@@ -26,12 +26,15 @@ Loads a different `settings_N.txt` file each cycle without any visual transition
 
 Starts from the static mode rotation and performs smooth transitions between settings using real-time visual interpolation.
 
+The `Loop` mode can be configured to start immediately or wait for a specific trigger. See the [Trigger System](#trigger-system) section for details.
+
 There are three sub-modes available in `REGION_blend_settings.txt`:
 
 * **Loop:** A continuous cycle of transitions.
   * **Idle:** Wait time before blending starts.
   * **Duration:** Transition duration.
   * The cycle repeats infinitely.
+  * Can be configured to start immediately or via a trigger.
 * **Cycle:** A one-way linear transition.
   * Passes through states 1, 2, 3, and then stops.
   * The blending advances progressively until completion.
@@ -40,6 +43,65 @@ There are three sub-modes available in `REGION_blend_settings.txt`:
   * Useful for atmospheric changes during the storm.
 
 #### All modes work regardless of whether it is raining in the region or not.
+
+---
+
+## Trigger System
+
+The `Loop` mode can be configured to start immediately or wait for a specific event. This is controlled by the `Trigger` and `wait_time` settings in `REGION_blend_settings.txt`.
+
+```
+Trigger: none          # none / cycle / rain
+wait_time: 80.0        # Meaning depends on Trigger (value is fully configurable)
+```
+
+### Trigger: none (default)
+
+The Loop starts immediately upon entering the region.
+
+```
+Entry → Idle (Idle_time) → Blend (Duration) → Idle → Blend → ...
+```
+
+### Trigger: cycle
+
+The Loop waits until a specific percentage of the rain cycle has elapsed. The percentage is fully configurable via `wait_time` (any value from 0.0 to 100.0).
+
+| wait_time | Behavior |
+|-----------|----------|
+| `80.0` (example) | Loop starts when 80% of the cycle has elapsed |
+| `50.0` (example) | Loop starts at the halfway point of the cycle |
+| `0.0` | Loop starts immediately (equivalent to `Trigger: none`) |
+
+```
+Entry → Wait until wait_time% → Jump directly to Blend (no initial Idle)
+```
+
+> **Note:** When using `Trigger: cycle`, the first idle (at 0%) is skipped — the Loop starts directly in blend. This avoids an unnecessary pause right after the wait.
+
+### Trigger: rain
+
+The Loop waits until the game triggers deadly rain (`deathRainHasHit`). The delay is fully configurable via `wait_time` (any positive value in seconds).
+
+| wait_time | Behavior |
+|-----------|----------|
+| `5.0` (example) | Loop starts after waiting 5 seconds after rain begins, skipping the first idle |
+| `0.0` | Loop starts immediately when rain begins, with normal Idle |
+
+```
+Entry → Wait for deathRain → [+ wait_time seconds] → Jump directly to Blend (if wait_time > 0)
+Entry → Wait for deathRain → Normal Idle (if wait_time = 0)
+```
+
+### Quick Reference
+
+| Trigger | wait_time | Activation | Skips first Idle? |
+|---------|-----------|------------|-------------------|
+| `none` | (ignored) | Immediate | ❌ No |
+| `cycle` | `0.0` | Immediate | ✅ Yes |
+| `cycle` | any `> 0.0` | At specified % of cycle | ✅ Yes |
+| `rain` | `0.0` | At deathRain | ❌ No |
+| `rain` | any `> 0.0` | Specified seconds after deathRain | ✅ Yes |
 
 ---
 
@@ -130,8 +192,10 @@ Controls the global behavior of the region:
 
 * **Clock:** `true`/`false` (enables the automatic clock).
 * **Mode:** `loop` / `cycle` / `rain`.
-* **Idle_time:** Waiting time in seconds (for `loop` and `rain`).
-* **Duration:** Blending duration in seconds.
+* **Idle_time:** Waiting time in seconds (for `loop` and `rain`). `0.0` uses the full rain cycle duration.
+* **Duration:** Blending duration in seconds. `0.0` uses the full rain cycle duration.
+* **Trigger:** `none` / `cycle` / `rain` (see Trigger System above).
+* **wait_time:** Percentage (for `cycle`) or seconds (for `rain`) depending on Trigger. Fully configurable.
 * **Mod:** Name of the mod containing the background images.
 * **Acv / Rtv / Psv:** Sections to assign images to each state.
 
@@ -268,6 +332,7 @@ Accessible from the developer menu (Default key: `O`). It includes:
 * Slot selector for images (Sky/Fog/Sun)
 * Manual blending editor with a slider
 * Mode and timer selector
+* Trigger selector (None/Cycle/Rain) with wait_time editor
 * Edit Mode with automatic state selection
 
 ---
