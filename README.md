@@ -1,12 +1,15 @@
 # Rain Cycles Documentation
 
+
+Rain Cycles is a dependency designed to manage multiple room states, supporting a maximum limit of 4 states per room.
+
+---
+
 ## Main Modes
 
-**Rain Cycles** is a dependency designed to manage multiple room states, supporting a maximum limit of 4 states per room.
+The mod operates in two main modes, which are controlled by the `Type` line in each room's configuration file.
 
-The mod operates in two main modes, which are controlled by the `RC_TYPE` line in each room's configuration file.
-
-### Static Mode (`RC_TYPE: Static`)
+### Static Mode (`Type: Static`)
 
 Loads a different `settings_N.txt` file each cycle without any visual transitions. It supports two different setting selection modes:
 
@@ -19,7 +22,7 @@ Loads a different `settings_N.txt` file each cycle without any visual transition
 * No visual blending or interpolation.
 * Palettes and effects are applied instantly at the start of the cycle.
 
-### Blend Mode (`RC_TYPE: Blend`)
+### Blend Mode (`Type: Blend`)
 
 Starts from the static mode rotation and performs smooth transitions between settings using real-time visual interpolation.
 
@@ -44,13 +47,37 @@ There are three sub-modes available in `REGION_blend_settings.txt`:
 
 During Blend Mode, the following elements are interpolated:
 
-* Color palettes
-* Scalar effects (brightness, contrast, fog, etc.)
+* Room color palettes
+* Terrain color palettes
+* Scalar effects (brightness, contrast, fog, darkness, hue, etc.)
+* Terrain scalar effects (Waves, Light, Grain, SkyFade, StainAmount, StainBrightness, StainHeight)
 * Decal opacity
 * Light intensity
 * Environment light colors (with smooth interpolation)
 * Global tints (Multiply, Atmosphere, Cloud)
 * Background images (ACV, RTV, PSV)
+
+---
+
+## Special Effects
+
+### Snow Light
+
+Controls the lighting intensity on snow surfaces. Perfect for creating dynamic snow environments across different states.
+
+### Snow Sparkle
+
+Controls the sparkle/particle brightness on snow. Adds subtle or dramatic shimmer effects.
+
+> ⚠️ These effects do not currently blend between states (planned for a future update). They are applied as static values per state.
+
+---
+
+## DayNight Blocker
+
+Rain Cycles automatically blocks the vanilla DayNight effect and object in managed rooms (Static and Blend modes). This prevents visual conflicts and crashes that would otherwise occur.
+
+> 💡 *If you need DayNight-like functionality, use the state system to create dynamic time-of-day transitions instead.*
 
 ---
 
@@ -64,11 +91,38 @@ Each state corresponds to a `settings_N.txt` file, where `N` is a number from 1 
 
 ---
 
+## File Resolution
+
+### Per Room (`settings_N.txt`)
+
+Rain Cycles automatically resolves the correct settings file based on the active DLCs and current slugcat.
+
+**Resolution Priority:**
+1. DLC + Slugcat (most specific)
+2. Slugcat
+3. DLC
+4. Base (no suffix)
+
+**Examples:**
+* Downpour + Rivulet: `-dwp-rivulet` → `-rivulet` → `-dwp` → base
+* Watcher + Survivor: `-wtc` → base
+* No DLC + Rivulet: `-rivulet` → base
+
+**Supported suffixes:**
+* `-dwp` (Downpour)
+* `-wtc` (Watcher)
+* `-slugcat` (e.g., `-rivulet`, `-saint`)
+
+**Room Variants:**
+* Rooms ending in `-2` (Downpour variants) are checked first before falling back to the base room name.
+
+---
+
 ## Configuration Files
 
 ### Per Room (`settings_N.txt`)
 
-Contains the complete visual configuration: palettes, effects, tints, decals, lights, etc.
+Contains the complete visual configuration: palettes, effects, tints, decals, lights, terrain palettes, etc.
 
 ### Per Region (`REGION_blend_settings.txt`)
 
@@ -88,7 +142,7 @@ Controls the global behavior of the region:
 Three independent tint channels:
 
 * **Multiply:** Multiplies the color of the entire scene.
-* **Atmosphere:** Affects fog, the sky in rooms with `AboveCloudsView`and atmosphere.
+* **Atmosphere:** Affects fog, the sky in rooms with `AboveCloudsView` and atmosphere.
 
 > 💡 *These can be edited in real-time from DevTools and are saved permanently.*
 
@@ -107,14 +161,99 @@ A room effect that controls the visibility of the cycle timer. Add this to the `
 
 Views are a system that adds images and tints to a specific depth layer of the room. Both objects are fully blendable in real-time.
 
+**Supported views:**
+* **ACV (Above Clouds View):** Sky images.
+* **RTV (Roof Top View):** Rooftop sky images.
+* **PSV (Pink Sky View):** Sky, Fog, and Sun layers.
+
 ---
 
-## Known Limitations
+## Public API
 
-* Does not work in Arena mode for now.
-* `TerrainPalette` is non-functional in this version.
-* Not compatible with vanilla `DayNight` (may cause crashes).
-* Compatibility with `Forecast` has not been tested.
+Rain Cycles provides a public API for external mods to communicate with the system.
+
+**Namespace:** `RainCycles.API`
+
+### Events
+
+* `OnRegionEnter(Action<RainCyclesRegionEventArgs>)` - Triggered when entering a managed region.
+* `OnStateChanged(Action<RainCyclesStateEventArgs>)` - Triggered when the active setting changes or when transitioning between Idle/Blending.
+
+### Event Args (`RainCyclesRegionEventArgs`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `RegionCode` | `string` | Region code entered |
+| `Mode` | `BlendMode?` | Current blend mode (`Loop`, `Cycle`, `EndCycle`) or `null` |
+| `IsClockEnabled` | `bool` | Whether the clock is active |
+| `InitialSetting` | `int` | Initial setting (1-4) |
+
+### Event Args (`RainCyclesStateEventArgs`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Setting` | `int` | Active setting (1-4) |
+| `Progress` | `float` | Blend progress (0-1), `0` if `IsIdle` |
+| `IsIdle` | `bool` | `true` if in Idle phase |
+| `GlobalT` | `float` | Global cycle time (0-1) |
+| `Phase` | `string` | `"Idle"` or `"Blending"` |
+
+### Query Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `CurrentSetting` | `int` | Active setting (1-4) |
+| `NextSetting` | `int` | Target setting during blending |
+| `CurrentProgress` | `float` | Real-time blend progress (0-1) |
+| `IsIdle` | `bool` | `true` if in Idle phase |
+| `CurrentGlobalT` | `float` | Global cycle time (0-1) |
+| `CurrentRegion` | `string` | Current region code |
+| `IsClockEnabled` | `bool` | `true` if clock is active |
+| `CurrentMode` | `BlendMode?` | Current blend mode or `null` |
+| `InitialSetting` | `int` | Initial setting for the current region |
+
+### Methods
+
+* `ForceNotify()` - Manually trigger an `OnStateChanged` event with the current state.
+
+### Usage Examples
+
+**Subscribe to events:**
+```csharp
+using RainCycles.API;
+
+public static class MyMod
+{
+    public static void Init()
+    {
+        RainCyclesAPI.OnRegionEnter += OnRegionEnter;
+        RainCyclesAPI.OnStateChanged += OnStateChanged;
+    }
+
+    private static void OnRegionEnter(RainCyclesRegionEventArgs e)
+    {
+        // React to region entry
+    }
+
+    private static void OnStateChanged(RainCyclesStateEventArgs e)
+    {
+        // React to state changes
+    }
+}
+```
+
+**Query current state:**
+```csharp
+if (RainCyclesAPI.IsClockEnabled && RainCyclesAPI.CurrentSetting == 3)
+{
+    // Do something when setting 3 is active
+}
+```
+
+**Force notification:**
+```csharp
+RainCyclesAPI.ForceNotify(); // Immediately dispatches current state
+```
 
 ---
 
@@ -129,13 +268,25 @@ Accessible from the developer menu (Default key: `O`). It includes:
 * Slot selector for images (Sky/Fog/Sun)
 * Manual blending editor with a slider
 * Mode and timer selector
+* Edit Mode with automatic state selection
+
+---
+
+## Known Limitations
+
+* Does not work in Arena mode for now.
+* Snow Light and Snow Sparkle do not yet participate in blend transitions (planned for future update).
+* Compatibility with `Forecast` has not been tested.
+* DayNight is automatically blocked in managed rooms (this is intentional).
 
 ---
 
 ## Important Note
+
 > ⚠️ **Dependency Only:** This mod does not add any visual changes on its own. It functions strictly as a tool/dependency. You must create the room states within another mod for Rain Cycles to load and manage them.
 
 ---
+
 > [!NOTE]
 > This project is currently under active development. Features and documentation are subject to change.
 
