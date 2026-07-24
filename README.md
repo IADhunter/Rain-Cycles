@@ -1,5 +1,7 @@
 # Rain Cycles Documentation
 
+Discord server
+https://discord.com/invite/N4YjBdnSTx
 
 Rain Cycles is a dependency designed to manage multiple room states, supporting a maximum limit of 4 states per room.
 
