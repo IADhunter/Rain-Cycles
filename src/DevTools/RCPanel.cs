@@ -493,7 +493,7 @@ public class RCPanel : Panel, IDevUISignals
 
         _phases = new List<(int, int)>();
 
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 2; i++)
         {
             int from = ((initial - 1 + i) % 4) + 1;
             int to = ((initial - 1 + i + 1) % 4) + 1;
