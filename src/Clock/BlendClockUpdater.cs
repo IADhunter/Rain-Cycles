@@ -122,7 +122,16 @@ public static class BlendClockUpdater
             if (s != null && s.Clock)
             {
                 int initialState = ResolveInitial(s);
-                BlendClock.Start(_lastRegion, initialState);
+
+                float rainTimer = 0f;
+                int rainLen = 1;
+                if (self.world?.rainCycle != null)
+                {
+                    rainTimer = self.world.rainCycle.timer;
+                    rainLen = self.world.rainCycle.cycleLength;
+                }
+
+                BlendClock.Start(_lastRegion, initialState, rainTimer, rainLen);
 
                 if (!BlendClock.IsRunning)
                 {
@@ -131,7 +140,11 @@ public static class BlendClockUpdater
                 else
                 {
                     if (_savedState.IsRunning && _savedState.Mode == s.Mode)
-                        BlendClock.RestoreState(_savedState);
+                    {
+                        bool rainCycleEnded = self.world?.rainCycle != null
+                            && self.world.rainCycle.timer >= self.world.rainCycle.cycleLength;
+                        BlendClock.RestoreState(_savedState, rainCycleEnded);
+                    }
                     _savedState = default;
                 }
             }

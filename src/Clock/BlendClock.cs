@@ -49,6 +49,8 @@ public static class BlendClock
     private static float     _rainTimer = 0f;
     private static int       _rainCycleLen = 1;
     private static bool      _customPendingStop = false;
+    private const float TicksPerSecond = 40f;
+
     private static string    _regionCode = null;
     private static int       _lastEmittedSetting = -1;
     private static bool      _lastEmittedIsIdle = false;
@@ -105,14 +107,22 @@ public static class BlendClock
         };
     }
 
-    public static void RestoreState(ClockState state)
+    public static void RestoreState(ClockState state, bool rainCycleEnded)
     {
         if (state.Mode != _mode) return;
 
-        // Si Loop no se había activado de verdad (estaba en espera), no se restaura
-        // nada — la región nueva empieza su propio trigger desde cero.
-        if (state.Mode == BlendMode.Loop && !state.LoopActivated)
+        if (state.Mode == BlendMode.Loop)
+        {
+            if (!state.LoopActivated) return;
+        }
+        else if (state.Mode == BlendMode.EndCycle)
+        {
+            if (!rainCycleEnded) return;
+        }
+        else
+        {
             return;
+        }
 
         _mode = state.Mode;
         IsRunning = state.IsRunning;
@@ -126,9 +136,12 @@ public static class BlendClock
         _waitingForThreshold = false;
         _waitingForDeathRain = false;
         _waitingPostRainDelay = false;
+        _waitingForCycleThreshold = false;
+        _waitingForCycleDeathRain = false;
+        _waitingCyclePostRainDelay = false;
     }
 
-    public static void Start(string regionCode, int initialState = 1)
+    public static void Start(string regionCode, int initialState = 1, float rainTimer = 0f, int rainCycleLen = 1)
     {
         var s = BlendSettingsLoader.Active;
         if (s == null) return;
@@ -138,6 +151,9 @@ public static class BlendClock
 
         _idleDuration = ResolveEffectiveDuration(s.IdleTime, 5f);
         _blendDuration = ResolveEffectiveDuration(s.Duration, 10f);
+
+        _rainTimer = rainTimer;
+        _rainCycleLen = Mathf.Max(1, rainCycleLen);
 
         // Resetear flags de trigger
         _deathRainTriggered = false;
@@ -469,33 +485,61 @@ public static class BlendClock
 
         StateA = _sequence[0];
         StateB = _sequence[0];
-        T = 0f;
-        _timer = 0f;
         CurrentPhase = Phase.Idle;
         IsRunning = true;
 
-        if (s.IdleTime > 0f)
+        if (s.IdleTime <= 0f || _rainCycleLen <= 0)
+        {
+            _waitingForCycleThreshold = false;
+            ActivateCycleDirectToBlend(initialState, 0f);
+            return;
+        }
+
+        float globalProgressPct = (_rainTimer / _rainCycleLen) * 100f;
+
+        if (globalProgressPct < s.IdleTime)
         {
             _waitingForCycleThreshold = true;
+            _timer = 0f;
             RSPlugin.log.LogInfo($"[BlendClock] Cycle iniciado - esperando {s.IdleTime}% del ciclo");
         }
         else
         {
-            ActivateCycleDirectToBlend(initialState);
+            float activationTicks = (s.IdleTime / 100f) * _rainCycleLen;
+            float elapsedTicks   = _rainTimer - activationTicks;
+            float elapsedSeconds = Mathf.Max(0f, elapsedTicks / TicksPerSecond);
+
+            _waitingForCycleThreshold = false;
+            ActivateCycleDirectToBlend(initialState, elapsedSeconds);
+
+            RSPlugin.log.LogInfo($"[BlendClock] Cycle: entrando con {elapsedSeconds:F1}s ya transcurridos "
+                + $"desde el umbral ({s.IdleTime}%)");
         }
     }
 
-    private static void ActivateCycleDirectToBlend(int initialState)
+    private static void ActivateCycleDirectToBlend(int initialState, float startTimer)
     {
         _sequence = BuildCycleSequence(initialState);
         if (_sequence == null || _sequence.Count < 3)
             _sequence = new List<int> { 1, 2, 3 };
 
-        T = 0f;
-        _timer = 0f;
-        CurrentPhase = Phase.Blending;
-        UpdateStatesFromT();
+        _timer = startTimer;
         IsRunning = true;
+
+        if (_timer >= _blendDuration)
+        {
+            int finalState = _sequence[_sequence.Count - 1];
+            StateA = finalState;
+            StateB = finalState;
+            T = 1f;
+            CurrentPhase = Phase.Idle;
+        }
+        else
+        {
+            T = Mathf.Clamp01(_timer / _blendDuration);
+            CurrentPhase = Phase.Blending;
+            UpdateStatesFromT();
+        }
     }
 
     private static void TickCycle(BlendSettings s)
@@ -508,7 +552,7 @@ public static class BlendClock
             if (progress >= s.IdleTime)
             {
                 _waitingForCycleThreshold = false;
-                ActivateCycleDirectToBlend(StateA);
+                ActivateCycleDirectToBlend(StateA, 0f);
                 RSPlugin.log.LogInfo($"[BlendClock] Cycle activado (umbral {s.IdleTime}% alcanzado)");
             }
             return;
@@ -562,7 +606,7 @@ public static class BlendClock
 
                 if (s.IdleTime <= 0f)
                 {
-                    ActivateCycleDirectToBlend(StateA);
+                    ActivateCycleDirectToBlend(StateA, 0f);
                     RSPlugin.log.LogInfo("[BlendClock] EndCycle activado (deathRain, sin espera)");
                 }
                 else
@@ -580,7 +624,7 @@ public static class BlendClock
             if (_timer < s.IdleTime) return;
 
             _waitingCyclePostRainDelay = false;
-            ActivateCycleDirectToBlend(StateA);
+            ActivateCycleDirectToBlend(StateA, 0f);
             RSPlugin.log.LogInfo($"[BlendClock] EndCycle activado (retraso de {s.IdleTime}s cumplido)");
             return;
         }
