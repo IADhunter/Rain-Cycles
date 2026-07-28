@@ -136,6 +136,43 @@ public static partial class RoomCameraExtensions
 
     public static void ClearEffectData(RoomCamera cam)
     {
+        if (cam?.room?.roomSettings == null) return;
+        string filePath = cam.room.roomSettings.filePath;
+        if (string.IsNullOrEmpty(filePath)) return;
+
+        var snap = SettingsSnapshot.GetCached(filePath, cam.room.abstractRoom?.name);
+        if (snap == null) return;
+
+        var rs = cam.room.roomSettings;
+
+        void RestoreEffect(RoomSettings.RoomEffect.Type type, float original)
+        {
+            float amount = original >= 0f ? original : 0f;
+            var existing = rs.GetEffect(type);
+            if (existing != null)
+                existing.amount = amount;
+            else if (amount > 0f)
+                rs.effects.Add(new RoomSettings.RoomEffect(type, amount, false));
+        }
+
+        RestoreEffect(RoomSettings.RoomEffect.Type.Darkness,         snap.EffectDarkness);
+        RestoreEffect(RoomSettings.RoomEffect.Type.Brightness,       snap.EffectBrightness);
+        RestoreEffect(RoomSettings.RoomEffect.Type.Contrast,         snap.EffectContrast);
+        RestoreEffect(RoomSettings.RoomEffect.Type.Desaturation,     snap.EffectDesaturation);
+        RestoreEffect(RoomSettings.RoomEffect.Type.Hue,              snap.EffectHue);
+        RestoreEffect(RoomSettings.RoomEffect.Type.DarkenLights,     snap.EffectDarkenLights);
+        RestoreEffect(RoomSettings.RoomEffect.Type.Fog,              snap.EffectFog);
+        RestoreEffect(RoomSettings.RoomEffect.Type.SkyBloom,         snap.EffectSkyBloom);
+        RestoreEffect(RoomSettings.RoomEffect.Type.SkyAndLightBloom, snap.EffectSkyAndLightBloom);
+        RestoreEffect(RoomSettings.RoomEffect.Type.LightBurn,        snap.EffectLightBurn);
+        RestoreEffect(RoomSettings.RoomEffect.Type.Bloom,            snap.EffectBloom);
+
+        float sandstorm = snap.EffectSurfaceSandstorm >= 0f ? snap.EffectSurfaceSandstorm : 0f;
+        var ssExisting = rs.GetEffect(new RoomSettings.RoomEffect.Type("SurfaceSandstorm"));
+        if (ssExisting != null)
+            ssExisting.amount = sandstorm;
+        else if (sandstorm > 0f)
+            rs.effects.Add(new RoomSettings.RoomEffect(new RoomSettings.RoomEffect.Type("SurfaceSandstorm"), sandstorm, false));
     }
 
     // ═════════════════════════════════════════════════════════════════════

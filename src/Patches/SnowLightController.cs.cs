@@ -18,6 +18,9 @@ namespace RainCycles.Patches
         private static FShader _originalBlizzardShader;
         private static FShader _originalFastBlizzardShader;
         
+        // Último valor loggeado de SnowGrain (evitar spam)
+        private static float _lastLoggedSnowGrain = -1f;
+
         // Shaders tintados
         private static FShader _snowTintShader;
         private static FShader _snowFallTintShader;
@@ -215,7 +218,11 @@ namespace RainCycles.Patches
             if (hasSnowGrain)
             {
                 Shader.SetGlobalFloat("_SnowGrainAmount", snowGrainAmount);
-                RSPlugin.log.LogDebug($"[SnowGrain] Activo en {self.room.abstractRoom.name} con valor: {snowGrainAmount}");
+                if (!Mathf.Approximately(snowGrainAmount, _lastLoggedSnowGrain))
+                {
+                    _lastLoggedSnowGrain = snowGrainAmount;
+                    RSPlugin.log.LogDebug($"[SnowGrain] Activo en {self.room.abstractRoom.name} con valor: {snowGrainAmount}");
+                }
             }
             else
             {

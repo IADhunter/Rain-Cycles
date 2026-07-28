@@ -10,6 +10,8 @@ public static partial class SettingsBlendController
     {
         orig(self);
 
+        if (self?.game == null) return;
+
         var cam = self.game?.cameras?[0];
         if (cam?.room != null)
         {

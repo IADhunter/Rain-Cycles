@@ -237,7 +237,8 @@ public static partial class RoomCameraExtensions
         string path = AssetManager.ResolveFilePath($"palettes{Path.DirectorySeparatorChar}palette{palId}.png");
         
         try { AssetManager.SafeWWWLoadTexture(ref texture, "file:///" + path, false, true); }
-        catch { 
+        catch {
+            RSPlugin.log.LogWarning($"[PaletteCache] No se pudo cargar palette {palId}, fallback a palette-1");
             path = AssetManager.ResolveFilePath($"palettes{Path.DirectorySeparatorChar}palette-1.png");
             AssetManager.SafeWWWLoadTexture(ref texture, "file:///" + path, false, true);
         }

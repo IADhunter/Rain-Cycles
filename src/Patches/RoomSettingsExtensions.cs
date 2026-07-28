@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 using RainCycles.Snapshot;
 
@@ -7,101 +8,121 @@ namespace RainCycles.Patches;
 // Almacena datos extendidos de RoomSettings que el juego vanilla no maneja
 public static class RoomSettingsExtensions
 {
-    private static class Storage
+    private static readonly ConditionalWeakTable<RoomSettings, ExtData> _table
+        = new ConditionalWeakTable<RoomSettings, ExtData>();
+
+    private class ExtData
     {
-        public static RcType RcType = RcType.None;
-        public static ViewType ViewType = ViewType.None;
-        public static Color? TintMultiply = null;
-        public static Color? TintAtmosphere = null;
+        public RcType RcType = RcType.None;
+        public ViewType ViewType = ViewType.None;
+        public Color? TintMultiply = null;
+        public Color? TintAtmosphere = null;
+    }
+
+    private static ExtData GetOrCreate(RoomSettings settings)
+    {
+        if (!_table.TryGetValue(settings, out var data))
+        {
+            data = new ExtData();
+            _table.Add(settings, data);
+        }
+        return data;
     }
 
     public static RcType GetRcType(this RoomSettings settings)
     {
-        return Storage.RcType;
+        return GetOrCreate(settings).RcType;
     }
 
     public static void SetRcType(this RoomSettings settings, RcType value)
     {
-        Storage.RcType = value;
+        var data = GetOrCreate(settings);
+        data.RcType = value;
         if (!HasRcType(settings))
         {
-            Storage.ViewType = ViewType.None;
-            Storage.TintMultiply = null;
-            Storage.TintAtmosphere = null;
+            data.ViewType = ViewType.None;
+            data.TintMultiply = null;
+            data.TintAtmosphere = null;
         }
     }
 
     public static bool HasRcType(this RoomSettings settings)
     {
-        return Storage.RcType != RcType.None;
+        return GetOrCreate(settings).RcType != RcType.None;
     }
 
     public static ViewType GetViewType(this RoomSettings settings)
     {
-        return Storage.ViewType;
+        return GetOrCreate(settings).ViewType;
     }
 
     public static void SetViewType(this RoomSettings settings, ViewType value)
     {
         if (!HasRcType(settings)) return;
-        Storage.ViewType = value;
-        if (Storage.ViewType == ViewType.None)
+        var data = GetOrCreate(settings);
+        data.ViewType = value;
+        if (data.ViewType == ViewType.None)
         {
-            Storage.TintMultiply = null;
-            Storage.TintAtmosphere = null;
+            data.TintMultiply = null;
+            data.TintAtmosphere = null;
         }
     }
 
     public static bool HasView(this RoomSettings settings)
     {
-        return HasRcType(settings) && Storage.ViewType != ViewType.None;
+        var data = GetOrCreate(settings);
+        return data.RcType != RcType.None && data.ViewType != ViewType.None;
     }
 
     public static Color? GetTintMultiply(this RoomSettings settings)
     {
-        return Storage.TintMultiply;
+        return GetOrCreate(settings).TintMultiply;
     }
 
     public static void SetTintMultiply(this RoomSettings settings, Color? value)
     {
         if (!HasView(settings)) return;
-        Storage.TintMultiply = value;
+        GetOrCreate(settings).TintMultiply = value;
     }
 
     public static Color? GetTintAtmosphere(this RoomSettings settings)
     {
-        return Storage.TintAtmosphere;
+        return GetOrCreate(settings).TintAtmosphere;
     }
 
     public static void SetTintAtmosphere(this RoomSettings settings, Color? value)
     {
         if (!HasView(settings)) return;
-        Storage.TintAtmosphere = value;
+        GetOrCreate(settings).TintAtmosphere = value;
     }
 
     public static bool HasTint(this RoomSettings settings)
     {
-        return HasView(settings) && (Storage.TintMultiply.HasValue || Storage.TintAtmosphere.HasValue);
+        var data = GetOrCreate(settings);
+        return HasView(settings) && (data.TintMultiply.HasValue || data.TintAtmosphere.HasValue);
     }
 
     public static void ClearTint(this RoomSettings settings)
     {
-        Storage.TintMultiply = null;
-        Storage.TintAtmosphere = null;
+        var data = GetOrCreate(settings);
+        data.TintMultiply = null;
+        data.TintAtmosphere = null;
     }
 
     public static void ClearViewAndTint(this RoomSettings settings)
     {
-        Storage.ViewType = ViewType.None;
-        Storage.TintMultiply = null;
-        Storage.TintAtmosphere = null;
+        var data = GetOrCreate(settings);
+        data.ViewType = ViewType.None;
+        data.TintMultiply = null;
+        data.TintAtmosphere = null;
     }
 
     public static void ClearExtendedData(this RoomSettings settings)
     {
-        Storage.RcType = RcType.None;
-        Storage.ViewType = ViewType.None;
-        Storage.TintMultiply = null;
-        Storage.TintAtmosphere = null;
+        var data = GetOrCreate(settings);
+        data.RcType = RcType.None;
+        data.ViewType = ViewType.None;
+        data.TintMultiply = null;
+        data.TintAtmosphere = null;
     }
 }

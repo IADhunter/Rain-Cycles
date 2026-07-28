@@ -40,7 +40,6 @@ public static class TintManager
     private static Hook _roomCameraUpdateHook;
     private static Hook _aboveCloudsViewCtorHook;
     private static Hook _roofTopViewCtorHook;
-    private static Hook _aboveCloudsViewOriginalUpdateHook;
     
     private static int _atmosphereColorID;
     private static int _multiplyColorID;
@@ -104,12 +103,6 @@ public static class TintManager
                 new Action<Action<RoofTopView, Room, RoomSettings.RoomEffect>, RoofTopView, Room, RoomSettings.RoomEffect>(OnRoofTopViewCtor));
         }
         
-        var acvOriginalUpdateMethod = acvType.GetMethod("Update", new Type[] { typeof(bool) });
-        if (acvOriginalUpdateMethod != null)
-        {
-            _aboveCloudsViewOriginalUpdateHook = new Hook(acvOriginalUpdateMethod, 
-                new Action<Action<AboveCloudsView, bool>, AboveCloudsView, bool>(OnAboveCloudsViewOriginalUpdate));
-        }
         
         var roomCameraUpdateMethod = typeof(RoomCamera).GetMethod("Update");
         if (roomCameraUpdateMethod != null)
@@ -143,7 +136,6 @@ public static class TintManager
         _roomCameraUpdateHook?.Dispose();
         _aboveCloudsViewCtorHook?.Dispose();
         _roofTopViewCtorHook?.Dispose();
-        _aboveCloudsViewOriginalUpdateHook?.Dispose();
         On.OverWorld.Update -= OnOverWorldUpdate;
         On.Watcher.OuterRimView.ctor -= OnOuterRimViewCtor;
         On.Watcher.AncientUrbanView.ctor -= OnAncientUrbanViewCtor; // <-- NUEVO
@@ -338,29 +330,6 @@ public static class TintManager
         {
             self.atmosphereColor = new Color(_lockedAtmosphere.x, _lockedAtmosphere.y, _lockedAtmosphere.z);
         }
-    }
-    
-    // ============================================================
-    // HOOK PARA DEBUG - ABOVECLOUDSVIEW.UPDATE ORIGINAL
-    // ============================================================
-    private static void OnAboveCloudsViewOriginalUpdate(Action<AboveCloudsView, bool> orig, AboveCloudsView self, bool eu)
-    {
-        orig(self, eu);
-    }
-    
-    // ============================================================
-    // VERIFICAR SI SALA TIENE PINKSKY
-    // ============================================================
-    private static bool RoomHasPinkSky(Room room)
-    {
-        if (room == null) return false;
-        
-        for (int i = 0; i < room.updateList.Count; i++)
-        {
-            if (room.updateList[i] is AboveCloudsView acv && acv.PinkSky)
-                return true;
-        }
-        return false;
     }
     
     // ============================================================

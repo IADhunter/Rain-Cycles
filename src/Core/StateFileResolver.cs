@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using UnityEngine;
 using RainCycles.Blend;
@@ -122,16 +121,21 @@ public static class StateFileResolver
     }
 
     // ============================================================
-    // DETECCIÓN DE CONTEXTO
+    // CACHE DE CONTEXTO (se recalcula solo en OnGameCtor)
     // ============================================================
-    
-    public static string GetCurrentSlugcatSuffix()
+    private static string _cachedSlugcatSuffix = "";
+    private static List<string> _cachedActiveDLCs = new List<string>();
+
+    private static void RebuildContextCache(RainWorldGame game)
+    {
+        _cachedSlugcatSuffix = ComputeSlugcatSuffix(game);
+        _cachedActiveDLCs = ComputeActiveDLCSuffixes();
+    }
+
+    private static string ComputeSlugcatSuffix(RainWorldGame game)
     {
         try
         {
-            var rw = UnityEngine.Object.FindObjectOfType<RainWorld>();
-            var game = rw?.processManager?.currentMainLoop as RainWorldGame;
-            
             if (game?.GetStorySession?.saveState != null)
             {
                 string slugcat = game.GetStorySession.saveState.saveStateNumber?.value;
@@ -151,20 +155,17 @@ public static class StateFileResolver
         }
         return "";
     }
-    
-    /// <summary>
-    /// Obtiene la lista de sufijos DLC activos.
-    /// Usa ModManager (igual que vanilla).
-    /// </summary>
-    public static List<string> GetActiveDLCSuffixes()
+
+    private static List<string> ComputeActiveDLCSuffixes()
     {
         var suffixes = new List<string>();
-        
         if (ModManager.Watcher) suffixes.Add("-wtc");
         if (ModManager.MSC) suffixes.Add("-dwp");
-        
         return suffixes;
     }
+
+    public static string GetCurrentSlugcatSuffix() => _cachedSlugcatSuffix;
+    public static List<string> GetActiveDLCSuffixes() => _cachedActiveDLCs;
     
     // ============================================================
     // RESOLUCIÓN DE RUTAS - SISTEMA PRINCIPAL
@@ -329,7 +330,7 @@ public static class StateFileResolver
     
     private static string BuildDirectoryPath(string roomName)
     {
-        string regionCode   = Regex.Split(roomName, "_")[0].ToUpperInvariant();
+        string regionCode   = roomName.Split('_')[0].ToUpperInvariant();
         string regionFolder = Path.Combine("World", regionCode + "-Rooms", "RainCycles");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
@@ -352,6 +353,7 @@ public static class StateFileResolver
         _frozenCycle    = self.GetStorySession?.saveState?.cycleNumber ?? 0;
         _hasFrozenCycle = true;
         _resolutionCache.Clear();
+        RebuildContextCache(self);
     }
 
     private static bool _cycleAdvancedThisSession = false;
@@ -369,11 +371,13 @@ public static class StateFileResolver
 
     private static void OnGameShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
     {
-        orig(self);
         _hasFrozenCycle = false;
         _cycleAdvancedThisSession = false;
         _currentCycleState = 1;
         _resolutionCache.Clear();
+        _cachedSlugcatSuffix = "";
+        _cachedActiveDLCs.Clear();
+        orig(self);
     }
 
     private static bool _blockLoad = false;

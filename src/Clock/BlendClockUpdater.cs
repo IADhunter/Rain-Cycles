@@ -101,6 +101,8 @@ public static class BlendClockUpdater
         SettingsBlendController.ClearFrameFlag();
         orig(self);
 
+        if (self?.GetStorySession == null && self?.world == null) return;
+
         if (self.GamePaused)
         {
             if (!BlendClock.EditMode)
@@ -388,7 +390,8 @@ public static class BlendClockUpdater
 
     private static void OnShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
     {
-        BlendClock.Stop();
+        if (self != null && self.GetStorySession != null)
+            BlendClock.Stop();
         orig(self);
         StateFileResolver.SetBlockLoad(false);
         RoomCameraExtensions.InvalidateAllRoomCaches();

@@ -278,6 +278,10 @@ public static class ModResetter
         {
             field.SetValue(null, value);
         }
+        else
+        {
+            RSPlugin.log.LogWarning($"[ModResetter] Campo '{fieldName}' no encontrado en {type.Name} — el cleanup específico para este campo ya no tiene efecto.");
+        }
     }
     
     private static T GetFieldValue<T>(Type type, string fieldName)
@@ -309,6 +313,10 @@ public static class ModResetter
             {
                 list.Clear();
             }
+        }
+        else
+        {
+            RSPlugin.log.LogWarning($"[ModResetter] Campo de colección '{fieldName}' no encontrado en {type.Name} — el cleanup específico para este campo ya no tiene efecto.");
         }
     }
 }
