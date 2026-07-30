@@ -144,28 +144,38 @@ public partial class SettingsSnapshot
         if (string.IsNullOrEmpty(regionCode)) return;
         string upper = regionCode.ToUpperInvariant();
         string searchPattern = $"{upper}_settingstemplate_*.txt";
-        string regionFolder = Path.Combine("World", upper);
+        string[] regionFolders = {
+            Path.Combine("World", upper),
+            Path.Combine("World", upper + "-Rooms"),
+        };
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
-            string dir = Path.Combine(ModManager.ActiveMods[i].path, regionFolder);
-            if (Directory.Exists(dir))
+            string modPath = ModManager.ActiveMods[i].path;
+            foreach (string regionFolder in regionFolders)
             {
-                foreach (string file in Directory.GetFiles(dir, searchPattern))
+                string dir = Path.Combine(modPath, regionFolder);
+                if (Directory.Exists(dir))
                 {
-                    if (!_snapshotCache.ContainsKey(file))
-                        _snapshotCache[file] = FromFile(file);
+                    foreach (string file in Directory.GetFiles(dir, searchPattern))
+                    {
+                        if (!_snapshotCache.ContainsKey(file))
+                            _snapshotCache[file] = FromFile(file);
+                    }
                 }
             }
         }
 
-        string vanillaDir = Path.Combine(Application.streamingAssetsPath, regionFolder);
-        if (Directory.Exists(vanillaDir))
+        foreach (string regionFolder in regionFolders)
         {
-            foreach (string file in Directory.GetFiles(vanillaDir, searchPattern))
+            string vanillaDir = Path.Combine(Application.streamingAssetsPath, regionFolder);
+            if (Directory.Exists(vanillaDir))
             {
-                if (!_snapshotCache.ContainsKey(file))
-                    _snapshotCache[file] = FromFile(file);
+                foreach (string file in Directory.GetFiles(vanillaDir, searchPattern))
+                {
+                    if (!_snapshotCache.ContainsKey(file))
+                        _snapshotCache[file] = FromFile(file);
+                }
             }
         }
     }

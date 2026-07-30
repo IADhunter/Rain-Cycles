@@ -34,10 +34,8 @@ public static class TintManager
 {
     private static bool _initialized = false;
     
-    private static Hook _setGlobalVectorHook;
     private static Hook _aboveCloudsViewUpdateHook;
     private static Hook _aboveCloudsViewAtmosphereColorSetterHook;
-    private static Hook _roomCameraUpdateHook;
     private static Hook _aboveCloudsViewCtorHook;
     private static Hook _roofTopViewCtorHook;
     
@@ -61,13 +59,6 @@ public static class TintManager
         
         _atmosphereColorID = Shader.PropertyToID("_AboveCloudsAtmosphereColor");
         _multiplyColorID = Shader.PropertyToID("_MultiplyColor");
-        
-        var setGlobalVectorMethod = typeof(Shader).GetMethod("SetGlobalVector", new Type[] { typeof(int), typeof(Vector4) });
-        if (setGlobalVectorMethod != null)
-        {
-            _setGlobalVectorHook = new Hook(setGlobalVectorMethod, 
-                new Action<Action<int, Vector4>, int, Vector4>(OnSetGlobalVector));
-        }
         
         var acvType = typeof(AboveCloudsView);
         var atmosphereColorProperty = acvType.GetProperty("atmosphereColor");
@@ -104,12 +95,7 @@ public static class TintManager
         }
         
         
-        var roomCameraUpdateMethod = typeof(RoomCamera).GetMethod("Update");
-        if (roomCameraUpdateMethod != null)
-        {
-            _roomCameraUpdateHook = new Hook(roomCameraUpdateMethod, 
-                new Action<Action<RoomCamera>, RoomCamera>(OnRoomCameraUpdate));
-        }
+        On.RoomCamera.Update += OnRoomCameraUpdate;
         
         On.OverWorld.Update += OnOverWorldUpdate;
         
@@ -130,15 +116,14 @@ public static class TintManager
     {
         if (!_initialized) return;
         
-        _setGlobalVectorHook?.Dispose();
         _aboveCloudsViewUpdateHook?.Dispose();
         _aboveCloudsViewAtmosphereColorSetterHook?.Dispose();
-        _roomCameraUpdateHook?.Dispose();
+        On.RoomCamera.Update -= OnRoomCameraUpdate;
         _aboveCloudsViewCtorHook?.Dispose();
         _roofTopViewCtorHook?.Dispose();
         On.OverWorld.Update -= OnOverWorldUpdate;
         On.Watcher.OuterRimView.ctor -= OnOuterRimViewCtor;
-        On.Watcher.AncientUrbanView.ctor -= OnAncientUrbanViewCtor; // <-- NUEVO
+        On.Watcher.AncientUrbanView.ctor -= OnAncientUrbanViewCtor;
         
         _initialized = false;
     }
@@ -306,20 +291,6 @@ public static class TintManager
     }
     
     // ============================================================
-    // HOOK PRINCIPAL - SHADER.SETGLOBALVECTOR
-    // ============================================================
-    private static void OnSetGlobalVector(Action<int, Vector4> orig, int nameID, Vector4 value)
-    {
-        if (_inStaticRoom && nameID == _atmosphereColorID && _hasLockedAtmosphere)
-        {
-            orig(nameID, _lockedAtmosphere);
-            return;
-        }
-        
-        orig(nameID, value);
-    }
-    
-    // ============================================================
     // HOOK - ABOVECLOUDSVIEW.UPDATE (REFORZAR COLORES)
     // ============================================================
     private static void OnAboveCloudsViewUpdate(Action<AboveCloudsView, bool> orig, AboveCloudsView self, bool eu)
@@ -398,7 +369,7 @@ public static class TintManager
     private static string _lastRoomName = null;
     private static bool _wasStaticRoom = false;
     
-    private static void OnRoomCameraUpdate(Action<RoomCamera> orig, RoomCamera self)
+    private static void OnRoomCameraUpdate(On.RoomCamera.orig_Update orig, RoomCamera self)
     {
         orig(self);
         
