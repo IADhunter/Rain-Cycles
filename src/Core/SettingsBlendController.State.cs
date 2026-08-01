@@ -97,30 +97,19 @@ public static partial class SettingsBlendController
         On.Watcher.OuterRimView.ctor        += OnOuterRimViewCtor;
         On.Watcher.AncientUrbanView.ctor    += OnAncientUrbanViewCtor;
         On.RoomCamera.ChangeRoom            += OnChangeRoom;
+        On.RoomSettings.Save                += OnRoomSettingsSave;
         On.RoomCamera.Update                += OnRoomCameraUpdate;
         On.RoomCamera.LoadPalette           += OnLoadPalette;
-        On.AboveCloudsView.HorizonFog.DrawSprites += OnHorizonFogDrawSprites;
-        On.AboveCloudsView.DistantCloud.InitiateSprites += OnDistantCloudInitiateSprites;
-    }
 
-    public static void Terminate()
-    {
-        On.RoomCamera.ChangeBothPalettes    -= OnChangeBothPalettes;
-        On.RoomCamera.ApplyFade             -= OnApplyFade;
-        On.RoomCamera.ApplyPalette          -= OnApplyPalette;
-        On.DevInterface.DevUI.Update        -= OnDevUIUpdate;
-        On.RoomCamera.MoveCamera_Room_int   -= OnMoveCamera;
-        On.RoofTopView.ctor                 -= OnRoofTopViewCtor;
-        On.RoofTopView.Update               -= OnRoofTopViewUpdate;
-        On.AboveCloudsView.Update           -= OnAboveCloudsViewUpdate;
-        On.AboveCloudsView.ctor             -= OnAboveCloudsViewCtor;
-        On.Watcher.OuterRimView.ctor        -= OnOuterRimViewCtor;
-        On.Watcher.AncientUrbanView.ctor    -= OnAncientUrbanViewCtor;
-        On.RoomCamera.ChangeRoom            -= OnChangeRoom;
-        On.RoomCamera.Update                -= OnRoomCameraUpdate;
-        On.RoomCamera.LoadPalette           -= OnLoadPalette;
-        On.AboveCloudsView.HorizonFog.DrawSprites -= OnHorizonFogDrawSprites;
-        On.AboveCloudsView.DistantCloud.InitiateSprites -= OnDistantCloudInitiateSprites;
+        // ═══════════════════════════════════════════════════════════════
+        // NUEVO HOOK: Sincronizar fog RC durante DrawSprites del vanilla
+        // ═══════════════════════════════════════════════════════════════
+        On.AboveCloudsView.HorizonFog.DrawSprites += OnHorizonFogDrawSprites;
+
+        // ═══════════════════════════════════════════════════════════════
+        // HOOK: Ocultar DistantCloud con depth >= 195f en PSV
+        // ═══════════════════════════════════════════════════════════════
+        On.AboveCloudsView.DistantCloud.InitiateSprites += OnDistantCloudInitiateSprites;
     }
 
     // ============================================================
@@ -219,6 +208,12 @@ public static partial class SettingsBlendController
         }
         
         float currentT = _externalT ? _forcedT : (BlendClock.IsRunning ? BlendClock.SubPhaseLocalT : 0f);
+        
+        var cam = _room.game?.cameras?[0];
+        if (cam != null && _snapA != null && _snapB != null && _active && _externalT)
+        {
+            
+        }
         
         if (_snapA != null && _snapB != null)
             ApplyBlend(currentT);

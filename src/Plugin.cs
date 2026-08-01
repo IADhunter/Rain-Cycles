@@ -35,30 +35,6 @@ public class RSPlugin : BaseUnityPlugin
         On.RainWorld.OnModsInit += RainWorldOnOnModsInit;
     }
 
-    private void OnDisable()
-    {
-        On.RainWorld.OnModsInit -= RainWorldOnOnModsInit;
-        if (!IsInit) return;
-
-        TintManager.Terminate();
-        ArenaBlendController.Terminate();
-        RainCyclesEventDispatcher.Terminate();
-        RCDEVTools.Terminate();
-        SnowLightController.Terminate();
-        RainTimerHudController.Terminate();
-        DayNightBlocker.Terminate();
-        RoomCameraExtensions.TerminateLights();
-        RoomCameraExtensions.TerminatePreloadHooks();
-        ModResetter.Terminate();
-        SettingsBlendController.Terminate();
-        StateFileResolver.Terminate();
-        BlendClockUpdater.Terminate();
-        RoomSettingsPatches.Terminate();
-        BlendSettingsLoader.Terminate();
-
-        IsInit = false;
-    }
-
     private bool IsInit;
     private void RainWorldOnOnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
     {

@@ -260,6 +260,20 @@ public static partial class SettingsBlendController
         }
     }
 
+    private static void OnRoomSettingsSave(On.RoomSettings.orig_Save orig, RoomSettings self)
+    {
+        string filePath = self.filePath;
+        string rcViewBlock = null;
+        if (filePath != null)
+        {
+            bool hasRcData = BlendSettingsLoader.Active != null
+                || System.IO.File.Exists(filePath) && System.IO.File.ReadAllText(filePath).Contains("RainCycles:");
+            if (hasRcData) rcViewBlock = ExtractRainCyclesBlock(filePath);
+        }
+        orig(self);
+        if (rcViewBlock != null) ReappendRainCyclesBlock(filePath, rcViewBlock);
+    }
+
     // ============================================================
     // FORCE HIDE VANILLA SLOTS - SOLO SI EL VIEW ESTÁ DECLARADO
     // ============================================================

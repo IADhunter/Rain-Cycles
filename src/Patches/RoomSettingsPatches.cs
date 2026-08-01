@@ -18,12 +18,6 @@ public static class RoomSettingsPatches
         On.RoomSettings.Save += OnSave;
     }
 
-    public static void Terminate()
-    {
-        On.RoomSettings.Load_Timeline -= OnLoad;
-        On.RoomSettings.Save -= OnSave;
-    }
-
     private static bool OnLoad(On.RoomSettings.orig_Load_Timeline orig, RoomSettings self, SlugcatStats.Timeline timelinePoint)
     {
         self.ClearExtendedData();

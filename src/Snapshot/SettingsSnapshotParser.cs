@@ -167,7 +167,7 @@ public partial class SettingsSnapshot
 
     private static void FillFromTemplate(SettingsSnapshot snap, string roomName, string settingsPath)
     {
-        if (snap.Template.ToUpperInvariant() == "NONE") return;
+        if (snap.Template.ToUpper() == "NONE") return;
 
         string region = roomName.Contains("_")
             ? roomName.Split('_')[0].ToLower()
@@ -206,10 +206,7 @@ public partial class SettingsSnapshot
 
         SettingsSnapshot tmpl;
         if (!TryGetCached(templatePath, out tmpl))
-        {
             tmpl = FromFile(templatePath);
-            _snapshotCache[templatePath] = tmpl;
-        }
 
         if (!snap._hasPalette) snap.Palette = tmpl.Palette;
         if (!snap._hasGrime) snap.Grime = tmpl.Grime;

@@ -13,7 +13,6 @@ public static class BlendClock
     public struct ClockState
     {
         public BlendMode Mode;
-        public string RegionCode;
         public bool IsRunning;
         public float T;
         public Phase CurrentPhase;
@@ -21,7 +20,6 @@ public static class BlendClock
         public int StateB;
         public float Timer;
         public bool LoopActivated;
-        public List<int> Sequence;
     }
 
     public static Phase CurrentPhase { get; private set; } = Phase.Idle;
@@ -99,7 +97,6 @@ public static class BlendClock
         return new ClockState
         {
             Mode = _mode,
-            RegionCode = _regionCode,
             IsRunning = IsRunning,
             T = T,
             CurrentPhase = CurrentPhase,
@@ -107,14 +104,12 @@ public static class BlendClock
             StateB = StateB,
             Timer = _timer,
             LoopActivated = _loopActivated,
-            Sequence = _sequence != null ? new List<int>(_sequence) : null,
         };
     }
 
     public static void RestoreState(ClockState state, bool rainCycleEnded)
     {
         if (state.Mode != _mode) return;
-        if (!string.Equals(state.RegionCode, _regionCode, System.StringComparison.OrdinalIgnoreCase)) return;
 
         if (state.Mode == BlendMode.Loop)
         {
@@ -137,8 +132,6 @@ public static class BlendClock
         StateB = state.StateB;
         _timer = state.Timer;
         _loopActivated = state.LoopActivated;
-
-        _sequence = state.Sequence != null ? new List<int>(state.Sequence) : null;
 
         _waitingForThreshold = false;
         _waitingForDeathRain = false;
@@ -289,10 +282,23 @@ public static class BlendClock
     // ============================================================
     private static List<int> BuildLoopSequence(int initialState)
     {
-        var seq = new List<int>();
-        for (int i = 0; i < 4; i++)
-            seq.Add(((initialState - 1 + i) % 4) + 1);
-        return seq;
+        var laneA = new List<int>();
+        var laneB = new List<int>();
+        
+        for (int i = 0; i < 3; i++)
+            laneA.Add(((initialState - 1 + i) % 4) + 1);
+        
+        for (int i = 2; i < 5; i++)
+            laneB.Add(((initialState - 1 + i) % 4) + 1);
+        
+        var flat = new List<int>(laneA);
+        for (int i = 1; i < laneB.Count; i++)
+            flat.Add(laneB[i]);
+        
+        if (flat.Count > 1 && flat[flat.Count - 1] == flat[0])
+            flat.RemoveAt(flat.Count - 1);
+        
+        return flat;
     }
 
     private static List<int> BuildCycleSequence(int initialState)

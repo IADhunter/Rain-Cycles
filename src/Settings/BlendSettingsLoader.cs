@@ -25,11 +25,6 @@ public static class BlendSettingsLoader
         On.RainWorldGame.ShutDownProcess += OnShutDown;
     }
 
-    public static void Terminate()
-    {
-        On.RainWorldGame.ShutDownProcess -= OnShutDown;
-    }
-
     private static void OnShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
     {
         orig(self);

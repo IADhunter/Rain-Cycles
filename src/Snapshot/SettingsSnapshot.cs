@@ -144,38 +144,28 @@ public partial class SettingsSnapshot
         if (string.IsNullOrEmpty(regionCode)) return;
         string upper = regionCode.ToUpperInvariant();
         string searchPattern = $"{upper}_settingstemplate_*.txt";
-        string[] regionFolders = {
-            Path.Combine("World", upper),
-            Path.Combine("World", upper + "-Rooms"),
-        };
+        string regionFolder = Path.Combine("World", upper);
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
-            string modPath = ModManager.ActiveMods[i].path;
-            foreach (string regionFolder in regionFolders)
+            string dir = Path.Combine(ModManager.ActiveMods[i].path, regionFolder);
+            if (Directory.Exists(dir))
             {
-                string dir = Path.Combine(modPath, regionFolder);
-                if (Directory.Exists(dir))
-                {
-                    foreach (string file in Directory.GetFiles(dir, searchPattern))
-                    {
-                        if (!_snapshotCache.ContainsKey(file))
-                            _snapshotCache[file] = FromFile(file);
-                    }
-                }
-            }
-        }
-
-        foreach (string regionFolder in regionFolders)
-        {
-            string vanillaDir = Path.Combine(Application.streamingAssetsPath, regionFolder);
-            if (Directory.Exists(vanillaDir))
-            {
-                foreach (string file in Directory.GetFiles(vanillaDir, searchPattern))
+                foreach (string file in Directory.GetFiles(dir, searchPattern))
                 {
                     if (!_snapshotCache.ContainsKey(file))
                         _snapshotCache[file] = FromFile(file);
                 }
+            }
+        }
+
+        string vanillaDir = Path.Combine(Application.streamingAssetsPath, regionFolder);
+        if (Directory.Exists(vanillaDir))
+        {
+            foreach (string file in Directory.GetFiles(vanillaDir, searchPattern))
+            {
+                if (!_snapshotCache.ContainsKey(file))
+                    _snapshotCache[file] = FromFile(file);
             }
         }
     }

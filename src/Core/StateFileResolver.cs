@@ -120,14 +120,6 @@ public static class StateFileResolver
         On.RainWorldGame.ShutDownProcess += OnGameShutDown;
     }
 
-    public static void Terminate()
-    {
-        On.RoomSettings.ctor_Room_string_Region_bool_bool_Timeline_RainWorldGame -= OnRoomSettingsCtor;
-        On.RainWorldGame.ctor            -= OnGameCtor;
-        On.RainWorldGame.Win             -= OnGameWin;
-        On.RainWorldGame.ShutDownProcess -= OnGameShutDown;
-    }
-
     // ============================================================
     // CACHE DE CONTEXTO (se recalcula solo en OnGameCtor)
     // ============================================================
@@ -412,8 +404,8 @@ public static class StateFileResolver
         self.filePath = rainStatePath;
         self.Load((SlugcatStats.Timeline)null);
 
-        var snap = SettingsSnapshot.GetCached(rainStatePath, name);
-        if (snap != null && !snap._hasTerrainFadePalette)
+        var snap = SettingsSnapshot.FromFile(rainStatePath);
+        if (!snap._hasTerrainFadePalette)
             self.terrainFadePalette = null;
     }
 

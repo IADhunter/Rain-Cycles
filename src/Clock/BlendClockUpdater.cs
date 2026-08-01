@@ -38,17 +38,6 @@ public static class BlendClockUpdater
         On.RoomCamera.ApplyFade += SettingsBlendController.OnApplyFade;
     }
 
-    public static void Terminate()
-    {
-        On.RainWorldGame.Update -= OnGameUpdate;
-        On.RainWorldGame.ShutDownProcess -= OnShutDown;
-        On.RoomCamera.DrawUpdate -= OnRoomCameraDrawUpdate;
-        On.RainWorldGame.Win -= OnWin;
-        On.RainCycle.Update -= OnRainCycleUpdate;
-        On.OverWorld.Update -= OnOverWorldUpdate;
-        On.RoomCamera.ApplyFade -= SettingsBlendController.OnApplyFade;
-    }
-
     private static void OnRoomCameraDrawUpdate(
         On.RoomCamera.orig_DrawUpdate orig, RoomCamera self,
         float timeStacker, float timeSpeed)
@@ -152,9 +141,7 @@ public static class BlendClockUpdater
                 }
                 else
                 {
-                    if (_savedState.IsRunning
-                        && _savedState.Mode == s.Mode
-                        && string.Equals(_savedState.RegionCode, _lastRegion, System.StringComparison.OrdinalIgnoreCase))
+                    if (_savedState.IsRunning && _savedState.Mode == s.Mode)
                     {
                         bool rainCycleEnded = self.world?.rainCycle != null
                             && self.world.rainCycle.timer >= self.world.rainCycle.cycleLength;
