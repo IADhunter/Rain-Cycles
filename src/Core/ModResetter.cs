@@ -80,6 +80,7 @@ public static class ModResetter
             
             StateFileResolver.SetCurrentCycleState(state);
             
+            SettingsSnapshot.InvalidateAllCache();
             SettingsSnapshot.PreloadRegionTemplates(regionCode);
             RoomCameraExtensions.ClearAllCaches();
 

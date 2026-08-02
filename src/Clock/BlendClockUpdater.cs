@@ -74,6 +74,7 @@ public static class BlendClockUpdater
             }
 
             SettingsBlendController.ClearAllSlots();
+            SettingsSnapshot.InvalidateAllCache();
             BlendSkyAtlasCache.PreloadRegion(regionAfter);
             SettingsSnapshot.PreloadRegionTemplates(regionAfter);
             BlendSettingsLoader.LoadRegion(regionAfter);
