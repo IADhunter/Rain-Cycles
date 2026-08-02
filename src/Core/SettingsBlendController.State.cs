@@ -117,8 +117,7 @@ public static partial class SettingsBlendController
     public static bool IsStaticViewRoom(Room room)
     {
         if (room == null) return false;
-        var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
-        return snap != null && snap.HasRcType && snap.RcType == RcType.Static;
+        return RoomCameraExtensions.GetRoomBlendState(room).IsStatic;
     }
 
     // ============================================================
@@ -285,8 +284,7 @@ public static partial class SettingsBlendController
     public static bool IsBlendRoom(Room room)
     {
         if (room?.roomSettings?.filePath == null) return false;
-        var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
-        return snap != null && snap.HasRcType && snap.RcType == RcType.Blend;
+        return RoomCameraExtensions.GetRoomBlendState(room).IsBlend;
     }
 
     // ============================================================
@@ -295,13 +293,7 @@ public static partial class SettingsBlendController
     private static SkyType GetViewFromLoadedSettings(Room room)
     {
         if (room?.roomSettings?.filePath == null) return SkyType.None;
-        var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
-        if (snap == null) return SkyType.None;
-        
-        return snap.ViewType == ViewType.ACV ? SkyType.ACV
-            : snap.ViewType == ViewType.RTV ? SkyType.RTV
-            : snap.ViewType == ViewType.PSV ? SkyType.PSV
-            : SkyType.None;
+        return RoomCameraExtensions.GetRoomBlendState(room).Sky;
     }
 
     // ============================================================

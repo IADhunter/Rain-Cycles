@@ -217,9 +217,10 @@ public static class BlendClockUpdater
             string room = cam.room.abstractRoom?.name;
             if (room == null) continue;
             
-            if (!RoomCameraExtensions.IsBlendRoomCached(cam.room)) continue;
+            var state = RoomCameraExtensions.GetRoomBlendState(cam.room);
+            if (!state.IsBlend) continue;
 
-            bool hasFullStates = RoomCameraExtensions.HasFullStatesCached(room);
+            bool hasFullStates = state.HasFullStates;
 
             if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending && hasFullStates)
             {

@@ -25,51 +25,75 @@ public static partial class RoomCameraExtensions
     private static bool _preloadHooksInitialized = false;
     
     // ============================================================
-    // CACHE PARA ISBLENDROOM Y HASFULLSTATES
+    // ROOMBLENDSTATE - Metadatos derivados de la sala, calculados
+    // UNA sola vez por carga de sala (OnRoomLoaded / lazy).
+    // Lectura pura de diccionario en el hot path.
     // ============================================================
-    private static readonly Dictionary<string, bool> _blendRoomCache = 
-        new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-    
-    private static readonly Dictionary<string, bool> _fullStatesCache = 
-        new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-    
-    public static bool IsBlendRoomCached(Room room, bool forceRefresh = false)
+    public readonly struct RoomBlendState
     {
-        if (room == null) return false;
+        public readonly bool IsBlend;
+        public readonly bool IsStatic;
+        public readonly bool HasFullStates;
+        public readonly bool HasView;
+        public readonly bool HasTint;
+        public readonly ViewType View;
+        public readonly SkyType Sky;
+
+        public RoomBlendState(bool isBlend, bool isStatic, bool hasFullStates,
+                              bool hasView, bool hasTint, ViewType view, SkyType sky)
+        {
+            IsBlend = isBlend;
+            IsStatic = isStatic;
+            HasFullStates = hasFullStates;
+            HasView = hasView;
+            HasTint = hasTint;
+            View = view;
+            Sky = sky;
+        }
+    }
+
+    private static readonly Dictionary<string, RoomBlendState> _roomStateCache =
+        new Dictionary<string, RoomBlendState>(StringComparer.OrdinalIgnoreCase);
+
+    public static RoomBlendState GetRoomBlendState(Room room)
+    {
+        string roomName = room?.abstractRoom?.name;
+        if (string.IsNullOrEmpty(roomName)) return default;
+
+        if (_roomStateCache.TryGetValue(roomName, out var state)) return state;
+
+        state = ComputeRoomBlendState(room);
+        _roomStateCache[roomName] = state;
+        return state;
+    }
+
+    private static RoomBlendState ComputeRoomBlendState(Room room)
+    {
+        var snap = SettingsSnapshot.GetCached(room?.roomSettings?.filePath, room?.abstractRoom?.name);
+        if (snap == null) return default;
+
         string roomName = room.abstractRoom?.name;
-        if (string.IsNullOrEmpty(roomName)) return false;
-        
-        if (forceRefresh || !_blendRoomCache.TryGetValue(roomName, out bool result))
-        {
-            result = SettingsBlendController.IsBlendRoom(room);
-            _blendRoomCache[roomName] = result;
-        }
-        return result;
+        bool isBlend = snap.HasRcType && snap.RcType == RcType.Blend;
+        bool isStatic = snap.HasRcType && snap.RcType == RcType.Static;
+        bool hasFull = isBlend && StateFileResolver.HasFullStates(roomName ?? "");
+
+        return new RoomBlendState(
+            isBlend, isStatic, hasFull,
+            snap.HasView, snap.HasTint, snap.ViewType,
+            snap.ViewType == ViewType.ACV ? SkyType.ACV
+                : snap.ViewType == ViewType.RTV ? SkyType.RTV
+                : snap.ViewType == ViewType.PSV ? SkyType.PSV : SkyType.None);
     }
-    
-    public static bool HasFullStatesCached(string roomName, bool forceRefresh = false)
-    {
-        if (string.IsNullOrEmpty(roomName)) return false;
-        
-        if (forceRefresh || !_fullStatesCache.TryGetValue(roomName, out bool result))
-        {
-            result = StateFileResolver.HasFullStates(roomName);
-            _fullStatesCache[roomName] = result;
-        }
-        return result;
-    }
-    
+
     public static void InvalidateRoomCache(string roomName)
     {
         if (string.IsNullOrEmpty(roomName)) return;
-        _blendRoomCache.Remove(roomName);
-        _fullStatesCache.Remove(roomName);
+        _roomStateCache.Remove(roomName);
     }
     
     public static void InvalidateAllRoomCaches()
     {
-        _blendRoomCache.Clear();
-        _fullStatesCache.Clear();
+        _roomStateCache.Clear();
     }
     
     public static void InitPreloadHooks()
@@ -91,7 +115,7 @@ public static partial class RoomCameraExtensions
         string roomName = self.abstractRoom.name;
         if (string.IsNullOrEmpty(roomName)) return;
         
-        if (!SettingsBlendController.IsBlendRoom(self)) return;
+        if (!GetRoomBlendState(self).IsBlend) return;
         
         PreloadRoomStates(roomName);
         GetOrCreateTerrainGrid(roomName);

@@ -19,9 +19,8 @@ public static partial class SettingsBlendController
         Room room, RoomSettings.RoomEffect effect)
     {
         string settingsPath = room?.roomSettings?.filePath;
-        var snap = !string.IsNullOrEmpty(settingsPath) && System.IO.File.Exists(settingsPath)
-            ? SettingsSnapshot.FromFile(settingsPath)
-            : null;
+        var snap = string.IsNullOrEmpty(settingsPath) ? null
+            : SettingsSnapshot.GetCached(settingsPath, room?.abstractRoom?.name);
 
         bool hasRcType = snap != null && snap.HasRcType;
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
@@ -104,9 +103,8 @@ public static partial class SettingsBlendController
         bool camIsHere = cam != null && cam.room == self.room;
 
         string settingsPath = self.room?.roomSettings?.filePath;
-        var snap = !string.IsNullOrEmpty(settingsPath) && System.IO.File.Exists(settingsPath)
-            ? SettingsSnapshot.FromFile(settingsPath)
-            : null;
+        var snap = string.IsNullOrEmpty(settingsPath) ? null
+            : SettingsSnapshot.GetCached(settingsPath, self.room?.abstractRoom?.name);
 
         bool hasRcType = snap != null && snap.HasRcType;
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
@@ -151,9 +149,8 @@ public static partial class SettingsBlendController
         Room room, RoomSettings.RoomEffect effect)
     {
         string settingsPath = room?.roomSettings?.filePath;
-        var snap = !string.IsNullOrEmpty(settingsPath) && System.IO.File.Exists(settingsPath)
-            ? SettingsSnapshot.FromFile(settingsPath)
-            : null;
+        var snap = string.IsNullOrEmpty(settingsPath) ? null
+            : SettingsSnapshot.GetCached(settingsPath, room?.abstractRoom?.name);
 
         bool hasRcType = snap != null && snap.HasRcType;
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
@@ -274,9 +271,8 @@ public static partial class SettingsBlendController
         string roomName = self.room?.abstractRoom?.name;
 
         string settingsPath = self.room?.roomSettings?.filePath;
-        var snap = !string.IsNullOrEmpty(settingsPath) && System.IO.File.Exists(settingsPath)
-            ? SettingsSnapshot.FromFile(settingsPath)
-            : null;
+        var snap = string.IsNullOrEmpty(settingsPath) ? null
+            : SettingsSnapshot.GetCached(settingsPath, self.room?.abstractRoom?.name);
 
         bool hasRcType = snap != null && snap.HasRcType;
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
@@ -424,9 +420,8 @@ public static partial class SettingsBlendController
         Room room, RoomSettings.RoomEffect effect)
     {
         string settingsPath = room?.roomSettings?.filePath;
-        var snap = !string.IsNullOrEmpty(settingsPath) && System.IO.File.Exists(settingsPath)
-            ? SettingsSnapshot.FromFile(settingsPath)
-            : null;
+        var snap = string.IsNullOrEmpty(settingsPath) ? null
+            : SettingsSnapshot.GetCached(settingsPath, room?.abstractRoom?.name);
 
         bool hasRcType = snap != null && snap.HasRcType;
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
@@ -466,9 +461,8 @@ public static partial class SettingsBlendController
         Room room, RoomSettings.RoomEffect effect)
     {
         string settingsPath = room?.roomSettings?.filePath;
-        var snap = !string.IsNullOrEmpty(settingsPath) && System.IO.File.Exists(settingsPath)
-            ? SettingsSnapshot.FromFile(settingsPath)
-            : null;
+        var snap = string.IsNullOrEmpty(settingsPath) ? null
+            : SettingsSnapshot.GetCached(settingsPath, room?.abstractRoom?.name);
 
         bool hasRcType = snap != null && snap.HasRcType;
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;

@@ -207,16 +207,15 @@ public static partial class SettingsBlendController
         string roomName = self.room.abstractRoom?.name;
         if (roomName == null) return;
 
-        var snap = SettingsSnapshot.GetCached(self.room.roomSettings?.filePath, self.room.abstractRoom?.name);
-        bool hasView = snap != null && snap.HasView;
-
-        bool isBlendRoom = IsBlendRoom(self.room);
-        bool isStaticRoom = IsStaticViewRoom(self.room);
+        var rcState = RoomCameraExtensions.GetRoomBlendState(self.room);
+        bool hasView = rcState.HasView;
+        bool isBlendRoom = rcState.IsBlend;
+        bool isStaticRoom = rcState.IsStatic;
 
         if ((isBlendRoom || isStaticRoom) && hasView)
         {
             _lastManagedRoomName = roomName;
-            ForceHideVanillaSlots(self.room);
+            ForceHideVanillaSlots(self.room, rcState);
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -233,9 +232,9 @@ public static partial class SettingsBlendController
             ClearCachedVanillaFog();
         }
 
-        if (_lastRoomWasManaged && self.room != null && IsBlendRoom(self.room))
+        if (_lastRoomWasManaged && self.room != null && isBlendRoom)
         {
-            bool stillManaged = IsBlendRoom(self.room) || IsStaticViewRoom(self.room);
+            bool stillManaged = isBlendRoom || isStaticRoom;
 
             if (stillManaged && BlendClock.IsRunning &&
                 BlendClock.CurrentPhase == BlendClock.Phase.Idle)
@@ -263,16 +262,12 @@ public static partial class SettingsBlendController
     // ============================================================
     // FORCE HIDE VANILLA SLOTS - SOLO SI EL VIEW ESTÁ DECLARADO
     // ============================================================
-    private static void ForceHideVanillaSlots(Room room)
+    private static void ForceHideVanillaSlots(Room room, RoomCameraExtensions.RoomBlendState state)
     {
         if (room == null) return;
+        if (!state.HasView) return;
 
-        // Obtener el snapshot para verificar si tiene view declarado
-        var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
-        if (snap == null || !snap.HasView)
-            return;
-
-        ViewType view = snap.ViewType;
+        ViewType view = state.View;
 
         for (int i = 0; i < room.updateList.Count; i++)
         {

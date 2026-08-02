@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using UnityEngine;
 using MonoMod.RuntimeDetour;
 using Watcher; // <-- NUEVO: para OuterRimView y AncientUrbanView
+using RainCycles.Blend;
 
 namespace RainCycles.Core;
 
@@ -393,13 +394,12 @@ public static class TintManager
         if (self?.room == null) return;
         
         string roomName = self.room.abstractRoom?.name;
-        bool isStatic = SettingsBlendController.IsStaticViewRoom(self.room);
-        bool isBlend = SettingsBlendController.IsBlendRoom(self.room);
+        var state = RoomCameraExtensions.GetRoomBlendState(self.room);
+        bool isStatic = state.IsStatic;
+        bool isBlend = state.IsBlend;
+        bool hasTint = state.HasTint;
         bool roomChanged = (roomName != _lastRoomName);
         _lastRoomName = roomName;
-        
-        var snap = SettingsSnapshot.GetCached(self.room.roomSettings?.filePath, self.room.abstractRoom?.name);
-        bool hasTint = snap != null && snap.HasTint;
         
         // ============================================================
         // ENTRADA A SALA ESTÁTICA (solo cuando cambia la sala)
@@ -410,7 +410,7 @@ public static class TintManager
             _currentStaticRoom = roomName;
             _hasLockedAtmosphere = false;
             
-            if (snap != null && snap.HasTint)
+            if (hasTint)
             {
                 SettingsBlendController.ApplyStaticTints(self.room);
             }

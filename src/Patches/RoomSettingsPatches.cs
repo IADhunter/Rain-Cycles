@@ -60,6 +60,14 @@ public static class RoomSettingsPatches
                         string roomName = cam.room.abstractRoom?.name;
 
                         // ============================================================
+                        // INVALIDAR ROOMBLENDSTATE (IsBlendRoom/IsStaticViewRoom cache)
+                        // al guardar la sala: refleja el cambio de Type/View/Tint
+                        // en el mismo frame, sin esperar a una transición de sala.
+                        // ============================================================
+                        if (!string.IsNullOrEmpty(roomName))
+                            RoomCameraExtensions.InvalidateRoomCache(roomName);
+
+                        // ============================================================
                         // RECARGAR TERRAIN CACHE
                         // RefreshActiveSnapshots() se encarga del blend
                         // ============================================================
