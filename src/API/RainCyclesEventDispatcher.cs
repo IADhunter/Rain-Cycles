@@ -21,16 +21,6 @@ public static class RainCyclesEventDispatcher
     {
     }
 
-    public static void Terminate()
-    {
-        _lastDispatchedRegion = null;
-        _lastEmittedSetting = -1;
-        _lastEmittedGlobalT = -1f;
-        _lastEmittedProgress = 0f;
-        _lastEmittedIsIdle = true;
-        TransferApplied = false;
-    }
-
     internal static void DispatchRegionEnter(
         string regionCode, BlendMode? mode, bool isClockEnabled, int initialSetting)
     {

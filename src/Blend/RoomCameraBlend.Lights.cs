@@ -34,17 +34,6 @@ public static partial class RoomCameraExtensions
         RSPlugin.log.LogInfo("[RoomCameraBlend.Lights] Inicializado");
     }
 
-    public static void TerminateLights()
-    {
-        if (!_lightsInitialized) return;
-
-        On.LightBeam.Update -= OnLightBeamUpdate;
-        On.LightSource.Update -= OnLightSourceUpdate;
-
-        _lightsInitialized = false;
-        RSPlugin.log.LogInfo("[RoomCameraBlend.Lights] Terminado");
-    }
-
     // ═════════════════════════════════════════════════════════════════════
     //  LIGHTBEAM - color de Environment durante blend
     // ═════════════════════════════════════════════════════════════════════

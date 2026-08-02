@@ -17,6 +17,7 @@ public static class RoomSettingsExtensions
         public ViewType ViewType = ViewType.None;
         public Color? TintMultiply = null;
         public Color? TintAtmosphere = null;
+        public bool Loaded = false;
     }
 
     private static ExtData GetOrCreate(RoomSettings settings)
@@ -37,6 +38,7 @@ public static class RoomSettingsExtensions
     public static void SetRcType(this RoomSettings settings, RcType value)
     {
         var data = GetOrCreate(settings);
+        data.Loaded = true;
         data.RcType = value;
         if (!HasRcType(settings))
         {
@@ -49,6 +51,13 @@ public static class RoomSettingsExtensions
     public static bool HasRcType(this RoomSettings settings)
     {
         return GetOrCreate(settings).RcType != RcType.None;
+    }
+
+    // true si el estado RC fue determinado (por un Load o por una señal del
+    // usuario en DevTools). Distingue "sala vanilla (None)" de "aún no cargado".
+    public static bool IsRcStateLoaded(this RoomSettings settings)
+    {
+        return GetOrCreate(settings).Loaded;
     }
 
     public static ViewType GetViewType(this RoomSettings settings)
@@ -120,6 +129,7 @@ public static class RoomSettingsExtensions
     public static void ClearExtendedData(this RoomSettings settings)
     {
         var data = GetOrCreate(settings);
+        data.Loaded = true;
         data.RcType = RcType.None;
         data.ViewType = ViewType.None;
         data.TintMultiply = null;

@@ -327,23 +327,5 @@ namespace RainCycles.Patches
             }
         }
         
-        public static void Terminate()
-        {
-            if (!_initialized) return;
-            
-            On.MoreSlugcats.Snow.InitiateSprites -= SnowOnInitiateSprites;
-            On.MoreSlugcats.BlizzardGraphics.InitiateSprites -= BlizzardGraphicsOnInitiateSprites;
-            On.RoomCamera.DrawUpdate -= RoomCameraOnDrawUpdate;
-            On.DevInterface.RoomSettingsPage.DevEffectGetCategoryFromEffectType -= OnDevEffectGetCategory;
-            
-            if (_bundle != null)
-            {
-                _bundle.Unload(true);
-                _bundle = null;
-            }
-            
-            _initialized = false;
-            RSPlugin.log.LogInfo("[SnowLightController] Terminado");
-        }
     }
 }

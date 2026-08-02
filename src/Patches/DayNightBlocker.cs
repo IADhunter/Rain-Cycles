@@ -8,7 +8,12 @@ namespace RainCycles.Patches;
 public static class DayNightBlocker
 {
     private static bool _initialized = false;
+    
+    // El Hook se conserva en campo para mantenerlo vivo (MonoMod exige
+    // referencia activa). El mod no se deshabilita en caliente — CS0414 esperado.
+#pragma warning disable CS0414
     private static Hook _hookLoad;
+#pragma warning restore CS0414
 
     public static void Init()
     {
@@ -30,16 +35,6 @@ public static class DayNightBlocker
         }
 
         _initialized = true;
-    }
-
-    public static void Terminate()
-    {
-        if (!_initialized) return;
-
-        _hookLoad?.Dispose();
-        _hookLoad = null;
-
-        _initialized = false;
     }
 
     private static bool OnLoad(

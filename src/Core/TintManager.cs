@@ -34,12 +34,17 @@ public static class TintManager
 {
     private static bool _initialized = false;
     
+    // Los Hook se conservan en campos para mantenerlos vivos (MonoMod exige
+    // referencia activa). El mod no se deshabilita en caliente, por lo que
+    // nunca se leen fuera de Init() — CS0414 esperado.
+#pragma warning disable CS0414
     private static Hook _setGlobalVectorHook;
     private static Hook _aboveCloudsViewUpdateHook;
     private static Hook _aboveCloudsViewAtmosphereColorSetterHook;
     private static Hook _roomCameraUpdateHook;
     private static Hook _aboveCloudsViewCtorHook;
     private static Hook _roofTopViewCtorHook;
+#pragma warning restore CS0414
     
     private static int _atmosphereColorID;
     private static int _multiplyColorID;
@@ -124,23 +129,6 @@ public static class TintManager
         On.Watcher.AncientUrbanView.ctor += OnAncientUrbanViewCtor;
         
         _initialized = true;
-    }
-    
-    public static void Terminate()
-    {
-        if (!_initialized) return;
-        
-        _setGlobalVectorHook?.Dispose();
-        _aboveCloudsViewUpdateHook?.Dispose();
-        _aboveCloudsViewAtmosphereColorSetterHook?.Dispose();
-        _roomCameraUpdateHook?.Dispose();
-        _aboveCloudsViewCtorHook?.Dispose();
-        _roofTopViewCtorHook?.Dispose();
-        On.OverWorld.Update -= OnOverWorldUpdate;
-        On.Watcher.OuterRimView.ctor -= OnOuterRimViewCtor;
-        On.Watcher.AncientUrbanView.ctor -= OnAncientUrbanViewCtor; // <-- NUEVO
-        
-        _initialized = false;
     }
     
     public static void ResetStaticState()

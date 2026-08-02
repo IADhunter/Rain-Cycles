@@ -5,11 +5,6 @@ namespace FilesSetting;
 
 public class RCDEVTools
 {
-    public static void Terminate()
-    {
-        On.DevInterface.Page.ctor -= DevInterface_Page_ctor;
-    }
-
     public static void Init()
     {
         On.DevInterface.Page.ctor += DevInterface_Page_ctor;

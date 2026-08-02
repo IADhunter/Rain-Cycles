@@ -97,7 +97,6 @@ public static partial class SettingsBlendController
         On.Watcher.OuterRimView.ctor        += OnOuterRimViewCtor;
         On.Watcher.AncientUrbanView.ctor    += OnAncientUrbanViewCtor;
         On.RoomCamera.ChangeRoom            += OnChangeRoom;
-        On.RoomSettings.Save                += OnRoomSettingsSave;
         On.RoomCamera.Update                += OnRoomCameraUpdate;
         On.RoomCamera.LoadPalette           += OnLoadPalette;
 
@@ -208,13 +207,7 @@ public static partial class SettingsBlendController
         }
         
         float currentT = _externalT ? _forcedT : (BlendClock.IsRunning ? BlendClock.SubPhaseLocalT : 0f);
-        
-        var cam = _room.game?.cameras?[0];
-        if (cam != null && _snapA != null && _snapB != null && _active && _externalT)
-        {
-            
-        }
-        
+
         if (_snapA != null && _snapB != null)
             ApplyBlend(currentT);
         

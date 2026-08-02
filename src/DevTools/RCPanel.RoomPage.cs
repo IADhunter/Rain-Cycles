@@ -51,8 +51,13 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
     // o Signal() llaman a owner.room.roomSettings.Load(...) — ese hook
     // hace ClearExtendedData() + reparsea "RainCycles:" del archivo que
     // se acaba de asignar a self.filePath. No hace falta releer el disco
-    // aquí para "confirmar"; el fallback de disco solo cubre el caso raro
-    // de que roomSettings aún no tenga nada cargado en memoria.
+    // aquí para "confirmar".
+    //
+    // IsRcStateLoaded() (RoomSettingsExtensions) distingue "sala vanilla
+    // (None en memoria)" de "aún no cargado": el None explícito (click en
+    // Vanilla o archivo con <Type:None>) se respeta sin caer al disco, que
+    // aún contendría la línea vieja sin guardar. El fallback de disco solo
+    // cubre el caso raro de que roomSettings no haya sido cargado nunca.
     // ════════════════════════════════════════════════════════════════════
     private RcType GetRcTypeFromCurrentFile()
     {
@@ -60,12 +65,8 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
         if (room == null) return RcType.None;
 
         var roomSettings = room.roomSettings;
-        if (roomSettings != null)
-        {
-            RcType memoryType = roomSettings.GetRcType();
-            if (memoryType != RcType.None)
-                return memoryType;
-        }
+        if (roomSettings != null && roomSettings.IsRcStateLoaded())
+            return roomSettings.GetRcType();
 
         string filePath = roomSettings?.filePath;
         if (string.IsNullOrEmpty(filePath) || !System.IO.File.Exists(filePath))

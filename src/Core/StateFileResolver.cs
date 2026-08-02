@@ -404,7 +404,7 @@ public static class StateFileResolver
         self.filePath = rainStatePath;
         self.Load((SlugcatStats.Timeline)null);
 
-        var snap = SettingsSnapshot.FromFile(rainStatePath);
+        var snap = SettingsSnapshot.GetCached(rainStatePath, name);
         if (!snap._hasTerrainFadePalette)
             self.terrainFadePalette = null;
     }

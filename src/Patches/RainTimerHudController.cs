@@ -27,16 +27,6 @@ public static class RainTimerHudController
         RSPlugin.log.LogInfo("[RainTimerHudController] Inicializado con efecto RainTimerHud");
     }
 
-    public static void Terminate()
-    {
-        if (!_initialized) return;
-        
-        On.HUD.RainMeter.Update -= OnRainMeterUpdate;
-        On.DevInterface.RoomSettingsPage.DevEffectGetCategoryFromEffectType -= OnDevEffectGetCategory;
-        
-        _initialized = false;
-    }
-
     private static DevInterface.RoomSettingsPage.DevEffectsCategories OnDevEffectGetCategory(
         On.DevInterface.RoomSettingsPage.orig_DevEffectGetCategoryFromEffectType orig,
         RoomSettingsPage self,

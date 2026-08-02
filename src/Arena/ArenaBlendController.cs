@@ -35,16 +35,6 @@ public static class ArenaBlendController
                                        += OnRoomSettingsCtor;
     }
 
-    public static void Terminate()
-    {
-        On.ArenaGameSession.ctor       -= OnArenaCtor;
-        On.ArenaGameSession.Initiate   -= OnArenaInitiate;
-        On.ArenaGameSession.EndSession -= OnArenaEndSession;
-        On.RainWorldGame.ShutDownProcess -= OnShutDown;
-        On.RoomSettings.ctor_Room_string_Region_bool_bool_Timeline_RainWorldGame
-                                       -= OnRoomSettingsCtor;
-    }
-
     // ── Hooks ─────────────────────────────────────────────────────────────
 
     private static void OnArenaCtor(

@@ -41,16 +41,6 @@ public static class ModResetter
         RSPlugin.log.LogInfo("[ModResetter] Inicializado");
     }
     
-    public static void Terminate()
-    {
-        if (!_isInitialized) return;
-        
-        On.RainWorldGame.ShutDownProcess -= OnGameShutDown;
-        On.RainWorldGame.ctor -= OnGameCtor;
-        
-        _isInitialized = false;
-    }
-    
     private static void OnGameShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
     {
         RSPlugin.log.LogInfo("[ModResetter] Ejecutando eliminaciones pendientes");

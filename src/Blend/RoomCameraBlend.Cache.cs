@@ -82,16 +82,6 @@ public static partial class RoomCameraExtensions
         _preloadHooksInitialized = true;
     }
     
-    public static void TerminatePreloadHooks()
-    {
-        if (!_preloadHooksInitialized) return;
-        
-        On.Room.Loaded -= OnRoomLoaded;
-        On.Room.Unloaded -= OnRoomUnloaded;
-        
-        _preloadHooksInitialized = false;
-    }
-    
     private static void OnRoomLoaded(On.Room.orig_Loaded orig, Room self)
     {
         orig(self);
