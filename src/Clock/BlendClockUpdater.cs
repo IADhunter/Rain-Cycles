@@ -292,6 +292,19 @@ public static class BlendClockUpdater
             if (BlendClock.IsRunning && hasFullStates)
             {
                 cam.UpdateBlendPalette();
+
+                // ⭐ FIX ENTRADA (flash de estado 1): la textura terrain se
+                // genera aquí, DESPUÉS de que las cámaras ya corrieron su
+                // Update/applied palettes. Publicarla a nivel global justo tras
+                // generarla cierra el hueco de 1 frame que deja vanilla
+                // (RoomCamera.cs:1113-1115 bindea el terreno base) sin esperar
+                // al próximo OnRoomCameraUpdate.
+                var blendTexData = cam.GetBlendData();
+                if (blendTexData != null && blendTexData.isBlendActive &&
+                    blendTexData.terrainBlendedTexture != null)
+                {
+                    Shader.SetGlobalTexture("_terrainPalette", blendTexData.terrainBlendedTexture);
+                }
             }
             else if (!hasFullStates)
             {

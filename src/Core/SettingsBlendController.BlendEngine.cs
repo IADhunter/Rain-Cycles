@@ -131,7 +131,7 @@ public static partial class SettingsBlendController
         orig(self, palA, palB, blend);
     }
 
-    private static void OnApplyPalette(On.RoomCamera.orig_ApplyPalette orig, RoomCamera self)
+private static void OnApplyPalette(On.RoomCamera.orig_ApplyPalette orig, RoomCamera self)
     {
         orig(self);
 
@@ -141,6 +141,21 @@ public static partial class SettingsBlendController
         // La textura terrainBlendedTexture se aplica al shader en
         // SettingsBlendController.CameraHooks.cs -> OnRoomCameraUpdate
         // ============================================================
+
+        // ⭐ FIX ENTRADA (flash de estado 1): vanilla llama ApplyPalette()
+        // incondicionalmente en ApplyPositionChange() (RoomCamera.cs:2261),
+        // reconstruyendo terrainPalette desde el archivo base (estado 1).
+        // El hook OnApplyPalette solo ejecutaba orig() y dejaba el terreno
+        // "base" durante unos frames hasta el próximo OnRoomCameraUpdate.
+        // Si estamos en una sala blend con blend activo, re-vinculamos el
+        // terreno blend generado para que no se muestre el estado 1.
+        var blendData = self.GetBlendData();
+        if (blendData != null && blendData.isBlendActive &&
+            self.room != null && IsBlendRoom(self.room) &&
+            blendData.terrainBlendedTexture != null)
+        {
+            Shader.SetGlobalTexture("_terrainPalette", blendData.terrainBlendedTexture);
+        }
     }
 
     public static void OnApplyFade(On.RoomCamera.orig_ApplyFade orig, RoomCamera self)
