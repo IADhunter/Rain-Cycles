@@ -131,7 +131,7 @@ public static partial class SettingsBlendController
         orig(self, palA, palB, blend);
     }
 
-private static void OnApplyPalette(On.RoomCamera.orig_ApplyPalette orig, RoomCamera self)
+    private static void OnApplyPalette(On.RoomCamera.orig_ApplyPalette orig, RoomCamera self)
     {
         orig(self);
 
