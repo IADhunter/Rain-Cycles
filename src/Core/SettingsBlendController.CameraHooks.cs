@@ -45,13 +45,6 @@ public static partial class SettingsBlendController
                 _snapB = null;
             }
 
-            if (newRoom?.roomSettings != null && !HasDayNightBlend(newRoom.roomSettings))
-            {
-                int correctPal = newRoom.roomSettings.Palette;
-                self.ChangeMainPalette(correctPal);
-                self.ApplyFade();
-            }
-
             _activeSnapshot = null;
             _psvScene = null;
             _acvScene = null;
@@ -133,25 +126,6 @@ public static partial class SettingsBlendController
             var rs = newRoom.roomSettings;
             if (rs != null)
             {
-                if (!HasDayNightBlend(rs))
-                {
-                    ForceLoadPalette(self, rs.Palette, ref self.fadeTexA);
-                    
-                    if (rs.fadePalette != null)
-                    {
-                        ForceLoadPalette(self, rs.fadePalette.palette, ref self.fadeTexB);
-                        self.paletteB = rs.fadePalette.palette;
-                        self.paletteBlend = (self.currentCameraPosition < rs.fadePalette.fades.Length) 
-                            ? rs.fadePalette.fades[self.currentCameraPosition] 
-                            : 0f;
-                    }
-                    else
-                    {
-                        self.paletteB = -1;
-                        self.paletteBlend = 0f;
-                    }
-                }
-
                 var terrainBlendDataReset = self.GetBlendData();
                 if (terrainBlendDataReset != null)
                 {

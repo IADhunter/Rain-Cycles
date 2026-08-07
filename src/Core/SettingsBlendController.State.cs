@@ -124,38 +124,11 @@ public static partial class SettingsBlendController
     }
 
     // ============================================================
-    // HAS DAY NIGHT BLEND
-    // Detecta una sala vanilla con efecto DayNight activo (amount > 0).
-    // En esas salas vanilla sobrescribe la paleta varias veces por frame
-    // (UpdateDayNightPalette), así que el reload forzado al entrar no es
-    // necesario y perturba el blend; se omite.
-    // ============================================================
-    public static bool HasDayNightBlend(RoomSettings rs)
-    {
-        if (rs == null) return false;
-        for (int i = 0; i < rs.effects.Count; i++)
-        {
-            if (rs.effects[i].type == RoomSettings.RoomEffect.Type.DayNight &&
-                rs.effects[i].amount > 0f)
-                return true;
-        }
-        return false;
-    }
-
-    // ============================================================
     // HOOK LOADPALETTE
     // ============================================================
     private static void OnLoadPalette(On.RoomCamera.orig_LoadPalette orig, RoomCamera self, int pal, ref Texture2D texture)
     {
         orig(self, pal, ref texture);
-    }
-
-    // ============================================================
-    // FORCE LOAD PALETTE
-    // ============================================================
-    public static void ForceLoadPalette(RoomCamera cam, int palId, ref Texture2D texture)
-    {
-        cam.LoadPalette(palId, ref texture);
     }
 
     // ============================================================
