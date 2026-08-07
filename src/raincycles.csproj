@@ -5,7 +5,7 @@
     <LangVersion>13</LangVersion>
     <AssemblyName>RainCycles</AssemblyName>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <OutputPath>D:\programas\Steam\steamapps\common\Rain World\RainWorld_Data\StreamingAssets\mods\RainCycles\plugins\</OutputPath>
+    <OutputPath>$(MSBuildProjectDirectory)\..\RainCycles\plugins\</OutputPath>
     <PathMap>$(MSBuildProjectDirectory)=/$(SolutionName)</PathMap>
   </PropertyGroup>
 
@@ -63,7 +63,7 @@
 
   <Target Name="GenerateMod" AfterTargets="PostBuildEvent" Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <ItemGroup>
-      <RemovePlugins Include="D:\programas\Steam\steamapps\common\Rain World\RainWorld_Data\StreamingAssets\mods\RainCycles\plugins\*.pdb" />
+      <RemovePlugins Include="$(MSBuildProjectDirectory)\..\RainCycles\plugins\*.pdb" />
     </ItemGroup>
     <Delete Files="@(RemovePlugins)" />
   </Target>
