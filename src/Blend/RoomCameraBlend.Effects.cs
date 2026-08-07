@@ -226,41 +226,59 @@ public static partial class RoomCameraExtensions
     //  (Extraído de SettingsSnapshotLerp y RoomEffectsApplier)
     // ═════════════════════════════════════════════════════════════════════
 
-    public static SettingsSnapshot LerpDecals(SettingsSnapshot a, SettingsSnapshot b, float t)
+    public static DecalLerpResult LerpDecals(SettingsSnapshot a, SettingsSnapshot b, float t)
     {
-        var snap = new SettingsSnapshot();
-        snap.PlacedObjectLines = new List<string>(a.PlacedObjectLines);
+        var result = new DecalLerpResult
+        {
+            DecalOpacities = new Dictionary<int, float[]>(),
+            DecalIndices = new List<int>(),
+        };
+
+        for (int i = 0; i < a.PlacedObjectLines.Count; i++)
+            if (a.PlacedObjectLines[i].StartsWith("CustomDecal><"))
+                result.DecalIndices.Add(i);
 
         foreach (var kv in a.DecalOpacities)
         {
             if (!b.DecalOpacities.TryGetValue(kv.Key, out float[] opsB)) opsB = new float[4];
             float[] lerped = new float[4];
             for (int i = 0; i < 4; i++) lerped[i] = Mathf.Lerp(kv.Value[i], opsB[i], t);
-            snap.DecalOpacities[kv.Key] = lerped;
+            result.DecalOpacities[kv.Key] = lerped;
         }
 
-        return snap;
+        return result;
     }
 
     public static void ApplyDecalOpacities(this Room room, SettingsSnapshot lerped)
     {
         if (lerped.DecalOpacities.Count == 0) return;
 
-        var decalSnapIndices = new List<int>();
+        var decalIndices = new List<int>();
         for (int i = 0; i < lerped.PlacedObjectLines.Count; i++)
             if (lerped.PlacedObjectLines[i].StartsWith("CustomDecal><"))
-                decalSnapIndices.Add(i);
+                decalIndices.Add(i);
 
+        ApplyDecalOpacitiesCore(room, lerped.DecalOpacities, decalIndices);
+    }
+
+    public static void ApplyDecalOpacities(this Room room, DecalLerpResult lerped)
+    {
+        if (lerped.DecalOpacities.Count == 0) return;
+        ApplyDecalOpacitiesCore(room, lerped.DecalOpacities, lerped.DecalIndices);
+    }
+
+    private static void ApplyDecalOpacitiesCore(Room room, Dictionary<int, float[]> opacities, List<int> decalIndices)
+    {
         int decalCount = 0;
         for (int i = 0; i < room.updateList.Count; i++)
         {
             var decal = room.updateList[i] as CustomDecal;
             if (decal == null) continue;
 
-            if (decalCount < decalSnapIndices.Count)
+            if (decalCount < decalIndices.Count)
             {
-                int snapIdx = decalSnapIndices[decalCount];
-                if (lerped.DecalOpacities.TryGetValue(snapIdx, out float[] ops))
+                int snapIdx = decalIndices[decalCount];
+                if (opacities.TryGetValue(snapIdx, out float[] ops))
                 {
                     var data = decal.placedObject.data as PlacedObject.CustomDecalData;
                     if (data != null)
@@ -277,4 +295,10 @@ public static partial class RoomCameraExtensions
             decalCount++;
         }
     }
+}
+
+public struct DecalLerpResult
+{
+    public Dictionary<int, float[]> DecalOpacities;
+    public List<int> DecalIndices;
 }

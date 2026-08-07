@@ -618,7 +618,8 @@ public class RCPanel : Panel, IDevUISignals
             }
 
             foreach (var node in subNodes) node.Refresh();
-            parentNode?.Refresh();
+            if (parentNode is not ObjectsPage)
+                parentNode?.Refresh();
             return;
         }
 

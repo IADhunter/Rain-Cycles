@@ -9,6 +9,12 @@ using RainCycles.Blend;
 
 namespace RainCycles.Core;
 
+public struct TintLerpResult
+{
+    public Color? TintMultiply;
+    public Color? TintAtmosphere;
+}
+
 public class ViewOriginalState
 {
     public Color atmosphereColor;
@@ -454,19 +460,19 @@ public static class TintManager
     // ================================================================
     // INTERPOLACIÓN DE TINTES (migrado desde SettingsSnapshotLerp)
     // ================================================================
-    public static SettingsSnapshot InterpolateTints(SettingsSnapshot a, SettingsSnapshot b, float t, Color? vanillaMultiply = null, Color? vanillaAtmosphere = null)
+    public static TintLerpResult InterpolateTints(SettingsSnapshot a, SettingsSnapshot b, float t, Color? vanillaMultiply = null, Color? vanillaAtmosphere = null)
     {
         t = Mathf.Clamp01(t);
-        var snap = new SettingsSnapshot();
 
         Color aMultiply = a.TintMultiply ?? vanillaMultiply ?? Color.white;
         Color bMultiply = b.TintMultiply ?? vanillaMultiply ?? Color.white;
         Color aAtmosphere = a.TintAtmosphere ?? vanillaAtmosphere ?? Color.white;
         Color bAtmosphere = b.TintAtmosphere ?? vanillaAtmosphere ?? Color.white;
 
-        snap.TintMultiply = Color.Lerp(aMultiply, bMultiply, t);
-        snap.TintAtmosphere = Color.Lerp(aAtmosphere, bAtmosphere, t);
+        var result = new TintLerpResult();
+        result.TintMultiply = Color.Lerp(aMultiply, bMultiply, t);
+        result.TintAtmosphere = Color.Lerp(aAtmosphere, bAtmosphere, t);
 
-        return snap;
+        return result;
     }
 }

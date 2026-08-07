@@ -54,7 +54,7 @@ public static partial class SettingsBlendController
 
     private static float _entryFrameT = -1f;
 
-    private static SettingsSnapshot _activeSnapshot = null;
+    private static TintLerpResult? _activeSnapshot = null;
 
     private static bool _forceSkyRefresh = false;
 
@@ -72,8 +72,11 @@ public static partial class SettingsBlendController
     public static string           CurrentPathB        => _pathB;
     public static Room             ActiveRoom          => _room;
     public static float            ForcedT             => _forcedT;
-    public static SettingsSnapshot ActiveSnapshot      => _activeSnapshot;
-    public static void SetActiveSnapshot(SettingsSnapshot snap) => _activeSnapshot = snap;
+    public static TintLerpResult? ActiveSnapshot       => _activeSnapshot;
+    public static void SetActiveSnapshot(TintLerpResult snap) => _activeSnapshot = snap;
+    public static void SetActiveSnapshot(SettingsSnapshot snap) => _activeSnapshot = snap == null
+        ? (TintLerpResult?)null
+        : new TintLerpResult { TintMultiply = snap.TintMultiply, TintAtmosphere = snap.TintAtmosphere };
     public static void ClearActiveSnapshot() => _activeSnapshot = null;
 
     public static void ClearFrameFlag()
