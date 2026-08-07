@@ -20,6 +20,8 @@ public static class BlendClock
         public int StateB;
         public float Timer;
         public bool LoopActivated;
+        public float IdleDuration;
+        public float BlendDuration;
     }
 
     public static Phase CurrentPhase { get; private set; } = Phase.Idle;
@@ -104,6 +106,8 @@ public static class BlendClock
             StateB = StateB,
             Timer = _timer,
             LoopActivated = _loopActivated,
+            IdleDuration = _idleDuration,
+            BlendDuration = _blendDuration,
         };
     }
 
@@ -130,7 +134,32 @@ public static class BlendClock
         CurrentPhase = state.CurrentPhase;
         StateA = state.StateA;
         StateB = state.StateB;
-        _timer = state.Timer;
+
+        // ═══════════════════════════════════════════════════════════
+        // FIX (08/08/2026): el _timer se acumuló en las duraciones de
+        // la región ORIGEN. Restaurado crudo, si la región destino tiene
+        // duraciones menores, la fase actual (Idle/Blending) completa al
+        // primer tick → el porcentaje "salta". Ahora se reescala:
+        //  - Blending: _timer = progress(T) × duración_nueva  (T es una
+        //    fracción pura 0..1, así que el porcentaje se preserva exacto).
+        //  - Idle: _timer se escalara por el ratio de duraciones.
+        // ═══════════════════════════════════════════════════════════
+        if (state.CurrentPhase == Phase.Blending)
+        {
+            float progress = T < 0.5f ? T / 0.5f : (T - 0.5f) / 0.5f;
+            progress = Mathf.Clamp01(progress);
+            _timer = progress * _blendDuration;
+        }
+        else if (state.CurrentPhase == Phase.Idle)
+        {
+            float oldIdle = state.IdleDuration > 0f ? state.IdleDuration : 1f;
+            _timer = Mathf.Clamp(state.Timer * (_idleDuration / oldIdle), 0f, _idleDuration);
+        }
+        else
+        {
+            _timer = 0f;
+        }
+
         _loopActivated = state.LoopActivated;
 
         _waitingForThreshold = false;
@@ -282,23 +311,10 @@ public static class BlendClock
     // ============================================================
     private static List<int> BuildLoopSequence(int initialState)
     {
-        var laneA = new List<int>();
-        var laneB = new List<int>();
-        
-        for (int i = 0; i < 3; i++)
-            laneA.Add(((initialState - 1 + i) % 4) + 1);
-        
-        for (int i = 2; i < 5; i++)
-            laneB.Add(((initialState - 1 + i) % 4) + 1);
-        
-        var flat = new List<int>(laneA);
-        for (int i = 1; i < laneB.Count; i++)
-            flat.Add(laneB[i]);
-        
-        if (flat.Count > 1 && flat[flat.Count - 1] == flat[0])
-            flat.RemoveAt(flat.Count - 1);
-        
-        return flat;
+        var seq = new List<int>(4);
+        for (int i = 0; i < 4; i++)
+            seq.Add(((initialState - 1 + i) % 4) + 1);
+        return seq;
     }
 
     private static List<int> BuildCycleSequence(int initialState)
