@@ -25,7 +25,6 @@ public static partial class RoomCameraExtensions
         // === Estado: solo metadatos de texturas, NO snapshots ===
         public bool isBlendActive;
         public string roomName;
-        public int lastUpdateFrame = -1;
 
         // === Paletas principales (cache de texturas) ===
         public Texture2D mainTexA;
@@ -46,11 +45,6 @@ public static partial class RoomCameraExtensions
         // === Arrays precargados fade ===
         public Color32[] fadePixelsA;
         public Color32[] fadePixelsB;
-
-        // === Últimos valores aplicados (para evitar trabajo redundante) ===
-        public float lastBlendT = -1f;
-        public int lastStateA = -1;
-        public int lastStateB = -1;
 
         // === Terrain blend (ver RoomCameraBlend.Terrain.cs) ===
         public Texture2D terrainBlendedTexture;
@@ -77,9 +71,6 @@ public static partial class RoomCameraExtensions
         if (data == null) return;
 
         data.isBlendActive = false;
-        data.lastBlendT = -1f;
-        data.lastStateA = -1;
-        data.lastStateB = -1;
 
         ClearPaletteData(cam);
         ClearEffectData(cam);

@@ -99,11 +99,6 @@ public static partial class RoomCameraExtensions
             }
         }
 
-        data.lastStateA = stateA;
-        data.lastStateB = stateB;
-        data.lastBlendT = t;
-        data.lastUpdateFrame = Time.frameCount;
-        
         if (isIdle)
         {
             if (snapA != null)
@@ -272,9 +267,5 @@ public static partial class RoomCameraExtensions
         data.lastFadePaletteB = -1;
         data.fadePixelsA = null;
         data.fadePixelsB = null;
-
-        data.lastBlendT = -1f;
-        data.lastStateA = -1;
-        data.lastStateB = -1;
     }
 }
