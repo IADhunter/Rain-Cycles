@@ -571,6 +571,8 @@ public class RCPanel : Panel, IDevUISignals
             string path = ResolveSettingsFile(sel);
             if (path == null) return;
 
+            ButtonSelectedA = sel;
+
             ClearBlendOnly();
 
             owner.room.roomSettings.filePath = path;
@@ -603,7 +605,10 @@ public class RCPanel : Panel, IDevUISignals
 
             if (_activeFileLabel != null)
                 _activeFileLabel.Text = Path.GetFileName(path ?? "");
-            ButtonSelectedA = sel;
+
+            var c0Final = owner.room.game.cameras[0];
+            c0Final.ApplyEffectColorsToAllPaletteTextures(
+                owner.room.roomSettings.EffectColorA, owner.room.roomSettings.EffectColorB);
 
             if (snapTint != null && !snapTint.HasTint)
             {
