@@ -66,6 +66,8 @@ public partial class SettingsSnapshot
     public float EffectLightBurn        = -1f;
     public float EffectBloom            = -1f;
     public float EffectSurfaceSandstorm = -1f;
+    public float EffectSnowLight        = -1f;
+    public float EffectSnowSparkle      = -1f;
 
     public float? ModifyEffectColorA_Hue = null;
     public float? ModifyEffectColorA_Saturation = null;

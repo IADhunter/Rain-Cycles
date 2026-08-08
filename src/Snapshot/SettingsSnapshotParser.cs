@@ -394,6 +394,8 @@ public partial class SettingsSnapshot
         if (snap.EffectLightBurn < 0f && tmpl.EffectLightBurn >= 0f) snap.EffectLightBurn = tmpl.EffectLightBurn;
         if (snap.EffectBloom < 0f && tmpl.EffectBloom >= 0f) snap.EffectBloom = tmpl.EffectBloom;
         if (snap.EffectSurfaceSandstorm < 0f && tmpl.EffectSurfaceSandstorm >= 0f) snap.EffectSurfaceSandstorm = tmpl.EffectSurfaceSandstorm;
+        if (snap.EffectSnowLight < 0f && tmpl.EffectSnowLight >= 0f) snap.EffectSnowLight = tmpl.EffectSnowLight;
+        if (snap.EffectSnowSparkle < 0f && tmpl.EffectSnowSparkle >= 0f) snap.EffectSnowSparkle = tmpl.EffectSnowSparkle;
 
         if (tmpl.ModifyEffectColorA_Hue.HasValue && !snap.ModifyEffectColorA_Hue.HasValue)
             snap.ModifyEffectColorA_Hue = tmpl.ModifyEffectColorA_Hue;
@@ -571,6 +573,8 @@ public partial class SettingsSnapshot
                 case "LightBurn": snap.EffectLightBurn = amount; break;
                 case "Bloom": snap.EffectBloom = amount; break;
                 case "SurfaceSandstorm": snap.EffectSurfaceSandstorm = amount; break;
+                case "SnowLight": snap.EffectSnowLight = amount; break;
+                case "SnowSparkle": snap.EffectSnowSparkle = amount; break;
             }
         }
     }

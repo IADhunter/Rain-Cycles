@@ -1,5 +1,6 @@
 using UnityEngine;
 using RainCycles.Snapshot;
+using RainCycles.Patches;
 using RWCustom;
 using System.Collections.Generic;
 
@@ -184,12 +185,18 @@ public static partial class RoomCameraExtensions
         float sandstorm = LerpScalarEffect(a.EffectSurfaceSandstorm, b.EffectSurfaceSandstorm, t);
         if (sandstorm >= 0f)
             ApplyEffect(room, new RoomSettings.RoomEffect.Type("SurfaceSandstorm"), sandstorm);
+
+        // Efectos de nieve (Downpour, activados por SnowLightController).
+        // Fallback por efecto: SnowLight ausente = 0.5 (la luz "por defecto"
+        // del controlador), SnowSparkle ausente = 0 (sin grano).
+        ApplyEffect(room, SnowLightController.SnowLightEffect,   LerpScalarEffect(a.EffectSnowLight,   b.EffectSnowLight,   t, 0.5f));
+        ApplyEffect(room, SnowLightController.SnowSparkleEffect, LerpScalarEffect(a.EffectSnowSparkle, b.EffectSnowSparkle, t));
     }
 
-    private static float LerpScalarEffect(float va, float vb, float t)
+    private static float LerpScalarEffect(float va, float vb, float t, float fallback = 0f)
     {
-        float a = va < 0f ? 0f : va;
-        float b = vb < 0f ? 0f : vb;
+        float a = va < 0f ? fallback : va;
+        float b = vb < 0f ? fallback : vb;
         return Mathf.Lerp(a, b, t);
     }
 

@@ -18,8 +18,8 @@ namespace RainCycles.Patches
         private static FShader _originalBlizzardShader;
         private static FShader _originalFastBlizzardShader;
         
-        // Último valor loggeado de SnowGrain (evitar spam)
-        private static float _lastLoggedSnowGrain = -1f;
+        // Último valor loggeado de SnowSparkle (evitar spam)
+        private static float _lastLoggedSnowSparkle = -1f;
 
         // Shaders tintados
         private static FShader _snowTintShader;
@@ -32,7 +32,7 @@ namespace RainCycles.Patches
         public static readonly RoomSettings.RoomEffect.Type SnowLightEffect = 
             new RoomSettings.RoomEffect.Type("SnowLight", true);
         
-        public static readonly RoomSettings.RoomEffect.Type SnowGrainEffect = 
+        public static readonly RoomSettings.RoomEffect.Type SnowSparkleEffect = 
             new RoomSettings.RoomEffect.Type("SnowSparkle", true);
         
         public static void Init()
@@ -50,7 +50,7 @@ namespace RainCycles.Patches
                 HookRoomCameraDrawUpdate();
                 
                 _initialized = true;
-                RSPlugin.log.LogInfo("[SnowLightController] Inicializado con SnowLight y SnowGrain");
+                RSPlugin.log.LogInfo("[SnowLightController] Inicializado con SnowLight y SnowSparkle");
             }
             catch (Exception ex)
             {
@@ -128,6 +128,21 @@ namespace RainCycles.Patches
         private static void RegisterEffectCategories()
         {
             On.DevInterface.RoomSettingsPage.DevEffectGetCategoryFromEffectType += OnDevEffectGetCategory;
+            
+            // SnowLight se crea por defecto al 50% (luz neutra): sin efecto =
+            // oscuridad total, igual que en tiempo real con GetEffect == null.
+            // GetSliderDefault controla el amount inicial al añadir el efecto
+            // desde el editor (RoomSettingsPage.Create) y los valores extra.
+            On.RoomSettings.RoomEffect.GetSliderDefault += OnGetSliderDefault;
+        }
+        
+        private static float OnGetSliderDefault(
+            On.RoomSettings.RoomEffect.orig_GetSliderDefault orig,
+            RoomSettings.RoomEffect.Type type,
+            int index)
+        {
+            if (index == 0 && type == SnowLightEffect) return 0.5f;
+            return orig(type, index);
         }
         
         private static DevInterface.RoomSettingsPage.DevEffectsCategories OnDevEffectGetCategory(
@@ -138,7 +153,7 @@ namespace RainCycles.Patches
             if (type == SnowLightEffect)
                 return DevInterface.RoomSettingsPage.DevEffectsCategories.Lighting;
             
-            if (type == SnowGrainEffect)
+            if (type == SnowSparkleEffect)
                 return DevInterface.RoomSettingsPage.DevEffectsCategories.Decorations;
             
             return orig(self, type);
@@ -211,17 +226,17 @@ namespace RainCycles.Patches
             // ============================================
             // PROCESAR SNOWGRAIN
             // ============================================
-            RoomSettings.RoomEffect snowGrainEffect = self.room.roomSettings.GetEffect(SnowGrainEffect);
-            bool hasSnowGrain = snowGrainEffect != null;
-            float snowGrainAmount = hasSnowGrain ? Mathf.Clamp01(snowGrainEffect.amount) : 0f;
+            RoomSettings.RoomEffect snowSparkleEffect = self.room.roomSettings.GetEffect(SnowSparkleEffect);
+            bool hasSnowSparkle = snowSparkleEffect != null;
+            float snowSparkleAmount = hasSnowSparkle ? Mathf.Clamp01(snowSparkleEffect.amount) : 0f;
             
-            if (hasSnowGrain)
+            if (hasSnowSparkle)
             {
-                Shader.SetGlobalFloat("_SnowGrainAmount", snowGrainAmount);
-                if (!Mathf.Approximately(snowGrainAmount, _lastLoggedSnowGrain))
+                Shader.SetGlobalFloat("_SnowGrainAmount", snowSparkleAmount);
+                if (!Mathf.Approximately(snowSparkleAmount, _lastLoggedSnowSparkle))
                 {
-                    _lastLoggedSnowGrain = snowGrainAmount;
-                    RSPlugin.log.LogDebug($"[SnowGrain] Activo en {self.room.abstractRoom.name} con valor: {snowGrainAmount}");
+                    _lastLoggedSnowSparkle = snowSparkleAmount;
+                    RSPlugin.log.LogDebug($"[SnowSparkle] Activo en {self.room.abstractRoom.name} con valor: {snowSparkleAmount}");
                 }
             }
             else
