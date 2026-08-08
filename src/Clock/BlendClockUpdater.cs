@@ -106,8 +106,11 @@ public static class BlendClockUpdater
 
         if (self.GamePaused)
         {
-            if (!BlendClock.EditMode)
-                UpdateCameras(self);
+            // ⚠️ En pausa NO se re-aplica la paleta per-frame: vanilla congela
+            // las cámaras (RainWorldGame.cs:2094) y DrawSprites no corre, así que
+            // re-aplicar ApplyPalette dejaría los sprites en un estado intermedio
+            // nunca corregido (ojos de PlateTree.Bulb visibles, PlateTree.cs:899
+            // vs 906-909). El frame renderizado en pausa = último frame jugable.
             return;
         }
 
