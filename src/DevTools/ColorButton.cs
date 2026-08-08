@@ -27,6 +27,9 @@ public class SelectButton : Button
     public override void Clicked()
     {
         base.Clicked();
+        // Mismo guard que RCPanel.Signal: sin edit mode y con el reloj corriendo,
+        // el click no debe seleccionar (evita que el botón se ponga verde).
+        if (!BlendClock.EditMode && BlendClock.IsRunning) return;
         if (!isSelected)
         {
             if (parentNode != null)
