@@ -6,7 +6,7 @@ using RWCustom;
 namespace FilesSetting;
 
 // ================================================================
-// CLASE: HSV SLIDER (Slider horizontal estilo BlendSlider)
+// CLASE: HSV SLIDER
 // ================================================================
 
 public class HSVSlider : PositionedDevUINode
@@ -150,7 +150,7 @@ public class HSVSlider : PositionedDevUINode
 }
 
 // ================================================================
-// CLASE: COLOR EDITOR (Hex + HSV sliders con HSV independiente)
+// CLASE: COLOR EDITOR
 // ================================================================
 
 public class ColorEditor : RectangularDevUINode

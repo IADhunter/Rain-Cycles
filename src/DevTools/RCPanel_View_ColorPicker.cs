@@ -5,7 +5,7 @@ using UnityEngine;
 namespace FilesSetting;
 
 // ================================================================
-// CLASE: COLOR PREVIEW (Cuadrado con color sólido y marco de contraste)
+// CLASE: COLOR PREVIEW
 // ================================================================
 
 public class ColorPreview : PositionedDevUINode
@@ -233,7 +233,7 @@ public class FloatingColorPreview : PositionedDevUINode
 }
 
 // ================================================================
-// CLASE: FREE COLOR PICKER (Hue como estado independiente del gradiente)
+// CLASE: FREE COLOR PICKER
 // ================================================================
 
 public class FreeColorPicker : PositionedDevUINode
@@ -243,11 +243,10 @@ public class FreeColorPicker : PositionedDevUINode
     private FSprite _cursorSprite;
     private bool _dragging;
     private Color _currentColor = Color.white;
-    
-    // HSV como estado propio e independiente
-    private float _hue = 0f;        // 0-1, solo controla el tono del gradiente
-    private float _saturation = 0f;  // 0-1, coordenada X del cursor
-    private float _value = 1f;       // 0-1, coordenada Y del cursor
+
+    private float _hue = 0f;
+    private float _saturation = 0f;
+    private float _value = 1f;
     
     private Texture2D _gradientTexture;
     private bool _textureDirty = true;
@@ -444,7 +443,7 @@ public class FreeColorPicker : PositionedDevUINode
 }
 
 // ================================================================
-// CLASE: SCREEN COLOR PICKER (Pipeta)
+// CLASE: SCREEN COLOR PICKER
 // ================================================================
 
 public static class ScreenColorPicker

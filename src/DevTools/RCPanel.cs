@@ -297,9 +297,6 @@ public class RCPanel : Panel, IDevUISignals
         Refresh();
     }
 
-    // ============================================================
-    // ⭐ CAMBIO PRINCIPAL: Ahora usa StateFileResolver.ResolveSettingsPath()
-    // ============================================================
     public string ResolveSettingsFile(int n)
     {
         if (owner.room?.game?.IsArenaSession == true)
@@ -515,7 +512,7 @@ public class RCPanel : Panel, IDevUISignals
     }
 
     // ============================================================
-    // CLEAR BLEND ONLY - Mantiene el estado actual (para Clear manual)
+    // CLEAR BLEND ONLY
     // ============================================================
     public void ClearBlendOnly()
     {
@@ -528,7 +525,7 @@ public class RCPanel : Panel, IDevUISignals
     }
 
     // ============================================================
-    // RESET TO CYCLE STATE - Restaura al estado original del ciclo
+    // RESET TO CYCLE STATE
     // ============================================================
     public void ResetToCycleState()
     {

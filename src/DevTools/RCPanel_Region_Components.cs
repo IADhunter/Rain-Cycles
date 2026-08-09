@@ -289,7 +289,7 @@ public class EditableFloatField : PositionedDevUINode
 }
 
 // ================================================================
-// MOD SELECT PANEL - Ahora muestra nombres de modinfo.json
+// MOD SELECT PANEL
 // ================================================================
 public class ModSelectPanel : Panel, IDevUISignals
 {
@@ -303,7 +303,6 @@ public class ModSelectPanel : Panel, IDevUISignals
     private int _visibleItems;
     private RCPanel_RegionPage _parentPage;
     
-    // Estructura para almacenar información del mod
     private struct ModInfo
     {
         public string Path;
@@ -319,7 +318,6 @@ public class ModSelectPanel : Panel, IDevUISignals
         _visibleItems = (int)((PANEL_HEIGHT - 40f) / ITEM_HEIGHT);
         _scrollOffset = 0;
         
-        // Convertir rutas a ModInfo
         var modList = new List<ModInfo>();
         foreach (string path in modPaths)
         {
@@ -384,7 +382,6 @@ public class ModSelectPanel : Panel, IDevUISignals
     
     private void PopulateItems()
     {
-        // Limpiar items existentes
         for (int i = subNodes.Count - 1; i >= 0; i--)
         {
             if (subNodes[i] is Button btn && (
@@ -398,7 +395,6 @@ public class ModSelectPanel : Panel, IDevUISignals
             }
         }
         
-        // Mostrar mods con su nombre real (de modinfo.json)
         for (int i = _scrollOffset; i < Math.Min(_scrollOffset + _visibleItems, _mods.Length); i++)
         {
             int idx = i;
@@ -466,7 +462,6 @@ public class ModSelectPanel : Panel, IDevUISignals
             int idx = int.Parse(sender.IDstring.Substring("RC_ModSelect_".Length));
             if (idx >= 0 && idx < _mods.Length)
             {
-                // Enviamos el nombre real del mod (de modinfo.json), no la ruta
                 _parentPage.Signal(DevUISignalType.ButtonClick, sender, _mods[idx].DisplayName);
             }
         }

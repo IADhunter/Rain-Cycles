@@ -3,7 +3,6 @@ using UnityEngine;
 
 namespace FilesSetting;
 
-// Slider único de blend — estilo visual vanilla.
 public class BlendSlider : PositionedDevUINode, IDevUISignals
 {
     public static float BlendFactor = 0f;
@@ -15,7 +14,6 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
     private const float LABEL_WIDTH    = 22f;
     private const float GAP            = 5f;
 
-    // Clear pegado a la derecha, luego slider, luego label
     private const float LABEL_X   = 43f;
     private const float SLIDER_X  = 70f;
     private const float CLEAR_X   = 175f;
@@ -43,7 +41,6 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
         subNodes.Add(new Button(owner, IDstring + "_Reset", this,
             new Vector2(CLEAR_X, 0f), CLEAR_WIDTH, "Clear"));
 
-        // Barra de fondo
         fSprites.Add(new FSprite("pixel"));
         fSprites[0].scaleX = SLIDER_WIDTH;
         fSprites[0].scaleY = HEIGHT;
@@ -53,7 +50,6 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
         fSprites[0].alpha = 0.5f;
         Futile.stage.AddChild(fSprites[0]);
 
-        // Línea indicadora
         fSprites.Add(new FSprite("pixel"));
         fSprites[1].scaleX = SLIDER_WIDTH;
         fSprites[1].scaleY = 2f;
@@ -62,7 +58,6 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
         fSprites[1].color = new Color(0f, 0f, 0f);
         Futile.stage.AddChild(fSprites[1]);
 
-        // Nub
         fSprites.Add(new FSprite("pixel"));
         fSprites[2].scaleX = NUB_WIDTH;
         fSprites[2].scaleY = HEIGHT;
@@ -80,7 +75,6 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
             BlendFactor = 0f;
             _wasMoving  = false;
             SettingsBlendController.Detach();
-            // Clear manual - mantiene el estado actual
             _panel?.ClearBlendOnly();
         }
     }
@@ -144,7 +138,6 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
 
         float newT = Mathf.Clamp01((mPos.x - sliderStartX) / (SLIDER_WIDTH - NUB_WIDTH));
 
-        // Iniciar la fase si es la primera vez que se mueve desde 0
         if (!_wasMoving && newT > 0f) 
             _panel?.OnSliderStarted();
         

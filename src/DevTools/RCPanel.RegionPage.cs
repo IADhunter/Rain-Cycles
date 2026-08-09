@@ -468,7 +468,6 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private string[] GetModsWithIllustrations()
     {
         var mods = new List<string>();
-        // Entrada sintética para las ilustraciones del propio juego (no es un mod real)
         mods.Add(DEFAULT_MOD_SENTINEL);
         
         foreach (var mod in ModManager.ActiveMods)

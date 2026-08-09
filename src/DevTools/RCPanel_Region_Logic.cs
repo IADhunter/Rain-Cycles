@@ -528,8 +528,7 @@ public class RegionLogic
         
         if (!string.IsNullOrEmpty(SavedModName))
             sb.AppendLine($"Mod: {SavedModName}");
-        
-        // ACV
+
         if (_allBackgrounds.ContainsKey(ViewType.ACV) && HasAnyImage(_allBackgrounds[ViewType.ACV]))
         {
             sb.AppendLine("Acv");
@@ -541,7 +540,6 @@ public class RegionLogic
             }
         }
         
-        // RTV
         if (_allBackgrounds.ContainsKey(ViewType.RTV) && HasAnyImage(_allBackgrounds[ViewType.RTV]))
         {
             sb.AppendLine("Rtv");
@@ -553,7 +551,6 @@ public class RegionLogic
             }
         }
         
-        // PSV
         if (HasAnyPsvContent())
         {
             sb.AppendLine("Psv");
@@ -573,18 +570,12 @@ public class RegionLogic
         try
         {
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
-            
-            // ============================================================
-            // INVALIDAR CACHÉ PARA QUE LA REGIÓN SE RECARGUE DESDE DISCO
-            // ============================================================
+
             if (!string.IsNullOrEmpty(RegionCode))
             {
                 BlendSettingsLoader.InvalidateCache(RegionCode);
-                // También forzamos la recarga inmediata para que el Active refleje los cambios
                 BlendSettingsLoader.LoadRegion(RegionCode);
             }
-            
-            RSPlugin.log.LogDebug($"[RegionLogic] Configuración guardada en {path}, caché invalidada");
         }
         catch (Exception ex)
         {

@@ -20,7 +20,6 @@ public class RCDEVTools
             if (!string.IsNullOrEmpty(roomName))
             {
                 BlendSettingsWriter.EnsureFileExists(roomName);
-                // UpdateSequences eliminado — las secuencias son intrínsecas
             }
 
             self.subNodes.Add(new RCPanel(owner, "RC_Panel", self, new Vector2(790, 460f), new Vector2(215f, 215f), "Rain Cycles"));

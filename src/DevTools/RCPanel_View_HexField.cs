@@ -7,7 +7,7 @@ using RWCustom;
 namespace FilesSetting;
 
 // ================================================================
-// CLASE: INPUT BLOCKER (Bloquea input de DevTools durante edición)
+// CLASE: INPUT BLOCKER
 // ================================================================
 
 public static class InputBlocker
@@ -121,7 +121,7 @@ public static class InputBlocker
 }
 
 // ================================================================
-// CLASE: HEX TEXT FIELD (Campo de texto editable para HEX)
+// CLASE: HEX TEXT FIELD
 // ================================================================
 
 public class HexTextField : PositionedDevUINode
@@ -136,7 +136,7 @@ public class HexTextField : PositionedDevUINode
     private float _lastCursorAlpha = 0f;
     private float _width;
     private float _height;
-    private const int MAX_LEN = 7; // # + 6 hex chars
+    private const int MAX_LEN = 7;
     
     public string Text 
     { 
@@ -240,7 +240,7 @@ public class HexTextField : PositionedDevUINode
     
     private void DeleteChar()
     {
-        if (_cursorPos <= 1) return; // No borrar '#'
+        if (_cursorPos <= 1) return;
         _text = _text.Substring(0, _cursorPos - 1) + _text.Substring(_cursorPos);
         _cursorPos--;
         _label.text = _text;
@@ -283,7 +283,6 @@ public class HexTextField : PositionedDevUINode
         
         if (_isEditing)
         {
-            // Flechas izquierda/derecha
             if (Input.GetKeyDown(KeyCode.LeftArrow))
             {
                 if (_cursorPos > 1) _cursorPos--;
@@ -295,12 +294,10 @@ public class HexTextField : PositionedDevUINode
                 UpdateCursorPosition();
             }
             
-            // Ctrl+C (Copiar)
             if (Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.C))
             {
                 GUIUtility.systemCopyBuffer = _text;
             }
-            // Ctrl+V (Pegar)
             else if (Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.V))
             {
                 string clipboard = GUIUtility.systemCopyBuffer;
@@ -326,19 +323,18 @@ public class HexTextField : PositionedDevUINode
                 }
             }
             
-            // Manejo de entrada de texto
             foreach (char c in Input.inputString)
             {
-                if (c == '\b') // Backspace
+                if (c == '\b')
                 {
                     DeleteChar();
                 }
-                else if (c == '\n' || c == '\r') // Enter
+                else if (c == '\n' || c == '\r')
                 {
                     StopEditing(true);
                     return;
                 }
-                else if (c == 27) // Escape
+                else if (c == 27)
                 {
                     StopEditing(false);
                     return;
@@ -349,7 +345,6 @@ public class HexTextField : PositionedDevUINode
                 }
             }
             
-            // Enter/Escape por si acaso
             if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
             {
                 StopEditing(true);
