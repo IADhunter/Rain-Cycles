@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 using MonoMod.RuntimeDetour;
-using Watcher; // <-- NUEVO: para OuterRimView y AncientUrbanView
+using Watcher;
 using RainCycles.Blend;
 
 namespace RainCycles.Core;
@@ -40,10 +40,7 @@ public class ViewOriginalState
 public static class TintManager
 {
     private static bool _initialized = false;
-    
-    // Los Hook se conservan en campos para mantenerlos vivos (MonoMod exige
-    // referencia activa). El mod no se deshabilita en caliente, por lo que
-    // nunca se leen fuera de Init() — CS0414 esperado.
+
 #pragma warning disable CS0414
     private static Hook _setGlobalVectorHook;
     private static Hook _aboveCloudsViewUpdateHook;
@@ -124,15 +121,9 @@ public static class TintManager
         }
         
         On.OverWorld.Update += OnOverWorldUpdate;
-        
-        // ============================================================
-        // OUTERRIMVIEW (Watcher) - captura incondicional
-        // ============================================================
+
         On.Watcher.OuterRimView.ctor += OnOuterRimViewCtor;
-        
-        // ============================================================
-        // ANCIENTURBANVIEW (Watcher) - captura incondicional
-        // ============================================================
+
         On.Watcher.AncientUrbanView.ctor += OnAncientUrbanViewCtor;
         
         _initialized = true;
@@ -407,9 +398,6 @@ public static class TintManager
         bool roomChanged = (roomName != _lastRoomName);
         _lastRoomName = roomName;
         
-        // ============================================================
-        // ENTRADA A SALA ESTÁTICA (solo cuando cambia la sala)
-        // ============================================================
         if (isStatic && !_inStaticRoom && roomChanged)
         {
             _inStaticRoom = true;
@@ -421,9 +409,6 @@ public static class TintManager
                 SettingsBlendController.ApplyStaticTints(self.room);
             }
         }
-        // ============================================================
-        // SALIDA DE SALA ESTÁTICA (solo cuando cambia la sala)
-        // ============================================================
         else if (!isStatic && _inStaticRoom && roomChanged)
         {
             _inStaticRoom = false;
@@ -431,10 +416,6 @@ public static class TintManager
             _currentStaticRoom = null;
         }
         
-        // ============================================================
-        // SALA VANILLA O BLEND SIN TINT - RESTAURAR VANILLA
-        // SOLO CUANDO LA SALA CAMBIA
-        // ============================================================
         if (roomChanged)
         {
             if (!isStatic && !isBlend)
@@ -447,9 +428,6 @@ public static class TintManager
             }
         }
         
-        // ============================================================
-        // DETECTAR CUANDO SE DEJA DE ESTAR EN UNA SALA ESTÁTICA
-        // ============================================================
         if (!isStatic && _wasStaticRoom && roomChanged)
         {
             _wasStaticRoom = false;

@@ -27,12 +27,6 @@ public static partial class SettingsBlendController
             cam.SetBlendActive(room.abstractRoom.name);
             cam.UpdateBlendPalette(0f);
             cam.ApplyFade();
-
-            // ════════════════════════════════════════════════════════════════
-            // ⚠️ TERRAIN BLEND ELIMINADO - A LA ESPERA DE NUEVA IMPLEMENTACIÓN
-            // ════════════════════════════════════════════════════════════════
-            // cam.SetBlendTerrain(_snapA, _snapB);  ← ELIMINADO
-            // cam.UpdateBlendTerrain(0f, _snapA, _snapB);  ← ELIMINADO
         }
         RoomCameraExtensions.BuildLightIndex(room);
         ApplyBlend(0f);

@@ -195,15 +195,10 @@ public static partial class SettingsBlendController
             ForceHideVanillaSlots(self.room, rcState);
         }
 
-        // ═══════════════════════════════════════════════════════════════
-        // SINCRONIZAR POSICIÓN DEL FOG RC CON EL FOG VANILLA (PSV)
-        // SOLO SI ESTAMOS EN UNA SALA PSV Y TENEMOS SLOTS DE FOG
-        // ═══════════════════════════════════════════════════════════════
         if (_psvScene != null && _rcSlotsPSVFog != null && _rcSlotsPSVFog.Count > 0)
         {
             SyncFogSlotPosition(self);
         }
-        // Si estamos en una sala que NO es PSV, limpiar la cache del fog
         else if (_psvScene == null && _cachedVanillaFog != null)
         {
             ClearCachedVanillaFog();
@@ -250,7 +245,6 @@ public static partial class SettingsBlendController
         {
             if (room.updateList[i] is AboveCloudsView acv)
             {
-                // PSV: ocultar sky
                 if (view == ViewType.PSV || view == ViewType.ACV)
                 {
                     acv.daySky.alpha = 0f;
@@ -260,7 +254,6 @@ public static partial class SettingsBlendController
             }
             else if (room.updateList[i] is RoofTopView rtv)
             {
-                // RTV: ocultar sky
                 if (view == ViewType.RTV)
                 {
                     rtv.daySky.alpha = 0f;

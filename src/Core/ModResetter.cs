@@ -38,29 +38,24 @@ public static class ModResetter
         On.RainWorldGame.ctor += OnGameCtor;
         
         _isInitialized = true;
-        RSPlugin.log.LogInfo("[ModResetter] Inicializado");
     }
     
     private static void OnGameShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
     {
-        RSPlugin.log.LogInfo("[ModResetter] Ejecutando eliminaciones pendientes");
         StateFileResolver.ExecutePendingDeletes();
-        
-        RSPlugin.log.LogInfo("[ModResetter] Limpiando estado del mod");
+
         ResetAllModState();
         orig(self);
     }
     
     private static void OnGameCtor(On.RainWorldGame.orig_ctor orig, RainWorldGame self, ProcessManager manager)
     {
-        RSPlugin.log.LogInfo("[ModResetter] Preparando estado limpio para nueva partida");
         ResetAllModState();
         orig(self, manager);
         
         if (self.world?.region?.name != null)
         {
             string regionCode = self.world.region.name.ToUpperInvariant();
-            RSPlugin.log.LogInfo($"[ModResetter] Recargando configuración para región {regionCode}");
             
             BlendSettingsLoader.LoadRegion(regionCode);
             
@@ -94,8 +89,6 @@ public static class ModResetter
     
     public static void ResetAllModState()
     {
-        RSPlugin.log.LogInfo("[ModResetter] Iniciando limpieza completa");
-        
         StopActiveSystems();
         
         foreach (var type in _typesToReset)
@@ -105,8 +98,6 @@ public static class ModResetter
         
         PerformSpecificCleanup();
         StateFileResolver.ClearAllPendingDeletes();
-        
-        RSPlugin.log.LogInfo("[ModResetter] Limpieza completada");
     }
     
     private static void StopActiveSystems()
@@ -140,9 +131,8 @@ public static class ModResetter
                     object defaultValue = GetDefaultValue(field.FieldType);
                     field.SetValue(null, defaultValue);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    RSPlugin.log.LogDebug($"[ModResetter] No se pudo resetear {type.Name}.{field.Name}: {ex.Message}");
                 }
             }
         }
@@ -246,9 +236,6 @@ public static class ModResetter
         var type = typeof(RoomCameraExtensions);
         ClearCollectionField(type, "_stateCache");
         SetFieldValue(type, "_preloadHooksInitialized", false);
-        // NOTA: el loop genérico de ResetTypeStaticFields ya resetearía esto solo
-        // (no es readonly), pero se deja explícito por el mismo motivo que
-        // _preloadHooksInitialized arriba: claridad sobre qué se está limpiando.
         SetFieldValue(type, "_lightsInitialized", false);
     }
     

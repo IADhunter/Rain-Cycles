@@ -12,9 +12,6 @@ public static partial class SettingsBlendController
 
     public static void AttachWithExternalT(Room room, string pathA, string pathB, bool isAuto = false)
     {
-        // ============================================================
-        // VERIFICACIÓN: LA SALA DEBE TENER 4 ESTADOS PARA BLEND
-        // ============================================================
         string roomName = room?.abstractRoom?.name;
         if (!string.IsNullOrEmpty(roomName) && !StateFileResolver.HasFullStates(roomName))
         {
@@ -62,7 +59,6 @@ public static partial class SettingsBlendController
             RoomCameraExtensions.BuildLightIndex(room);
 
             string roomName2 = room.abstractRoom?.name;
-            // ⭐ Ahora usa StateFileResolver.GetStateFromPath()
             int stateA = StateFileResolver.GetStateFromPath(pathA, roomName2);
             int stateB = StateFileResolver.GetStateFromPath(pathB, roomName2);
             
@@ -107,7 +103,6 @@ public static partial class SettingsBlendController
             string roomName = room.abstractRoom?.name;
             if (settings != null && roomName != null)
             {
-                // ⭐ Ahora usa StateFileResolver.ResolveSettingsPath()
                 string pathA = StateFileResolver.ResolveSettingsPath(roomName, BlendClock.StateA);
                 if (pathA != null)
                     _snapOriginal = SettingsSnapshot.GetCached(pathA, roomName);

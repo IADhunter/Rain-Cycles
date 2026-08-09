@@ -103,14 +103,8 @@ public static partial class SettingsBlendController
         On.RoomCamera.Update                += OnRoomCameraUpdate;
         On.RoomCamera.LoadPalette           += OnLoadPalette;
 
-        // ═══════════════════════════════════════════════════════════════
-        // NUEVO HOOK: Sincronizar fog RC durante DrawSprites del vanilla
-        // ═══════════════════════════════════════════════════════════════
         On.AboveCloudsView.HorizonFog.DrawSprites += OnHorizonFogDrawSprites;
 
-        // ═══════════════════════════════════════════════════════════════
-        // HOOK: Ocultar DistantCloud con depth >= 195f en PSV
-        // ═══════════════════════════════════════════════════════════════
         On.AboveCloudsView.DistantCloud.InitiateSprites += OnDistantCloudInitiateSprites;
     }
 

@@ -7,7 +7,6 @@ using RainCycles.Blend;
 
 namespace RainCycles.Core;
 
-// Resuelve rutas de settings_N.txt y rota el archivo cargado según el ciclo.
 public static class StateFileResolver
 {
     private static int  _frozenCycle    = 0;
@@ -31,7 +30,6 @@ public static class StateFileResolver
         string key = GetPendingKey(roomName, state);
         _pendingDeletes.Add(key);
         RoomCameraExtensions.InvalidateRoomCache(roomName);
-        RSPlugin.log.LogInfo($"[StateFileResolver] Marcado para eliminar: {roomName} estado {state}");
     }
     
     public static void UnmarkPendingDelete(string roomName, int state)
@@ -39,7 +37,6 @@ public static class StateFileResolver
         string key = GetPendingKey(roomName, state);
         _pendingDeletes.Remove(key);
         RoomCameraExtensions.InvalidateRoomCache(roomName);
-        RSPlugin.log.LogInfo($"[StateFileResolver] Desmarcado: {roomName} estado {state}");
     }
     
     public static bool IsPendingDelete(string roomName, int state)
@@ -68,9 +65,7 @@ public static class StateFileResolver
     public static void ExecutePendingDeletes()
     {
         if (_pendingDeletes.Count == 0) return;
-        
-        RSPlugin.log.LogInfo($"[StateFileResolver] Ejecutando {_pendingDeletes.Count} eliminaciones pendientes");
-        
+
         var affectedRooms = new HashSet<string>();
         
         foreach (string key in _pendingDeletes.ToList())
@@ -89,7 +84,6 @@ public static class StateFileResolver
                 try
                 {
                     File.Delete(path);
-                    RSPlugin.log.LogInfo($"[StateFileResolver] Eliminado: {path}");
                 }
                 catch (Exception ex)
                 {
@@ -104,7 +98,6 @@ public static class StateFileResolver
         }
         
         _pendingDeletes.Clear();
-        RSPlugin.log.LogInfo("[StateFileResolver] Eliminaciones pendientes completadas");
     }
     
     public static void ClearAllPendingDeletes()
@@ -149,9 +142,8 @@ public static class StateFileResolver
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            RSPlugin.log.LogDebug($"[StateFileResolver] Error obteniendo slugcat: {ex.Message}");
         }
         return "";
     }
@@ -187,12 +179,9 @@ public static class StateFileResolver
             _resolutionCache.Remove(cacheKey);
         }
         
-        RSPlugin.log.LogDebug($"[StateFileResolver] Resolviendo {roomName} estado {state} | Slugcat: '{slugcatSuffix}' | DLCs activos: [{string.Join(", ", activeDLCs)}]");
-        
         string dir = BuildDirectoryPath(roomName);
         if (!Directory.Exists(dir))
         {
-            RSPlugin.log.LogDebug($"[StateFileResolver] Directorio no existe: {dir}");
             return null;
         }
         
@@ -202,13 +191,11 @@ public static class StateFileResolver
         {
             if (File.Exists(candidate))
             {
-                RSPlugin.log.LogDebug($"[StateFileResolver] Encontrado: {candidate}");
                 _resolutionCache[cacheKey] = candidate;
                 return candidate;
             }
         }
         
-        RSPlugin.log.LogDebug($"[StateFileResolver] No se encontró ningún archivo para {roomName} estado {state}");
         return null;
     }
     
@@ -222,11 +209,7 @@ public static class StateFileResolver
         string dashTwoName = isDashTwo ? baseName + "-2" : null;
         
         // ============================================================
-        // NUEVO ORDEN: slugcat tiene prioridad sobre DLC
-        // 1. DLC + slugcat (más específico)
-        // 2. Solo slugcat
-        // 3. Solo DLC
-        // 4. Base
+        // ORDEN DE PRIORIDAD: slugcat tiene prioridad sobre DLC
         // ============================================================
         
         // 1. DLC + slugcat
@@ -424,6 +407,5 @@ public static class StateFileResolver
     public static void InvalidatePathCache()
     {
         _resolutionCache.Clear();
-        RSPlugin.log.LogDebug("[StateFileResolver] Caché de rutas invalidada");
     }
 }

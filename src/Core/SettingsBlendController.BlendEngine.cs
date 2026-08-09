@@ -11,9 +11,6 @@ public static partial class SettingsBlendController
 {
     private static void ApplyBlend(float t)
     {
-        // ============================================================
-        // SALAS ESTÁTICAS - COMPLETAMENTE INDEPENDIENTES
-        // ============================================================
         if (_room != null && IsStaticViewRoom(_room))
         {
             return;
@@ -26,18 +23,12 @@ public static partial class SettingsBlendController
         if (cam == null)
             return;
 
-        // ============================================================
-        // PALETAS
-        // ============================================================
         var blendData = cam.GetBlendData();
         if (blendData == null || !blendData.isBlendActive)
             cam.SetBlendActive(_room.abstractRoom.name);
         
         cam.UpdateBlendPalette();
 
-        // ============================================================
-        // TINTES - SHADERS GLOBALES + ACV
-        // ============================================================
         Color vanillaMultiply = Color.white;
         Color vanillaAtmosphere = Color.white;
         if (_room != null)
@@ -48,9 +39,6 @@ public static partial class SettingsBlendController
         var lerped = TintManager.InterpolateTints(_snapA, _snapB, t, vanillaMultiply, vanillaAtmosphere);
         _activeSnapshot = lerped;
 
-        // ============================================================
-        // TERRAIN SCALARS
-        // ============================================================
         _room.ApplyTerrainScalars(_snapA, _snapB, t);
 
         if (lerped.TintMultiply.HasValue)
@@ -76,23 +64,14 @@ public static partial class SettingsBlendController
             }
         }
 
-        // ============================================================
-        // ROOM SCALARS
-        // ============================================================
         _room.ApplyRoomScalars(_snapA, _snapB, t);
 
-        // ============================================================
-        // DECALS - SOLO PARA SALAS BLEND
-        // ============================================================
         if (IsBlendRoom(_room))
         {
             var lerpedDecals = RoomCameraExtensions.LerpDecals(_snapA, _snapB, t);
             _room.ApplyDecalOpacities(lerpedDecals);
         }
 
-        // ============================================================
-        // SCALAR EFFECTS (RoomSettings.RoomEffect)
-        // ============================================================
         _room.ApplyScalarEffects(_snapA, _snapB, t);
 
         if (_room != null)
@@ -135,20 +114,6 @@ public static partial class SettingsBlendController
     {
         orig(self);
 
-        // ============================================================
-        // TERRAIN BLEND - LA ACTUALIZACIÓN SE HACE EN OnRoomCameraUpdate
-        // ============================================================
-        // La textura terrainBlendedTexture se aplica al shader en
-        // SettingsBlendController.CameraHooks.cs -> OnRoomCameraUpdate
-        // ============================================================
-
-        // ⭐ FIX ENTRADA (flash de estado 1): vanilla llama ApplyPalette()
-        // incondicionalmente en ApplyPositionChange() (RoomCamera.cs:2261),
-        // reconstruyendo terrainPalette desde el archivo base (estado 1).
-        // El hook OnApplyPalette solo ejecutaba orig() y dejaba el terreno
-        // "base" durante unos frames hasta el próximo OnRoomCameraUpdate.
-        // Si estamos en una sala blend con blend activo, re-vinculamos el
-        // terreno blend generado para que no se muestre el estado 1.
         var blendData = self.GetBlendData();
         if (blendData != null && blendData.isBlendActive &&
             self.room != null && IsBlendRoom(self.room) &&
