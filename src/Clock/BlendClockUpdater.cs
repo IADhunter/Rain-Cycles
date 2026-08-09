@@ -83,7 +83,7 @@ public static class BlendClockUpdater
             _startFailed = false;
             _lastRegion = regionAfter;
             RoomCameraExtensions.ClearAllCaches();
-            StateFileResolver.InvalidatePathCache(); // ⭐ NUEVO
+            StateFileResolver.InvalidatePathCache();
 
             var settings = BlendSettingsLoader.Active;
             bool isClockEnabled = settings != null && settings.Clock;
@@ -106,11 +106,6 @@ public static class BlendClockUpdater
 
         if (self.GamePaused)
         {
-            // ⚠️ En pausa NO se re-aplica la paleta per-frame: vanilla congela
-            // las cámaras (RainWorldGame.cs:2094) y DrawSprites no corre, así que
-            // re-aplicar ApplyPalette dejaría los sprites en un estado intermedio
-            // nunca corregido (ojos de PlateTree.Bulb visibles, PlateTree.cs:899
-            // vs 906-909). El frame renderizado en pausa = último frame jugable.
             return;
         }
 
@@ -118,9 +113,6 @@ public static class BlendClockUpdater
         if (isArena && BlendSettingsLoader.Active == null) return;
         if (!isArena && self.GetStorySession == null) return;
 
-        // ============================================================
-        // BLEND CLOCK STARTUP
-        // ============================================================
         if (!isArena && !_winHandledThisSession && !BlendClock.IsRunning && !BlendClock.EditMode && !_startFailed)
         {
             var s = BlendSettingsLoader.Active;
@@ -168,10 +160,6 @@ public static class BlendClockUpdater
                 if (!_loggedRainCycleThisSession)
                 {
                     _loggedRainCycleThisSession = true;
-                    float cycleLenSeconds = rainLen / 40f;
-                    RSPlugin.log.LogInfo(
-                        $"[RainCycleCheck] cycleLength={rainLen} ticks " +
-                        $"(~{cycleLenSeconds:F1}s) | timer inicial={self.world.rainCycle.timer}");
                 }
             }
             BlendClock.Tick(GameDelta(self), rainTimer, rainLen);
@@ -185,9 +173,6 @@ public static class BlendClockUpdater
 
         SettingsBlendController.ProcessPendingSkyRefresh();
 
-        // ============================================================
-        // ACTUALIZAR CÁMARAS - CACHES EVITAN TRABAJO PESADO
-        // ============================================================
         UpdateCameras(self);
     }
 
@@ -228,7 +213,6 @@ public static class BlendClockUpdater
 
             if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending && hasFullStates)
             {
-                // ⭐ Ahora usa StateFileResolver.ResolveSettingsPath()
                 string pA = GetSettingsFile(game, room, BlendClock.StateA);
                 string pB = GetSettingsFile(game, room, BlendClock.StateB);
 
@@ -296,12 +280,6 @@ public static class BlendClockUpdater
             {
                 cam.UpdateBlendPalette();
 
-                // ⭐ FIX ENTRADA (flash de estado 1): la textura terrain se
-                // genera aquí, DESPUÉS de que las cámaras ya corrieron su
-                // Update/applied palettes. Publicarla a nivel global justo tras
-                // generarla cierra el hueco de 1 frame que deja vanilla
-                // (RoomCamera.cs:1113-1115 bindea el terreno base) sin esperar
-                // al próximo OnRoomCameraUpdate.
                 var blendTexData = cam.GetBlendData();
                 if (blendTexData != null && blendTexData.isBlendActive &&
                     blendTexData.terrainBlendedTexture != null)
@@ -322,9 +300,6 @@ public static class BlendClockUpdater
         UpdateSliders(game);
     }
 
-    // ============================================================
-    // ⭐ CAMBIO PRINCIPAL: Ahora usa StateFileResolver.ResolveSettingsPath()
-    // ============================================================
     private static string GetSettingsFile(RainWorldGame game, string room, int state)
     {
         if (game?.IsArenaSession == true)
