@@ -5,7 +5,6 @@ using RainCycles.Snapshot;
 
 namespace RainCycles.Patches;
 
-// Almacena datos extendidos de RoomSettings que el juego vanilla no maneja
 public static class RoomSettingsExtensions
 {
     private static readonly ConditionalWeakTable<RoomSettings, ExtData> _table
@@ -53,8 +52,6 @@ public static class RoomSettingsExtensions
         return GetOrCreate(settings).RcType != RcType.None;
     }
 
-    // true si el estado RC fue determinado (por un Load o por una señal del
-    // usuario en DevTools). Distingue "sala vanilla (None)" de "aún no cargado".
     public static bool IsRcStateLoaded(this RoomSettings settings)
     {
         return GetOrCreate(settings).Loaded;

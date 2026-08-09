@@ -59,27 +59,14 @@ public static class RoomSettingsPatches
                     {
                         string roomName = cam.room.abstractRoom?.name;
 
-                        // ============================================================
-                        // INVALIDAR ROOMBLENDSTATE (IsBlendRoom/IsStaticViewRoom cache)
-                        // al guardar la sala: refleja el cambio de Type/View/Tint
-                        // en el mismo frame, sin esperar a una transición de sala.
-                        // ============================================================
                         if (!string.IsNullOrEmpty(roomName))
                             RoomCameraExtensions.InvalidateRoomCache(roomName);
 
-                        // ============================================================
-                        // RECARGAR TERRAIN CACHE
-                        // RefreshActiveSnapshots() se encarga del blend
-                        // ============================================================
                         if (!string.IsNullOrEmpty(roomName))
                         {
-                            RSPlugin.log.LogDebug($"[TerrainBlend] Recargando cache terrain para sala: {roomName}");
                             RoomCameraExtensions.ReloadRoomTerrainCache(roomName);
                         }
 
-                        // ============================================================
-                        // RECARGA ROOM PALETTE (código existente)
-                        // ============================================================
                         var freshSnap = SettingsSnapshot.GetCached(filePath, cam.room.abstractRoom?.name);
 
                         if (freshSnap != null)
@@ -117,7 +104,6 @@ public static class RoomSettingsPatches
                                 if (SettingsBlendController.IsActive && SettingsBlendController.ActiveRoom == cam.room)
                                 {
                                     SettingsBlendController.RefreshActiveSnapshots();
-                                    RSPlugin.log.LogDebug($"[TerrainBlend] RefreshActiveSnapshots completado para sala: {roomName}");
                                 }
                                 else
                                 {
