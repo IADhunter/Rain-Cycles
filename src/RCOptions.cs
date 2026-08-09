@@ -3,11 +3,8 @@ using UnityEngine;
 
 namespace RainCycles;
 
-// Interfaz Remix de Rain Cycles.
-// Registrada en Plugin.cs via MachineConnector.SetRegisteredOI.
 public class RCOptions : OptionInterface
 {
-    // El Configurable vive aquí — se crea en el ctor, antes de Initialize
     public readonly Configurable<bool> randomCycles;
 
     public RCOptions()

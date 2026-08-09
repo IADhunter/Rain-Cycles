@@ -46,8 +46,7 @@ public class RSPlugin : BaseUnityPlugin
             IsInit = true;
 
             _options = new RCOptions();
-            bool ok = MachineConnector.SetRegisteredOI(ID, _options);
-            Logger.LogDebug($"[RC] SetRegisteredOI result: {ok}");
+            MachineConnector.SetRegisteredOI(ID, _options);
 
             CreateTransparentPlaceholder();
 
@@ -67,8 +66,6 @@ public class RSPlugin : BaseUnityPlugin
             DayNightBlocker.Init();
             PlateTreeRotPatch.Init();
             RainCyclesEventDispatcher.Init();
-
-            Logger.LogInfo($"[{NAME}] {VER} loaded successfully!");
         }
         catch (Exception ex)
         {
