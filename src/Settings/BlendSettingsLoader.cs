@@ -15,9 +15,6 @@ public static class BlendSettingsLoader
     public static BlendSettings Active => _activeSettings;
     public static string ActiveRegion => _activeRegion;
     
-    /// <summary>
-    /// Devuelve el nombre del mod seleccionado en el blend settings activo.
-    /// </summary>
     public static string ActiveModName => _activeSettings?.SelectedModName ?? "";
 
     public static void Init()
@@ -30,18 +27,12 @@ public static class BlendSettingsLoader
         orig(self);
     }
 
-    /// <summary>
-    /// Invalida la caché para una región, forzando recarga desde disco en la próxima LoadRegion.
-    /// </summary>
     public static void InvalidateCache(string regionCode)
     {
         if (string.IsNullOrEmpty(regionCode)) return;
         regionCode = regionCode.ToUpperInvariant();
-        if (_cache.Remove(regionCode))
-        {
-            RSPlugin.log.LogDebug($"[BlendSettingsLoader] Caché invalidada para región {regionCode}");
-        }
-        // Si la región activa es la que se invalida, también la recargamos inmediatamente para mantener coherencia.
+        _cache.Remove(regionCode);
+
         if (_activeRegion == regionCode)
         {
             _activeSettings = null;
@@ -52,7 +43,6 @@ public static class BlendSettingsLoader
     {
         regionCode = regionCode.ToUpperInvariant();
 
-        // Si la caché no tiene la región o se ha invalidado, se carga de disco.
         if (!_cache.TryGetValue(regionCode, out var settings))
         {
             settings = LoadFromDisk(regionCode);
@@ -61,11 +51,6 @@ public static class BlendSettingsLoader
 
         _activeRegion   = regionCode;
         _activeSettings = settings;
-        
-        if (settings != null && !string.IsNullOrEmpty(settings.SelectedModName))
-        {
-            RSPlugin.log.LogInfo($"[BlendSettingsLoader] Mod seleccionado para región {regionCode}: {settings.SelectedModName}");
-        }
         
         int cycle = GetCurrentCycleNumber();
         
@@ -82,7 +67,6 @@ public static class BlendSettingsLoader
         }
         
         Core.StateFileResolver.SetCurrentCycleState(state);
-        RSPlugin.log.LogInfo($"[BlendSettingsLoader] Estado calculado para región {regionCode}: {state} (ciclo {cycle})");
     }
 
     public static BlendSettings GetForRegion(string regionCode)
@@ -154,7 +138,6 @@ public static class BlendSettingsLoader
                         break;
                     case "mod":
                         settings.SelectedModName = val.Trim();
-                        RSPlugin.log.LogDebug($"[BlendSettingsLoader] Mod seleccionado: {settings.SelectedModName}");
                         break;
                     default:
                         if (key.StartsWith("bkg") && currentView != ViewType.None)
