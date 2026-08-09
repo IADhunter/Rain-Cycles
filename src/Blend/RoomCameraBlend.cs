@@ -7,14 +7,6 @@ using RainCycles.Core;
 
 namespace RainCycles.Blend;
 
-/// <summary>
-/// Extensión modular de RoomCamera para el sistema de blend.
-/// 
-/// Arquitectura simplificada (Single Source of Truth):
-/// - BlendClock es la única fuente de verdad para StateA, StateB, T, Phase.
-/// - CameraBlendData solo cachea texturas de paletas (caras de recargar).
-/// - No almacena snapshots ni paths. Se resuelven cada frame desde el clock.
-/// </summary>
 public static partial class RoomCameraExtensions
 {
     private static readonly ConditionalWeakTable<RoomCamera, CameraBlendData> _blendData
@@ -22,11 +14,11 @@ public static partial class RoomCameraExtensions
 
     public class CameraBlendData
     {
-        // === Estado: solo metadatos de texturas, NO snapshots ===
+        // === Estado ===
         public bool isBlendActive;
         public string roomName;
 
-        // === Paletas principales (cache de texturas) ===
+        // === Paletas principales ===
         public Texture2D mainTexA;
         public Texture2D mainTexB;
         public int lastMainPaletteA = -1;
@@ -36,7 +28,7 @@ public static partial class RoomCameraExtensions
         public Color32[] mainPixelsA;
         public Color32[] mainPixelsB;
 
-        // === Fade palettes (cache de texturas) ===
+        // === Fade palettes ===
         public Texture2D fadeTexA;
         public Texture2D fadeTexB;
         public int lastFadePaletteA = -1;
@@ -46,7 +38,7 @@ public static partial class RoomCameraExtensions
         public Color32[] fadePixelsA;
         public Color32[] fadePixelsB;
 
-        // === Terrain blend (ver RoomCameraBlend.Terrain.cs) ===
+        // === Terrain blend ===
         public Texture2D terrainBlendedTexture;
         public int lastTerrainStateA = -1;
         public int lastTerrainStateB = -1;
@@ -77,9 +69,6 @@ public static partial class RoomCameraExtensions
 
         cam.paletteBlend = 0f;
 
-        // ════════════════════════════════════════════════════════════════════
-        // LIMPIAR CACHE DE LA SALA ASOCIADA A ESTA CÁMARA
-        // ════════════════════════════════════════════════════════════════════
         if (!string.IsNullOrEmpty(data.roomName))
         {
             InvalidateRoomCache(data.roomName);
@@ -110,9 +99,4 @@ public static partial class RoomCameraExtensions
         return data;
     }
 
-    // ═════════════════════════════════════════════════════════════════════
-    //  LIGHT SOURCE COLOR INTERPOLATION
-    //  MOVIDO a RoomCameraBlend.Lights.cs (junto con los patches que lo
-    //  consumen: LightBeam.Update / LightSource.Update). Ver ese archivo.
-    // ═════════════════════════════════════════════════════════════════════
-}
+    }

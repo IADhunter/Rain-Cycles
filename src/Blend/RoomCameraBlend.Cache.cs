@@ -25,9 +25,7 @@ public static partial class RoomCameraExtensions
     private static bool _preloadHooksInitialized = false;
     
     // ============================================================
-    // ROOMBLENDSTATE - Metadatos derivados de la sala, calculados
-    // UNA sola vez por carga de sala (OnRoomLoaded / lazy).
-    // Lectura pura de diccionario en el hot path.
+    // ROOMBLENDSTATE
     // ============================================================
     public readonly struct RoomBlendState
     {
@@ -170,25 +168,17 @@ public static partial class RoomCameraExtensions
     // MÉTODOS PÚBLICOS PARA RECARGA DE TERRAIN CACHE
     // ============================================================
     
-    /// <summary>
-    /// Invalida la cache de terrain para una sala específica.
-    /// </summary>
     public static void InvalidateRoomTerrainCache(string roomName)
     {
         if (string.IsNullOrEmpty(roomName)) return;
         UnloadRoomTerrainCache(roomName);
-        RSPlugin.log.LogDebug($"[TerrainBlend] Cache invalidada para sala: {roomName}");
     }
     
-    /// <summary>
-    /// Recarga la cache de terrain para una sala específica desde disco.
-    /// </summary>
     public static void ReloadRoomTerrainCache(string roomName)
     {
         if (string.IsNullOrEmpty(roomName)) return;
         UnloadRoomTerrainCache(roomName);
         GetOrCreateTerrainGrid(roomName);
-        RSPlugin.log.LogDebug($"[TerrainBlend] Cache recargada para sala: {roomName}");
     }
     
     // ============================================================

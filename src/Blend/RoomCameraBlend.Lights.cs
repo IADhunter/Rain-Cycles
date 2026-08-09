@@ -6,17 +6,6 @@ using RainCycles.Snapshot;
 
 namespace RainCycles.Blend;
 
-/// <summary>
-/// Sistema de luces durante el blend: color de Environment (LightBeam/LightSource
-/// Update) e interpolación + aplicación de intensidad/opacidad (LightIntensities,
-/// LightBeams).
-/// 
-/// FIX TRANSICIONES (07/07/2026): Los hooks leen directamente del _stateCache
-/// por (roomName, state), que es inmutable durante la vida de la sala.
-/// Esto evita que al salir de una sala blend los light sources absorban pixels
-/// de la sala de destino, y no reproduce el bug de opacidad porque nunca se
-/// reasigna self.color en los casos de no-op.
-/// </summary>
 public static partial class RoomCameraExtensions
 {
     private static readonly Dictionary<LightSource, int> _lightIndex = new Dictionary<LightSource, int>();
@@ -31,7 +20,6 @@ public static partial class RoomCameraExtensions
         On.LightSource.Update += OnLightSourceUpdate;
 
         _lightsInitialized = true;
-        RSPlugin.log.LogInfo("[RoomCameraBlend.Lights] Inicializado");
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -51,7 +39,6 @@ public static partial class RoomCameraExtensions
         var cam = self.room.game?.cameras?[0];
         if (cam == null) return;
 
-        // Guarda de vanilla: si la cámara no está en esta sala, no intervenimos
         if (cam.room != self.room) return;
 
         string roomName = self.room.abstractRoom?.name;
@@ -80,7 +67,6 @@ public static partial class RoomCameraExtensions
         var cam = self.room.game?.cameras?[0];
         if (cam == null) return;
 
-        // Guarda de vanilla: si la cámara no está en esta sala, no intervenimos
         if (cam.room != self.room) return;
 
         string roomName = self.room.abstractRoom?.name;
@@ -134,7 +120,6 @@ public static partial class RoomCameraExtensions
         var keyA = (roomName, stateA);
         if (!_stateCache.TryGetValue(keyA, out var cachedA) || cachedA.mainPixels == null)
         {
-            RSPlugin.log.LogDebug($"[Light] Cache miss para sala {roomName} estado {stateA}");
             return false;
         }
 
@@ -146,7 +131,6 @@ public static partial class RoomCameraExtensions
             var keyB = (roomName, stateB);
             if (!_stateCache.TryGetValue(keyB, out var cachedB) || cachedB.mainPixels == null)
             {
-                RSPlugin.log.LogDebug($"[Light] Cache miss para sala {roomName} estado {stateB}");
                 return false;
             }
             pixelsB = cachedB.mainPixels;

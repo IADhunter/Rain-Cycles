@@ -137,21 +137,7 @@ public static partial class RoomCameraExtensions
 
     public static void ClearEffectData(RoomCamera cam)
     {
-        // ═════════════════════════════════════════════════════════════════════
-        // VACIADO INTENCIONAL (regresión corregida, 03/08/2026):
-        // El cuerpo anterior restauraba SurfaceSandstorm (y otros efectos)
-        // directo sobre rs.effects de la sala VIEJA mientras aún estaba
-        // visible al salir (Detach -> ClearBlendSnapshots -> ClearEffectData
-        // con cam.room == _room, porque el cambio real de sala ocurre 1+
-        // frames después). Eso hacía que el sandstorm de la sala blend se
-        // esfumara en los últimos frames.
-        // La versión 1.5 (sin el bug) lo tenía vacío. La sala blend que se
-        // sale se descarga (ChangeRoom -> NoLongerViewed) y al re-entrar se
-        // recarga desde archivo con los valores originales, así que no puede
-        // quedar "pegada" con efectos mutados.
-        // Si algún día aparece un leak real multi-cámara (sala viva sin blend),
-        // re-agregar el restore con el timing correcto: en OnChangeRoom,
-        // cuando la sala ya no se ve (cam.room != _room).
+        // VACIADO INTENCIONAL (regresión corregida 03/08/2026)
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -186,9 +172,6 @@ public static partial class RoomCameraExtensions
         if (sandstorm >= 0f)
             ApplyEffect(room, new RoomSettings.RoomEffect.Type("SurfaceSandstorm"), sandstorm);
 
-        // Efectos de nieve (Downpour, activados por SnowLightController).
-        // Fallback por efecto: SnowLight ausente = 0.5 (la luz "por defecto"
-        // del controlador), SnowSparkle ausente = 0 (sin grano).
         ApplyEffect(room, SnowLightController.SnowLightEffect,   LerpScalarEffect(a.EffectSnowLight,   b.EffectSnowLight,   t, 0.5f));
         ApplyEffect(room, SnowLightController.SnowSparkleEffect, LerpScalarEffect(a.EffectSnowSparkle, b.EffectSnowSparkle, t));
     }
@@ -230,7 +213,6 @@ public static partial class RoomCameraExtensions
 
     // ═════════════════════════════════════════════════════════════════════
     //  DECALS - INTERPOLACIÓN Y APLICACIÓN DURANTE EL BLEND
-    //  (Extraído de SettingsSnapshotLerp y RoomEffectsApplier)
     // ═════════════════════════════════════════════════════════════════════
 
     public static DecalLerpResult LerpDecals(SettingsSnapshot a, SettingsSnapshot b, float t)

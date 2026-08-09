@@ -56,9 +56,6 @@ public static partial class RoomCameraExtensions
         string roomName = data.roomName ?? cam.room?.abstractRoom?.name;
         if (string.IsNullOrEmpty(roomName)) return;
 
-        // ============================================================
-        // DETECTAR MODO MANUAL (SLIDER)
-        // ============================================================
         bool isManualBlend = SettingsBlendController.IsActive && 
                              SettingsBlendController.IsExternalT &&
                              SettingsBlendController.ActiveRoom == cam.room;
