@@ -20,7 +20,7 @@ public static partial class SettingsBlendController
     }
 
     // ============================================================
-    // FORCE SUN SHADER - Asegura que los slots Sun usen shader aditivo
+    // FORCE SUN SHADER
     // ============================================================
     private static void ForceSunShader(List<BackgroundScene.Simple2DBackgroundIllustration> sunSlots, RoomCamera cam)
     {
@@ -38,7 +38,6 @@ public static partial class SettingsBlendController
 
     // ============================================================
     // CREAR SLOTS - 4 slots en orden INVERSO
-    // slot3 (estado 4, detrás) → slot2 → slot1 → slot0 (estado 1, encima)
     // ============================================================
     private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateRcSlotsVanilla(
         BackgroundScene scene, Room room, SkyType sky)
@@ -113,7 +112,6 @@ public static partial class SettingsBlendController
         ViewType view = sky == SkyType.ACV ? ViewType.ACV :
                         sky == SkyType.RTV ? ViewType.RTV : ViewType.PSV;
 
-        // Asignar imágenes a los 4 slots según estado
         for (int state = 1; state <= 4; state++)
         {
             string file = effectiveSettings.GetBkgFileForState(state, view);
@@ -125,13 +123,11 @@ public static partial class SettingsBlendController
             }
         }
 
-        // Aplicar alphas según fase actual
         bool isBlending = BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending;
         float t = isBlending ? BlendClock.SubPhaseLocalT : 0f;
         
         ApplyRcSlotsAlpha(sky, t, isBlending, stateA, stateB);
 
-        // Actualizar PSV (fog y sun)
         if (sky == SkyType.PSV)
         {
             UpdatePsvSlots(stateA, stateB, cam);
@@ -556,7 +552,6 @@ public static partial class SettingsBlendController
 
     // ============================================================
     // HOOK: Sincronizar fog RC durante DrawSprites del vanilla
-    // (se ejecuta DESPUÉS de que el vanilla calcule su posición final)
     // ============================================================
     private static void OnHorizonFogDrawSprites(
         On.AboveCloudsView.HorizonFog.orig_DrawSprites orig,
@@ -566,11 +561,8 @@ public static partial class SettingsBlendController
         float timeStacker,
         Vector2 camPos)
     {
-        // 1. Llamar al original para que el vanilla calcule su posición
         orig(self, sLeaser, rCam, timeStacker, camPos);
 
-        // 2. Ahora el sprite del vanilla tiene su posición final
-        //    Sincronizar el fog RC inmediatamente
         if (_psvScene != null && _rcSlotsPSVFog != null && _rcSlotsPSVFog.Count > 0)
         {
             const float Y_OFFSET = 68f;

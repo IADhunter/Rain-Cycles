@@ -321,9 +321,6 @@ public static partial class SettingsBlendController
             orig(self, eu);
             if (camIsHere)
             {
-                // ═══════════════════════════════════════════════════════════════
-                // OCULTAR FOG Y SUN VANILLA SOLO SI ES PSV
-                // ═══════════════════════════════════════════════════════════════
                 var snapLocal = SettingsSnapshot.GetCached(self.room.roomSettings?.filePath, self.room.abstractRoom?.name);
                 bool isPsv = snapLocal != null && snapLocal.HasView && snapLocal.ViewType == ViewType.PSV;
 
@@ -384,9 +381,6 @@ public static partial class SettingsBlendController
         foreach (var el in self.elements)
             if (el is AboveCloudsView.DistantBuilding db) db.alpha = 1f;
 
-        // ═══════════════════════════════════════════════════════════════
-        // OCULTAR FOG Y SUN VANILLA SOLO SI ES PSV
-        // ═══════════════════════════════════════════════════════════════
         var snapLocal2 = SettingsSnapshot.GetCached(self.room.roomSettings?.filePath, self.room.abstractRoom?.name);
         bool isPsv2 = snapLocal2 != null && snapLocal2.HasView && snapLocal2.ViewType == ViewType.PSV;
 
