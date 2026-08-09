@@ -29,9 +29,6 @@ public partial class SettingsSnapshot
             string key = line.Substring(0, sep);
             string val = line.Substring(sep + 2);
 
-            // ============================================================
-            // RAINCYCLES - NUEVO FORMATO MODULAR
-            // ============================================================
             if (key == "RainCycles")
             {
                 ParseRainCyclesContent(snap, val.Trim());
@@ -181,10 +178,8 @@ public partial class SettingsSnapshot
             templateName = GetFirstTemplateFromProperties(region, settingsModDir);
             if (string.IsNullOrEmpty(templateName))
             {
-                RSPlugin.log.LogInfo($"[Template] {roomName}: sin template definido (sin línea en properties.txt)");
                 return;
             }
-            RSPlugin.log.LogInfo($"[Template] {roomName}: aplicando template por defecto '{templateName}'");
         }
         else
         {
@@ -192,7 +187,6 @@ public partial class SettingsSnapshot
             int lastUnderscore = templateName.LastIndexOf('_');
             if (lastUnderscore >= 0)
                 templateName = templateName.Substring(lastUnderscore + 1);
-            RSPlugin.log.LogInfo($"[Template] {roomName}: aplicando template específico '{templateName}'");
         }
 
         string templatePath = ResolveTemplatePath(region, templateName, settingsModDir);
@@ -201,8 +195,6 @@ public partial class SettingsSnapshot
             RSPlugin.log.LogWarning($"[Template] {roomName}: template '{templateName}' no encontrado en región {region}");
             return;
         }
-
-        RSPlugin.log.LogInfo($"[Template] {roomName}: cargando desde {Path.GetFileName(templatePath)}");
 
         SettingsSnapshot tmpl;
         if (!TryGetCached(templatePath, out tmpl))
@@ -252,7 +244,6 @@ public partial class SettingsSnapshot
                         string first = ParseFirstTemplate(candidate);
                         if (first != null)
                         {
-                            RSPlugin.log.LogInfo($"[Template] {region}: primer template desde mod settings: {first}");
                             return first;
                         }
                     }
@@ -268,7 +259,6 @@ public partial class SettingsSnapshot
                     string first = ParseFirstTemplate(candidate);
                     if (first != null)
                     {
-                        RSPlugin.log.LogInfo($"[Template] {region}: primer template desde mod {ModManager.ActiveMods[i].id}: {first}");
                         return first;
                     }
                 }
@@ -280,12 +270,10 @@ public partial class SettingsSnapshot
                 string first = ParseFirstTemplate(vanillaPath);
                 if (first != null)
                 {
-                    RSPlugin.log.LogInfo($"[Template] {region}: primer template desde vanilla: {first}");
                     return first;
                 }
             }
 
-            RSPlugin.log.LogInfo($"[Template] {region}: sin línea 'Room Setting Templates:' en properties.txt");
             return null;
         }
         catch (Exception ex)
@@ -318,7 +306,6 @@ public partial class SettingsSnapshot
 
                 if (templateList.Count > 0)
                 {
-                    RSPlugin.log.LogInfo($"[Template] {Path.GetFileName(propertiesPath)}: templates disponibles = {string.Join(", ", templateList)}");
                     return templateList[0];
                 }
             }
@@ -503,14 +490,10 @@ public partial class SettingsSnapshot
         string header = tildePos >= 0 ? obj.Substring(0, tildePos) : obj;
         string[] parts = header.Split('>');
 
-        // Extraer intensidad
         if (parts.Length > 3 && float.TryParse(parts[3].TrimStart('<').Trim(), NF, INV, out float v))
         {
             snap.LightIntensities[idx] = v;
         }
-
-        // NOTA: El modo de color (Environment, White, EffectColor1, EffectColor2)
-        // lo maneja vanilla automáticamente. No necesitamos extraerlo.
     }
 
     private static void ExtractLightBeam(SettingsSnapshot snap, int idx, string obj)
