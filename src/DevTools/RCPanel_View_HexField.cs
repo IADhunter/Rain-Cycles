@@ -155,6 +155,11 @@ public class HexTextField : RCStringControl
     }
 
     /// <summary>
+    /// Todo lo escrito pasa a mayusculas al instante (a-f -> A-F).
+    /// </summary>
+    protected override char SanitizeChar(char c) => char.ToUpper(c);
+
+    /// <summary>
     /// Solo se permite anadir el caracter si el texto resultante sigue
     /// siendo valido: impide que los caracteres extra (o no-hex) lleguen
     /// siquiera a mostrarse y desborden el campo.
