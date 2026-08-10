@@ -38,253 +38,74 @@ public class ClockToggleButton : Button
 
 // ================================================================
 // EDITABLE FLOAT FIELD
+// Campo numerico basado en el RCStringControl (port del StringControl
+// de RegionKit/POM). Misma API externa que el campo antiguo:
+// OnSubmit (float) / Value / SetValue. Solo editable en EditMode.
 // ================================================================
-public class EditableFloatField : PositionedDevUINode
+public class EditableFloatField : RCStringControl
 {
     private float _value;
     private float _minValue;
     private float _maxValue;
-    private bool _isEditing = false;
-    private FSprite _bgSprite;
-    private FLabel _label;
-    private FSprite _cursorSprite;
-    private float _cursorAlpha = 0f;
-    private string _editText;
-    private float _width;
-    private float _height = 20f;
-    private int _cursorPos = 0;
-    
+
     public float Value => _value;
-    public Action<float> OnSubmit { get; set; }
-    public Action OnCancel { get; set; }
-    
+
+    /// <summary>Disparado al commitar con un valor parseable (ya clampado).</summary>
+    public new Action<float> OnSubmit;
+
     public EditableFloatField(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos, float width, float defaultValue, float min = 0f, float max = 999f)
-        : base(owner, IDstring, parentNode, pos)
+        : base(owner, IDstring, parentNode, pos, width, Format(Mathf.Clamp(defaultValue, min, max)), IsValidFloatInput)
     {
-        _value = Mathf.Clamp(defaultValue, min, max);
         _minValue = min;
         _maxValue = max;
-        _width = width;
-        _editText = _value.ToString("F1");
-        
-        _bgSprite = new FSprite("pixel");
-        _bgSprite.scaleX = width;
-        _bgSprite.scaleY = _height;
-        _bgSprite.anchorX = 0f;
-        _bgSprite.anchorY = 0f;
-        _bgSprite.color = new Color(1f, 1f, 1f);
-        _bgSprite.alpha = 0.5f;
-        Futile.stage.AddChild(_bgSprite);
-        fSprites.Add(_bgSprite);
-        
-        _label = new FLabel(Custom.GetFont(), _value.ToString("F1"));
-        _label.anchorX = 0f;
-        _label.anchorY = 0.80f;
-        _label.color = Color.black;
-        Futile.stage.AddChild(_label);
-        fLabels.Add(_label);
-        
-        _cursorSprite = new FSprite("pixel");
-        _cursorSprite.scaleX = 2f;
-        _cursorSprite.scaleY = _height - 4f;
-        _cursorSprite.anchorX = 0f;
-        _cursorSprite.anchorY = 0f;
-        _cursorSprite.color = Color.black;
-        _cursorSprite.alpha = 0f;
-        Futile.stage.AddChild(_cursorSprite);
-        fSprites.Add(_cursorSprite);
-        
-        Refresh();
+        _value = Mathf.Clamp(defaultValue, min, max);
     }
-    
-    public void SetValue(float value)
+
+    private static string Format(float v) => v.ToString("F1");
+
+    private static bool IsValidFloatInput(string value)
+        => value.Length == 0 || float.TryParse(value, out _);
+
+    protected override bool CanTakeFocus() => BlendClock.EditMode;
+
+    /// <summary>
+    /// Solo digitos y un punto decimal; el resultado debe seguir siendo
+    /// un float parseable (o vacio). Bloquea letras, signos y puntos dobles.
+    /// </summary>
+    protected override bool ShouldAppendChar(char c, string newText)
     {
-        _value = Mathf.Clamp(value, _minValue, _maxValue);
-        _label.text = _value.ToString("F1");
-        _editText = _value.ToString("F1");
+        if (c != '.' && (c < '0' || c > '9'))
+            return false;
+        return IsValidFloatInput(newText);
     }
-    
-    private void StartEditing()
+
+    protected override void TrySetValue(string newValue, bool endTransaction)
     {
-        if (!BlendClock.EditMode) return;
-        
-        _isEditing = true;
-        _cursorAlpha = 1f;
-        _cursorPos = _editText.Length;
-        _label.color = Color.white;
-        _bgSprite.color = new Color(0.2f, 0.2f, 0.8f);
-        _cursorSprite.alpha = 1f;
-        
-        InputBlocker.Block();
-        UpdateCursorPosition();
-    }
-    
-    private void StopEditing(bool submit)
-    {
-        _isEditing = false;
-        _cursorAlpha = 0f;
-        _label.color = Color.black;
-        _bgSprite.color = new Color(1f, 1f, 1f);
-        _cursorSprite.alpha = 0f;
-        
-        InputBlocker.Unblock();
-        
-        if (submit)
+        base.TrySetValue(newValue, endTransaction);
+
+        if (endTransaction)
         {
-            if (float.TryParse(_editText, out float newVal))
+            if (float.TryParse(actualValue, out float parsed))
             {
-                _value = Mathf.Clamp(newVal, _minValue, _maxValue);
-                _label.text = _value.ToString("F1");
+                _value = Mathf.Clamp(parsed, _minValue, _maxValue);
+                Text = Format(_value);
+                actualValue = Format(_value);
                 OnSubmit?.Invoke(_value);
             }
             else
             {
-                _editText = _value.ToString("F1");
-                _label.text = _editText;
+                // texto vacio/invalido: revertir al ultimo valor
+                Text = Format(_value);
+                actualValue = Format(_value);
             }
         }
-        else
-        {
-            OnCancel?.Invoke();
-        }
     }
-    
-    private void InsertChar(char c)
+
+    public void SetValue(float value)
     {
-        _editText = _editText.Substring(0, _cursorPos) + c + _editText.Substring(_cursorPos);
-        _cursorPos++;
-        UpdateCursorPosition();
-        _label.text = _editText + "_";
-    }
-    
-    private void DeleteChar()
-    {
-        if (_cursorPos > 0)
-        {
-            _editText = _editText.Substring(0, _cursorPos - 1) + _editText.Substring(_cursorPos);
-            _cursorPos--;
-            UpdateCursorPosition();
-            _label.text = _editText + "_";
-        }
-    }
-    
-    private void UpdateCursorPosition()
-    {
-        float textWidth = _cursorPos * 8f;
-        _cursorSprite.x = absPos.x + 2f + textWidth;
-        _cursorSprite.y = absPos.y + 2f;
-    }
-    
-    public override void Update()
-    {
-        base.Update();
-        
-        if (_isEditing)
-        {
-            _cursorAlpha -= 0.05f;
-            if (_cursorAlpha < 0f) _cursorAlpha = 1f;
-            _cursorSprite.alpha = _cursorAlpha;
-            
-            if (Input.GetKeyDown(KeyCode.LeftArrow))
-            {
-                if (_cursorPos > 0) _cursorPos--;
-                UpdateCursorPosition();
-                _label.text = _editText + "_";
-            }
-            else if (Input.GetKeyDown(KeyCode.RightArrow))
-            {
-                if (_cursorPos < _editText.Length) _cursorPos++;
-                UpdateCursorPosition();
-                _label.text = _editText + "_";
-            }
-            
-            if (Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.C))
-            {
-                GUIUtility.systemCopyBuffer = _editText;
-            }
-            else if (Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.V))
-            {
-                string clipboard = GUIUtility.systemCopyBuffer;
-                if (!string.IsNullOrEmpty(clipboard))
-                {
-                    _editText = clipboard;
-                    _cursorPos = _editText.Length;
-                    UpdateCursorPosition();
-                    _label.text = _editText + "_";
-                }
-            }
-            
-            foreach (char c in Input.inputString)
-            {
-                if (c == '\b')
-                {
-                    DeleteChar();
-                }
-                else if (c == '\n' || c == '\r')
-                {
-                    StopEditing(true);
-                    return;
-                }
-                else if (c == 27)
-                {
-                    StopEditing(false);
-                    return;
-                }
-                else if ((c >= '0' && c <= '9') || c == '.')
-                {
-                    InsertChar(c);
-                }
-            }
-            
-            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
-            {
-                StopEditing(true);
-                return;
-            }
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                StopEditing(false);
-                return;
-            }
-            
-            if (owner.mouseClick &&
-                (owner.mousePos.x < absPos.x || owner.mousePos.x > absPos.x + _width ||
-                 owner.mousePos.y < absPos.y || owner.mousePos.y > absPos.y + _height))
-            {
-                StopEditing(true);
-                return;
-            }
-            
-            return;
-        }
-        
-        bool over = owner.mousePos.x >= absPos.x && owner.mousePos.x <= absPos.x + _width &&
-                    owner.mousePos.y >= absPos.y && owner.mousePos.y <= absPos.y + _height;
-        
-        _bgSprite.color = over ? new Color(0.8f, 0.8f, 1f) : new Color(1f, 1f, 1f);
-        
-        if (owner.mouseClick && over)
-        {
-            StartEditing();
-        }
-    }
-    
-    public override void Refresh()
-    {
-        base.Refresh();
-        _bgSprite.x = absPos.x;
-        _bgSprite.y = absPos.y;
-        _label.x = absPos.x + 2f;
-        _label.y = absPos.y + _height - 4f;
-        _cursorSprite.x = absPos.x + 2f;
-        _cursorSprite.y = absPos.y + 2f;
-    }
-    
-    public void Destroy()
-    {
-        if (_bgSprite != null) _bgSprite.RemoveFromContainer();
-        if (_label != null) _label.RemoveFromContainer();
-        if (_cursorSprite != null) _cursorSprite.RemoveFromContainer();
+        _value = Mathf.Clamp(value, _minValue, _maxValue);
+        actualValue = Format(_value);
+        Text = Format(_value);
     }
 }
 

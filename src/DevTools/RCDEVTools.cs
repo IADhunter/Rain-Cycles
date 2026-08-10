@@ -7,6 +7,7 @@ public class RCDEVTools
 {
     public static void Init()
     {
+        RCInputGuard.Init();
         On.DevInterface.Page.ctor += DevInterface_Page_ctor;
     }
 

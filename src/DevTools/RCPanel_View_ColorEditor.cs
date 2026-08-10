@@ -172,7 +172,7 @@ public class ColorEditor : RectangularDevUINode
     public ColorEditor(DevUI owner, DevUINode parentNode, Vector2 hexPos, float hexWidth, Vector2 sliderPos)
         : base(owner, "RC_ColorEditor", parentNode, Vector2.zero, Vector2.zero)
     {
-        _hexField = new HexTextField(owner, "RC_HexField", this, hexPos, hexWidth, 16f, "#FFFFFF");
+        _hexField = new HexTextField(owner, "RC_HexField", this, hexPos + new Vector2(0f, -1f), hexWidth, 16f, "#FFFFFF");
         _hexField.OnSubmit += OnHexSubmitted;
         _hexField.OnCancel += OnHexCancelled;
         subNodes.Add(_hexField);
