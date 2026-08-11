@@ -119,7 +119,7 @@ During Blend Mode, the following elements are interpolated:
 * Light intensity
 * Environment light colors (with smooth interpolation)
 * Global tints (Multiply, Atmosphere, Cloud)
-* Background images (ACV, RTV, PSV)
+* Background images (ACV, RTV, PSV, ORV)
 
 ---
 
@@ -134,6 +134,10 @@ Controls the lighting intensity on snow surfaces. Perfect for creating dynamic s
 Controls the sparkle/particle brightness on snow. Adds subtle or dramatic shimmer effects.
 
 > ✅ Both effects blend smoothly between states as part of the scalar effects blend. When the effect is missing from a state, Snow Light defaults to `0.5` and Snow Sparkle to `0`.
+
+### Plate Tree / Sentient Rot (Watcher)
+
+In rooms with the `SentientRotInfection` effect, `PlateTree` sprites are forced to black, isolating the rot color from the blended palettes.
 
 ---
 
@@ -199,7 +203,7 @@ Controls the global behavior of the region:
 * **Trigger:** `none` / `cycle` / `rain` (see Trigger System above).
 * **wait_time:** Percentage (for `cycle`) or seconds (for `rain`) depending on Trigger. Fully configurable.
 * **Mod:** Name of the mod containing the background images.
-* **Acv / Rtv / Psv:** Sections to assign images to each state.
+* **Acv / Rtv / Orv / Psv:** Sections to assign images to each state.
 
 ---
 
@@ -240,6 +244,8 @@ Views are a system that adds images and tints to a specific depth layer of the r
 * **ACV (Above Clouds View):** Sky images.
 * **RTV (Roof Top View):** Rooftop sky images.
 * **PSV (Pink Sky View):** Sky, Fog, and Sun layers.
+* **AUV (Ancient Urban View):** Supports tints, no configurable background images.
+* **ORV (Outer Rim View):** Sky images.
 
 ---
 
@@ -337,7 +343,7 @@ RainCyclesAPI.ForceNotify(); // Immediately dispatches current state
 Accessible from the developer menu (Default key: `O`). It includes:
 
 * Room type selector (Static/Blend/Vanilla)
-* View type selector (None/ACV/RTV/PSV)
+* View type selector (None/ACV/RTV/PSV/AUV/ORV)
 * Settings selector
 * Real-time tint editor with hex color selector and screen color picker
 * Slot selector for images (Sky/Fog/Sun)
