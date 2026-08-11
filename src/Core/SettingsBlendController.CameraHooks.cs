@@ -71,6 +71,7 @@ public static partial class SettingsBlendController
             _activeSnapshot = null;
             _psvScene = null;
             _acvScene = null;
+            _orvScene = null;
             ClearCachedVanillaFog();
         }
 
@@ -99,11 +100,9 @@ public static partial class SettingsBlendController
                     float t = BlendClock.SubPhaseLocalT;
                     AttachWithExternalT(newRoom, pathA, pathB);
                     SetExternalT(t);
-                    _entryFrameT = t;
                 }
                 else
                 {
-                    _entryFrameT = BlendClock.SubPhaseLocalT;
                     SettingsSnapshot.GetCached(pathA, nextRoomName);
                     SettingsSnapshot.GetCached(pathB, nextRoomName);
                 }
@@ -162,7 +161,8 @@ public static partial class SettingsBlendController
         {
             _activeSnapshot = null;
             _psvScene = null;
-            _entryFrameT = -1f;
+            _acvScene = null;
+            _orvScene = null;
             ClearCachedVanillaFog();
         }
     }

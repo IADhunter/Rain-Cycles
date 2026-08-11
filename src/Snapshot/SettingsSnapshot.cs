@@ -185,7 +185,9 @@ public enum ViewType
     None,
     ACV,
     RTV,
-    PSV
+    PSV,
+    AUV,
+    ORV
 }
 
 public enum RcType

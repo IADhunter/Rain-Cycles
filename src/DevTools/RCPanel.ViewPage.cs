@@ -55,7 +55,7 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
     private ArrowButton _viewTypeNextArrow;
     private DevUILabel _viewTypeLabel;
     private ViewType _currentViewType;
-    private readonly ViewType[] _viewTypes = { ViewType.None, ViewType.ACV, ViewType.RTV, ViewType.PSV };
+    private readonly ViewType[] _viewTypes = { ViewType.None, ViewType.ACV, ViewType.RTV, ViewType.PSV, ViewType.AUV, ViewType.ORV };
     private int _viewTypeIndex = 0;
 
     private int _activeTint = 0;
@@ -508,11 +508,15 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         
         if (sender.IDstring == "RC_Tint_Multiply")
         {
+            // Multi es inerte en ORV (ningun shader consume el global): no permitir seleccionarlo
+            if (_currentViewType == ViewType.ORV) return;
             SetActiveTint(0);
             return;
         }
         if (sender.IDstring == "RC_Tint_Atmosphere")
         {
+            // Atmos es inerte en RTV/AUV (ningun elemento consume el global): no permitir seleccionarlo
+            if (_currentViewType == ViewType.RTV || _currentViewType == ViewType.AUV) return;
             SetActiveTint(1);
             return;
         }

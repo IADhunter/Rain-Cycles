@@ -120,6 +120,14 @@ Setting: 0";
                     sb.AppendLine($"{kv.Key}: {kv.Value}.png");
         }
 
+        if (s.BackgroundAliases.TryGetValue(ViewType.ORV, out var orvDict) && orvDict.Count > 0)
+        {
+            sb.AppendLine("\nOrv");
+            foreach (var kv in orvDict)
+                if (!kv.Key.EndsWith("_fog") && !kv.Key.EndsWith("_sun"))
+                    sb.AppendLine($"{kv.Key}: {kv.Value}.png");
+        }
+
         if (s.BackgroundAliases.TryGetValue(ViewType.PSV, out var psvDict) && psvDict.Count > 0)
         {
             sb.AppendLine("\nPsv");

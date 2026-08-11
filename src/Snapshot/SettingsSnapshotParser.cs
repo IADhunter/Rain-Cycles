@@ -137,6 +137,8 @@ public partial class SettingsSnapshot
                                 "ACV" => ViewType.ACV,
                                 "RTV" => ViewType.RTV,
                                 "PSV" => ViewType.PSV,
+                                "AUV" => ViewType.AUV,
+                                "ORV" => ViewType.ORV,
                                 _ => ViewType.None
                             };
                         }

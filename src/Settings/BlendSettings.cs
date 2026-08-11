@@ -87,4 +87,4 @@ public partial class BlendSettings
     }
 }
 
-public enum SkyType { None, RTV, ACV, PSV }
+public enum SkyType { None, RTV, ACV, PSV, ORV }

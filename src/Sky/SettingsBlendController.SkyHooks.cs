@@ -350,7 +350,8 @@ public static partial class SettingsBlendController
                 if (skyType != SkyType.None)
                 {
                     var staticSlots = skyType == SkyType.ACV ? _rcSlotsStaticACV :
-                                      skyType == SkyType.RTV ? _rcSlotsStaticRTV : _rcSlotsStaticPSV;
+                                      skyType == SkyType.RTV ? _rcSlotsStaticRTV :
+                                      skyType == SkyType.PSV ? _rcSlotsStaticPSV : _rcSlotsStaticORV;
 
                     if (staticSlots != null && staticSlots.Count > 0)
                     {
@@ -360,7 +361,7 @@ public static partial class SettingsBlendController
                             int state = StateFileResolver.GetStateFromPath(self.room.roomSettings?.filePath, roomName);
                             if (state > 0 && settings != null)
                             {
-                                var view = skyType == SkyType.ACV ? ViewType.ACV : (skyType == SkyType.RTV ? ViewType.RTV : ViewType.PSV);
+                                var view = skyType == SkyType.ACV ? ViewType.ACV : (skyType == SkyType.RTV ? ViewType.RTV : (skyType == SkyType.PSV ? ViewType.PSV : ViewType.ORV));
                                 string file = settings.GetBkgFileForState(state, view);
                                 if (!string.IsNullOrEmpty(file))
                                     staticSlots[0].illustrationName = System.IO.Path.GetFileNameWithoutExtension(file);
@@ -419,6 +420,7 @@ public static partial class SettingsBlendController
 
         bool hasRcType = snap != null && snap.HasRcType;
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
+        bool isStaticManaged = hasRcType && snap.RcType == RcType.Static;
 
         if (!hasRcType)
         {
@@ -444,6 +446,121 @@ public static partial class SettingsBlendController
             Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, savedMultiply);
             Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, savedAtmosphere);
         }
+
+        if (room == null) return;
+
+        string roomName = room.abstractRoom?.name;
+        if (string.IsNullOrEmpty(roomName)) return;
+
+        string currentRegionCode = room.world?.region?.name?.ToUpperInvariant();
+        var regionSettings = BlendSettingsLoader.GetForRegion(currentRegionCode);
+
+        ViewType roomView = snap.ViewType;
+
+        if (roomView == ViewType.ORV && isBlendManaged)
+        {
+            HideVanillaOuterRimSky(self);
+            _rcSlotsORV = CreateRcSlotsVanilla(self, room, SkyType.ORV);
+            _orvScene = self;
+            DefaultOrvSlotsToVanillaSky(_rcSlotsORV);
+
+            int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
+            if (state < 1)
+            {
+                int n = StateFileResolver.CountRainStateFiles(roomName);
+                int cycle = room.game?.GetStorySession?.saveState?.cycleNumber ?? 0;
+                state = n > 0 ? (cycle % n) + 1 : 1;
+            }
+
+            UpdateRcSlots(SkyType.ORV, state, state, cam, room);
+        }
+        else if (roomView == ViewType.ORV && isStaticManaged)
+        {
+            HideVanillaOuterRimSky(self);
+            if (_rcSlotsStaticORV == null)
+            {
+                _rcSlotsStaticORV = CreateStaticSlotsVanilla(self, room, SkyType.ORV);
+                int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
+                if (state < 1) state = 1;
+                string file = regionSettings?.GetBkgFileForState(state, ViewType.ORV);
+                _rcSlotsStaticORV[0].illustrationName = !string.IsNullOrEmpty(file)
+                    ? System.IO.Path.GetFileNameWithoutExtension(file)
+                    : "otr_sky";
+                _rcSlotsStaticORV[0].alpha = 1f;
+            }
+            _orvScene = self;
+        }
+    }
+
+    private static void OnOuterRimViewUpdate(
+        On.Watcher.OuterRimView.orig_Update orig, Watcher.OuterRimView self, bool eu)
+    {
+        var cam = self.room?.game?.cameras?[0];
+        bool camIsHere = cam != null && cam.room == self.room;
+
+        string settingsPath = self.room?.roomSettings?.filePath;
+        var snap = string.IsNullOrEmpty(settingsPath) ? null
+            : SettingsSnapshot.GetCached(settingsPath, self.room?.abstractRoom?.name);
+
+        bool hasRcType = snap != null && snap.HasRcType;
+        bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
+
+        if (isBlendManaged && snap.ViewType == ViewType.ORV && (_rcSlotsORV == null || _rcSlotsORV.Count == 0))
+        {
+            HideVanillaOuterRimSky(self);
+            _rcSlotsORV = CreateRcSlotsVanilla(self, self.room, SkyType.ORV);
+            _orvScene = self;
+            DefaultOrvSlotsToVanillaSky(_rcSlotsORV);
+
+            int state = BlendClock.StateA;
+            if (state < 1)
+            {
+                state = StateFileResolver.GetStateFromPath(self.room.roomSettings?.filePath, self.room?.abstractRoom?.name);
+                if (state < 1) state = 1;
+            }
+
+            UpdateRcSlots(SkyType.ORV, state, state, cam, self.room);
+        }
+
+        if (!hasRcType)
+        {
+            orig(self, eu);
+            return;
+        }
+
+        if (camIsHere && _rcSlotsStaticORV != null && _rcSlotsStaticORV.Count > 0
+            && _rcSlotsStaticORV[0].illustrationName != "RC_Transparent")
+        {
+            RefreshSlotSprite(_rcSlotsStaticORV[0], _rcSlotsStaticORV[0].illustrationName, cam);
+        }
+
+        orig(self, eu);
+    }
+
+    // ============================================================
+    // HELPERS OUTERRIMVIEW
+    // ============================================================
+
+    private static void HideVanillaOuterRimSky(OuterRimView scene)
+    {
+        if (scene?.elements == null) return;
+        foreach (var el in scene.elements)
+        {
+            if (el is BackgroundScene.Simple2DBackgroundIllustration ill
+                && ill.illustrationName == "otr_sky")
+            {
+                ill.alpha = 0f;
+                break;
+            }
+        }
+    }
+
+    private static void DefaultOrvSlotsToVanillaSky(
+        List<BackgroundScene.Simple2DBackgroundIllustration> slots)
+    {
+        if (slots == null) return;
+        for (int i = 0; i < slots.Count; i++)
+            slots[i].illustrationName = "otr_sky";
     }
 
     // ============================================================

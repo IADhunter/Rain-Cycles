@@ -129,9 +129,6 @@ public static partial class SettingsBlendController
         
         _forcedT = t;
 
-        if (_moveCameraThisFrame && _entryFrameT < 0f)
-            _entryFrameT = t;
-
         if (_snapA != null && _snapB != null && _room != null)
         {
             bool lightTChanged = !Mathf.Approximately(t, _lastLightT);

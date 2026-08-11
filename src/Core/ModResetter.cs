@@ -207,6 +207,7 @@ public static class ModResetter
         SetFieldValue(type, "_rtvScene", null);
         SetFieldValue(type, "_acvScene", null);
         SetFieldValue(type, "_psvScene", null);
+        SetFieldValue(type, "_orvScene", null);
         
         ClearCollectionField(type, "_rcViewInjected");
         ClearCollectionField(type, "_rcSlotsACV");
@@ -214,9 +215,11 @@ public static class ModResetter
         ClearCollectionField(type, "_rcSlotsPSV");
         ClearCollectionField(type, "_rcSlotsPSVFog");
         ClearCollectionField(type, "_rcSlotsPSVSun");
+        ClearCollectionField(type, "_rcSlotsORV");
         ClearCollectionField(type, "_rcSlotsStaticACV");
         ClearCollectionField(type, "_rcSlotsStaticRTV");
         ClearCollectionField(type, "_rcSlotsStaticPSV");
+        ClearCollectionField(type, "_rcSlotsStaticORV");
         
         SetFieldValue(type, "_snapA", null);
         SetFieldValue(type, "_snapB", null);
@@ -230,7 +233,6 @@ public static class ModResetter
         SetFieldValue(type, "_lastT", -1f);
         SetFieldValue(type, "_lastLightT", -1f);
         SetFieldValue(type, "_forcedT", 0f);
-        SetFieldValue(type, "_entryFrameT", -1f);
     }
     
     private static void CleanupRoomCameraExtensions()

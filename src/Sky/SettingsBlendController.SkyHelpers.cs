@@ -16,6 +16,7 @@ public static partial class SettingsBlendController
         if (sky == SkyType.ACV) return _rcSlotsACV;
         if (sky == SkyType.RTV) return _rcSlotsRTV;
         if (sky == SkyType.PSV) return _rcSlotsPSV;
+        if (sky == SkyType.ORV) return _rcSlotsORV;
         return null;
     }
 
@@ -110,7 +111,8 @@ public static partial class SettingsBlendController
         if (cam == null || (_room != null && cam.room != _room && (targetRoom == null || cam.room != targetRoom))) return;
 
         ViewType view = sky == SkyType.ACV ? ViewType.ACV :
-                        sky == SkyType.RTV ? ViewType.RTV : ViewType.PSV;
+                        sky == SkyType.RTV ? ViewType.RTV :
+                        sky == SkyType.PSV ? ViewType.PSV : ViewType.ORV;
 
         for (int state = 1; state <= 4; state++)
         {
@@ -542,9 +544,13 @@ public static partial class SettingsBlendController
         _rcSlotsPSVSun = null;
         _psvScene = null;
 
+        _rcSlotsORV = null;
+        _orvScene = null;
+
         _rcSlotsStaticACV = null;
         _rcSlotsStaticRTV = null;
         _rcSlotsStaticPSV = null;
+        _rcSlotsStaticORV = null;
 
         _forceSkyRefresh = false;
         ClearCachedVanillaFog();

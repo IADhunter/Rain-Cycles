@@ -185,7 +185,7 @@ public class SkyTypeButton : Button
     public SkyTypeButton(DevUI owner, string IDstring, DevUINode parentNode,
                          Vector2 pos, float width, ViewType type, bool isActive)
         : base(owner, IDstring, parentNode, pos, width,
-               type == ViewType.ACV ? "ACV" : (type == ViewType.RTV ? "RTV" : "PSV"))
+               type == ViewType.ACV ? "ACV" : (type == ViewType.RTV ? "RTV" : (type == ViewType.PSV ? "PSV" : "ORV")))
     {
         Type = type;
         _isActive = isActive;

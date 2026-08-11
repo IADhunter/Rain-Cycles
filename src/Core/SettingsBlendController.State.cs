@@ -4,6 +4,7 @@ using RainCycles.Settings;
 using RainCycles.Snapshot;
 using RainCycles.Clock;
 using RainCycles.Blend;
+using Watcher;
 
 namespace RainCycles.Core;
 
@@ -36,6 +37,7 @@ public static partial class SettingsBlendController
     private static RoofTopView     _rtvScene = null;
     private static AboveCloudsView _acvScene = null;
     private static AboveCloudsView _psvScene = null;
+    private static OuterRimView    _orvScene = null;
 
     private static AboveCloudsView.HorizonFog _cachedVanillaFog = null;
 
@@ -47,12 +49,12 @@ public static partial class SettingsBlendController
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsPSV = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsPSVFog = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsPSVSun = null;
+    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsORV = null;
 
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticACV = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticRTV = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticPSV = null;
-
-    private static float _entryFrameT = -1f;
+    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticORV = null;
 
     private static TintLerpResult? _activeSnapshot = null;
 
@@ -83,7 +85,6 @@ public static partial class SettingsBlendController
     {
         _detachedThisFrame   = false;
         _moveCameraThisFrame = false;
-        _entryFrameT         = -1f;
     }
 
     public static void Init()
@@ -98,6 +99,7 @@ public static partial class SettingsBlendController
         On.AboveCloudsView.Update           += OnAboveCloudsViewUpdate;
         On.AboveCloudsView.ctor             += OnAboveCloudsViewCtor;
         On.Watcher.OuterRimView.ctor        += OnOuterRimViewCtor;
+        On.Watcher.OuterRimView.Update      += OnOuterRimViewUpdate;
         On.Watcher.AncientUrbanView.ctor    += OnAncientUrbanViewCtor;
         On.RoomCamera.ChangeRoom            += OnChangeRoom;
         On.RoomCamera.Update                += OnRoomCameraUpdate;

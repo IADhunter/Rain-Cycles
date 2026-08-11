@@ -80,7 +80,8 @@ public static partial class RoomCameraExtensions
             snap.HasView, snap.HasTint, snap.ViewType,
             snap.ViewType == ViewType.ACV ? SkyType.ACV
                 : snap.ViewType == ViewType.RTV ? SkyType.RTV
-                : snap.ViewType == ViewType.PSV ? SkyType.PSV : SkyType.None);
+                : snap.ViewType == ViewType.PSV ? SkyType.PSV
+                : snap.ViewType == ViewType.ORV ? SkyType.ORV : SkyType.None);
     }
 
     public static void InvalidateRoomCache(string roomName)

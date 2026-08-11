@@ -188,7 +188,8 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private string GetViewTypeDisplay()
     {
         return _logic.CurrentViewType == ViewType.ACV ? "ACV" :
-               _logic.CurrentViewType == ViewType.RTV ? "RTV" : "PSV";
+               _logic.CurrentViewType == ViewType.RTV ? "RTV" :
+               _logic.CurrentViewType == ViewType.PSV ? "PSV" : "ORV";
     }
     
     private void UpdateViewLabel()

@@ -116,6 +116,8 @@ public static class BlendSettingsLoader
             if (trimmed == "Acv") { currentView = ViewType.ACV; continue; }
             if (trimmed == "Rtv") { currentView = ViewType.RTV; continue; }
             if (trimmed == "Psv") { currentView = ViewType.PSV; continue; }
+            if (trimmed == "Auv") { currentView = ViewType.AUV; continue; }
+            if (trimmed == "Orv") { currentView = ViewType.ORV; continue; }
             
             int sep = trimmed.IndexOf(':');
             if (sep > 0)

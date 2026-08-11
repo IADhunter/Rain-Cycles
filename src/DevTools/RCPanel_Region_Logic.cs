@@ -33,7 +33,7 @@ public class RegionLogic
     private Dictionary<ViewType, string[]> _allBackgrounds = new Dictionary<ViewType, string[]>();
     private Dictionary<ViewType, string[]> _allFogs = new Dictionary<ViewType, string[]>();
     private Dictionary<ViewType, string[]> _allSuns = new Dictionary<ViewType, string[]>();
-    private readonly ViewType[] _viewTypes = { ViewType.ACV, ViewType.RTV, ViewType.PSV };
+    private readonly ViewType[] _viewTypes = { ViewType.ACV, ViewType.RTV, ViewType.PSV, ViewType.ORV };
     private int _viewTypeIndex = 0;
     
     public float BlendValue
@@ -334,6 +334,7 @@ public class RegionLogic
             if (trimmed == "Acv") { currentView = ViewType.ACV; continue; }
             if (trimmed == "Rtv") { currentView = ViewType.RTV; continue; }
             if (trimmed == "Psv") { currentView = ViewType.PSV; continue; }
+            if (trimmed == "Orv") { currentView = ViewType.ORV; continue; }
             
             int sep = trimmed.IndexOf(':');
             if (sep > 0)
@@ -581,6 +582,17 @@ public class RegionLogic
             for (int i = 0; i < 4; i++)
             {
                 string img = _allBackgrounds[ViewType.RTV][i] ?? "";
+                if (!string.IsNullOrEmpty(img))
+                    sb.AppendLine($"bkg{(i + 1):00}: <{img}>");
+            }
+        }
+        
+        if (_allBackgrounds.ContainsKey(ViewType.ORV) && HasAnyImage(_allBackgrounds[ViewType.ORV]))
+        {
+            sb.AppendLine("Orv");
+            for (int i = 0; i < 4; i++)
+            {
+                string img = _allBackgrounds[ViewType.ORV][i] ?? "";
                 if (!string.IsNullOrEmpty(img))
                     sb.AppendLine($"bkg{(i + 1):00}: <{img}>");
             }
