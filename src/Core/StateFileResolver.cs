@@ -325,7 +325,12 @@ public static class StateFileResolver
         if (!Directory.Exists(dir))
             Directory.CreateDirectory(dir);
 
-        string filePath = Path.Combine(dir, $"{name}_settings_{buttonCount}.txt");
+        // El nombre de sala llega en mayúsculas (definición del world file),
+        // pero los archivos vanilla en disco están en minúsculas: normaliza
+        // el case para que el generado coincida con la convención del juego.
+        string fileName = name.ToLowerInvariant();
+
+        string filePath = Path.Combine(dir, $"{fileName}_settings_{buttonCount}.txt");
         room.roomSettings.filePath = filePath;
         room.roomSettings.Save();
         
