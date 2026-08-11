@@ -133,7 +133,7 @@ Controls the lighting intensity on snow surfaces. Perfect for creating dynamic s
 
 Controls the sparkle/particle brightness on snow. Adds subtle or dramatic shimmer effects.
 
-> ⚠️ These effects do not currently blend between states (planned for a future update). They are applied as static values per state.
+> ✅ Both effects blend smoothly between states as part of the scalar effects blend. When the effect is missing from a state, Snow Light defaults to `0.5` and Snow Sparkle to `0`.
 
 ---
 
@@ -203,9 +203,18 @@ Controls the global behavior of the region:
 
 ---
 
+## Arena Mode
+
+Rain Cycles works in Arena matches, blending room states per round on a per-level basis.
+
+* Configuration lives in `{level}_blend_settings.txt` inside `levels/raincycles/` of any active mod or `StreamingAssets` (searched recursively). The same `settings_N.txt` state files (up to 4) are resolved per level from the same location.
+* DevTools EditMode works in Arena; the clock restarts when leaving EditMode.
+
+---
+
 ## Tints (`RC_TINT`)
 
-Three independent tint channels:
+Two independent tint channels:
 
 * **Multiply:** Multiplies the color of the entire scene.
 * **Atmosphere:** Affects fog, the sky in rooms with `AboveCloudsView` and atmosphere.
@@ -341,10 +350,7 @@ Accessible from the developer menu (Default key: `O`). It includes:
 
 ## Known Limitations
 
-* Does not work in Arena mode for now.
-* Snow Light and Snow Sparkle do not yet participate in blend transitions (planned for future update).
 * Compatibility with `Forecast` has not been tested.
-* DayNight is automatically blocked in managed rooms (this is intentional).
 
 ---
 
