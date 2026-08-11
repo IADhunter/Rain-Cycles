@@ -49,8 +49,30 @@ public static class RoomSettingsPatches
         {
             SettingsSnapshot.InvalidateCache(filePath);
 
+            // Un guardado puede apuntar a cualquier archivo de estado (el panel
+            // redirige roomSettings.filePath al estado seleccionado antes de guardar),
+            // no solo al que tiene la cámara. Derivamos la sala desde el nombre del
+            // archivo y limpiamos TODAS sus caches — incluida la de píxeles (_stateCache),
+            // que InvalidateRoomCache no toca — para que el blend reconstruya desde los
+            // archivos recién guardados (fix 08/2026: saves no reflejados en el blend).
             var rw = UnityEngine.Object.FindObjectOfType<RainWorld>();
             var game = rw?.processManager?.currentMainLoop as RainWorldGame;
+
+            string derivedRoom = DeriveRoomNameFromPath(filePath);
+            if (!string.IsNullOrEmpty(derivedRoom))
+            {
+                RoomCameraExtensions.UnloadRoomCache(derivedRoom);
+                RoomCameraExtensions.InvalidateRoomCache(derivedRoom);
+                RoomCameraExtensions.ReloadRoomTerrainCache(derivedRoom);
+
+                if (SettingsBlendController.IsActive &&
+                    string.Equals(SettingsBlendController.ActiveRoom?.abstractRoom?.name,
+                        derivedRoom, StringComparison.OrdinalIgnoreCase))
+                {
+                    SettingsBlendController.RefreshActiveSnapshots();
+                }
+            }
+
             if (game?.cameras != null)
             {
                 foreach (var cam in game.cameras)
@@ -58,14 +80,6 @@ public static class RoomSettingsPatches
                     if (cam?.room?.roomSettings?.filePath == filePath)
                     {
                         string roomName = cam.room.abstractRoom?.name;
-
-                        if (!string.IsNullOrEmpty(roomName))
-                            RoomCameraExtensions.InvalidateRoomCache(roomName);
-
-                        if (!string.IsNullOrEmpty(roomName))
-                        {
-                            RoomCameraExtensions.ReloadRoomTerrainCache(roomName);
-                        }
 
                         var freshSnap = SettingsSnapshot.GetCached(filePath, cam.room.abstractRoom?.name);
 
@@ -243,6 +257,15 @@ public static class RoomSettingsPatches
         {
             self.ClearExtendedData();
         }
+    }
+
+    private static string DeriveRoomNameFromPath(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath)) return null;
+        string name = Path.GetFileNameWithoutExtension(filePath);
+        int idx = name.IndexOf("_settings", StringComparison.OrdinalIgnoreCase);
+        if (idx <= 0) return null;
+        return name.Substring(0, idx);
     }
 
     private static void PreserveExtendedData(RoomSettings self)

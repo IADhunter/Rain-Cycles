@@ -253,7 +253,10 @@ public class RCPanel : Panel, IDevUISignals
 
     private void UpdateTitle()
     {
-        string tabName = _currentTab == 0 ? "Room" : (_currentTab == 1 ? "View" : "Region");
+        // El flag de arena lo gestiona ArenaBlendController (StateFileResolver.IsArenaMode).
+        string tabName = _currentTab == 0 ? "Room"
+            : (_currentTab == 1 ? "View"
+            : (StateFileResolver.IsArenaMode ? "Arena" : "Region"));
         Title = $"Rain Cycles: {tabName}";
     }
 
@@ -299,8 +302,7 @@ public class RCPanel : Panel, IDevUISignals
 
     public string ResolveSettingsFile(int n)
     {
-        if (owner.room?.game?.IsArenaSession == true)
-            return ArenaStateResolver.GetSettingsPath(CurrentRoomName, n);
+        // StateFileResolver delega a ArenaBlendController en modo arena.
         return StateFileResolver.ResolveSettingsPath(CurrentRoomName, n);
     }
 

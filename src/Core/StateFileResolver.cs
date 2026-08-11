@@ -13,6 +13,13 @@ public static class StateFileResolver
     private static bool _hasFrozenCycle = false;
     
     private static int _currentCycleState = 1;
+
+    // Modo arena: la resolución de rutas delega en ArenaBlendController (levels/raincycles).
+    // ModResetter lo resetea a false en cada partida; ArenaBlendController lo activa en su ctor hook.
+    private static bool _arenaMode = false;
+
+    public static bool IsArenaMode => _arenaMode;
+    public static void SetArenaMode(bool value) => _arenaMode = value;
     
     private static readonly Dictionary<(string roomName, int state, string slugcat, string dlcs), string> _resolutionCache
         = new Dictionary<(string, int, string, string), string>();
@@ -47,6 +54,16 @@ public static class StateFileResolver
     
     public static List<int> GetActiveStates(string roomName)
     {
+        if (_arenaMode)
+        {
+            // El sistema de estados es 1-4; arena puede tener menos archivos.
+            var arenaStates = new List<int>();
+            int arenaCount = ArenaBlendController.CountSettingsFiles(roomName);
+            for (int i = 1; i <= Math.Min(arenaCount, 4); i++)
+                arenaStates.Add(i);
+            return arenaStates;
+        }
+
         var result = new List<int>();
         int maxState = CountRainStateFiles(roomName);
         for (int i = 1; i <= maxState; i++)
@@ -167,6 +184,9 @@ public static class StateFileResolver
     {
         if (string.IsNullOrEmpty(roomName) || state < 1 || state > 4)
             return null;
+
+        if (_arenaMode)
+            return ArenaBlendController.ResolveSettingsPath(roomName, state);
         
         string slugcatSuffix = GetCurrentSlugcatSuffix();
         var activeDLCs = GetActiveDLCSuffixes();
@@ -256,6 +276,9 @@ public static class StateFileResolver
     
     public static int CountRainStateFiles(string roomName)
     {
+        if (_arenaMode)
+            return ArenaBlendController.CountSettingsFiles(roomName);
+
         string dir = BuildDirectoryPath(roomName);
         if (!Directory.Exists(dir)) return 0;
         
@@ -293,6 +316,11 @@ public static class StateFileResolver
     
     internal static string CreateNewRainStateFile(string name, int buttonCount, Room room)
     {
+        // En arena el archivo vive en levels/raincycles del mod dueño del level
+        // (historia lo escribe en World/{REGION}-Rooms/RainCycles).
+        if (_arenaMode)
+            return ArenaBlendController.CreateSettingsFile(name, buttonCount, room);
+
         string dir = BuildDirectoryPath(name);
         if (!Directory.Exists(dir))
             Directory.CreateDirectory(dir);
@@ -375,9 +403,29 @@ public static class StateFileResolver
         orig(self, room, name, region, template, firstTemplate, timelinePoint, game);
 
         if (room == null || room.game == null) return;
-        var session = room.game.GetStorySession;
-        if (session?.saveState == null) return;
         if (_blockLoad) return;
+
+        var session = room.game.GetStorySession;
+        if (session?.saveState == null)
+        {
+            // Arena: sin StorySession, el estado lo resuelve ArenaBlendController.
+            // En el ctor de la sala (dentro del ctor del juego) el estado aún es 0
+            // (ModResetter lo resetea antes del orig) -> mínimo 1; el blend runtime
+            // re-aplica el estado real de la ronda per-frame.
+            if (!_arenaMode) return;
+
+            int arenaState = Math.Max(1, _currentCycleState);
+            string arenaPath = ResolveSettingsPath(name, arenaState);
+            if (arenaPath == null) return;
+
+            self.filePath = arenaPath;
+            self.Load((SlugcatStats.Timeline)null);
+
+            var snapArena = SettingsSnapshot.GetCached(arenaPath, name);
+            if (!snapArena._hasTerrainFadePalette)
+                self.terrainFadePalette = null;
+            return;
+        }
 
         int cycle = _hasFrozenCycle ? _frozenCycle : session.saveState.cycleNumber;
         int stateNumber = _currentCycleState;

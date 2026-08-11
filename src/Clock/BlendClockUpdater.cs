@@ -148,6 +148,32 @@ public static class BlendClockUpdater
             }
         }
 
+        // Arena: mismo gate s.Clock y auto-restart al salir de EditMode.
+        // El estado y el blend per-level los prepara ArenaBlendController en su ctor hook.
+        if (isArena && !BlendClock.IsRunning && !BlendClock.EditMode && !_startFailed)
+        {
+            var s = BlendSettingsLoader.Active;
+
+            if (s != null && s.Clock)
+            {
+                string roomName = self.GetArenaGameSession?.arenaSitting?.GetCurrentLevel;
+                int initialState = ResolveInitial(s);
+
+                float rainTimer = 0f;
+                int rainLen = 1;
+                if (self.world?.rainCycle != null)
+                {
+                    rainTimer = self.world.rainCycle.timer;
+                    rainLen = self.world.rainCycle.cycleLength;
+                }
+
+                BlendClock.Start(roomName, initialState, rainTimer, rainLen);
+
+                if (!BlendClock.IsRunning)
+                    _startFailed = true;
+            }
+        }
+
         if (!BlendClock.EditMode && BlendClock.IsRunning)
         {
             float rainTimer = 0f;
@@ -302,8 +328,7 @@ public static class BlendClockUpdater
 
     private static string GetSettingsFile(RainWorldGame game, string room, int state)
     {
-        if (game?.IsArenaSession == true)
-            return ArenaStateResolver.GetSettingsPath(room, state);
+        // StateFileResolver delega a ArenaBlendController cuando el modo arena está activo.
         return StateFileResolver.ResolveSettingsPath(room, state);
     }
 
@@ -387,6 +412,7 @@ public static class BlendClockUpdater
             BlendClock.Stop();
         orig(self);
         StateFileResolver.SetBlockLoad(false);
+        _startFailed = false; // partida nueva -> reintentos frescos (historia y arena)
         RoomCameraExtensions.InvalidateAllRoomCaches();
         StateFileResolver.InvalidatePathCache(); // ⭐ NUEVO
     }

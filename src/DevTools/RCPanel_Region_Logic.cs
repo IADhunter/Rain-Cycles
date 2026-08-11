@@ -59,11 +59,17 @@ public class RegionLogic
     // ============================================================
     // HELPERS
     // ============================================================
+    // Flag de arena: la pestaña edita el blend settings PER-LEVEL ({level}_blend_settings.txt)
+    // en lugar del archivo regional de historia.
+    private bool IsArena => StateFileResolver.IsArenaMode;
+
     private string RegionCode => ExtractRegionCode(_page.ParentPanel.CurrentRoomName);
     private string BlendSettingsPath => GetBlendSettingsPath();
     
     private string GetBlendSettingsPath()
     {
+        if (IsArena)
+            return ArenaBlendController.ResolveBlendSettingsPath(_page.ParentPanel.CurrentRoomName);
         if (string.IsNullOrEmpty(RegionCode)) return null;
         return BlendSettingsLoader.ResolvePath(RegionCode);
     }
@@ -220,9 +226,15 @@ public class RegionLogic
     }
     
     private static readonly BlendMode[] _modes = { BlendMode.Loop, BlendMode.Cycle, BlendMode.EndCycle };
+    // En arena solo Loop y Cycle son válidos (EndCycle se fuerza a Loop en runtime).
+    private static readonly BlendMode[] _arenaModes = { BlendMode.Loop, BlendMode.Cycle };
+    private BlendMode[] Modes => IsArena ? _arenaModes : _modes;
     private int _modeIndex = 0;
 
     private static readonly LoopTrigger[] _triggers = { LoopTrigger.None, LoopTrigger.Cycle, LoopTrigger.Rain };
+    // En arena los triggers de Loop no se usan (siempre none).
+    private static readonly LoopTrigger[] _arenaTriggers = { LoopTrigger.None };
+    private LoopTrigger[] Triggers => IsArena ? _arenaTriggers : _triggers;
     private int _triggerIndex = 0;
 
     public void CycleTrigger(int delta)
@@ -238,9 +250,9 @@ public class RegionLogic
         SaveToBlendSettings();
 
         _triggerIndex += delta;
-        if (_triggerIndex < 0) _triggerIndex = _triggers.Length - 1;
-        if (_triggerIndex >= _triggers.Length) _triggerIndex = 0;
-        CurrentTrigger = _triggers[_triggerIndex];
+        if (_triggerIndex < 0) _triggerIndex = Triggers.Length - 1;
+        if (_triggerIndex >= Triggers.Length) _triggerIndex = 0;
+        CurrentTrigger = Triggers[_triggerIndex];
 
         SaveToBlendSettings();
     }
@@ -260,9 +272,9 @@ public class RegionLogic
         SaveToBlendSettings();
 
         _modeIndex += delta;
-        if (_modeIndex < 0) _modeIndex = _modes.Length - 1;
-        if (_modeIndex >= _modes.Length) _modeIndex = 0;
-        CurrentMode = _modes[_modeIndex];
+        if (_modeIndex < 0) _modeIndex = Modes.Length - 1;
+        if (_modeIndex >= Modes.Length) _modeIndex = 0;
+        CurrentMode = Modes[_modeIndex];
 
         if (CurrentMode != BlendMode.Loop)
         {
@@ -405,8 +417,21 @@ public class RegionLogic
         CurrentViewType = DetermineCurrentViewType();
         _viewTypeIndex = Array.IndexOf(_viewTypes, CurrentViewType);
         if (_viewTypeIndex < 0) _viewTypeIndex = 0;
-        
-        _modeIndex = Array.IndexOf(_modes, CurrentMode);
+
+        // Coerciones arena (mismo criterio que ArenaBlendController.LoadBlendSettings):
+        // EndCycle -> Loop, triggers -> none, Setting -> 0.
+        if (IsArena)
+        {
+            if (CurrentMode == BlendMode.EndCycle)
+            {
+                CurrentMode = BlendMode.Loop;
+                RSPlugin.log.LogWarning("[RegionLogic] EndCycle no disponible en arena — forzado a Loop.");
+            }
+            CurrentTrigger = LoopTrigger.None;
+            SettingValue = 0;
+        }
+
+        _modeIndex = Array.IndexOf(Modes, CurrentMode);
         if (_modeIndex < 0) _modeIndex = 0;
 
         if (CurrentMode != BlendMode.Loop)
@@ -414,7 +439,7 @@ public class RegionLogic
             CurrentTrigger = LoopTrigger.None;
         }
         
-        _triggerIndex = Array.IndexOf(_triggers, CurrentTrigger);
+        _triggerIndex = Array.IndexOf(Triggers, CurrentTrigger);
         if (_triggerIndex < 0) _triggerIndex = 0;
         
         LoadCurrentViewFromDictionary();
@@ -512,8 +537,18 @@ public class RegionLogic
         string path = BlendSettingsPath;
         if (string.IsNullOrEmpty(path))
         {
-            path = BlendSettingsWriter.EnsureFileExists(_page.ParentPanel.CurrentRoomName);
-            if (string.IsNullOrEmpty(path)) return;
+            if (IsArena)
+            {
+                // Crea {level}_blend_settings.txt en la carpeta del mod dueño del level
+                // (o StreamingAssets si el level es vanilla).
+                path = ArenaBlendController.EnsureBlendSettingsFile(_page.ParentPanel.CurrentRoomName);
+                if (string.IsNullOrEmpty(path)) return;
+            }
+            else
+            {
+                path = BlendSettingsWriter.EnsureFileExists(_page.ParentPanel.CurrentRoomName);
+                if (string.IsNullOrEmpty(path)) return;
+            }
         }
         
         var sb = new StringBuilder();
@@ -571,7 +606,12 @@ public class RegionLogic
         {
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
 
-            if (!string.IsNullOrEmpty(RegionCode))
+            if (IsArena)
+            {
+                // Recarga el blend per-level (con coerciones arena) como Active.
+                ArenaBlendController.LoadBlendSettings(_page.ParentPanel.CurrentRoomName);
+            }
+            else if (!string.IsNullOrEmpty(RegionCode))
             {
                 BlendSettingsLoader.InvalidateCache(RegionCode);
                 BlendSettingsLoader.LoadRegion(RegionCode);

@@ -53,7 +53,9 @@ public static class ModResetter
         ResetAllModState();
         orig(self, manager);
         
-        if (self.world?.region?.name != null)
+        // La carga de región/blend y el estado por ciclo son de historia.
+        // En arena (GetStorySession null) lo gestiona ArenaBlendController (blend per-level).
+        if (self.GetStorySession != null && self.world?.region?.name != null)
         {
             string regionCode = self.world.region.name.ToUpperInvariant();
             
@@ -81,7 +83,7 @@ public static class ModResetter
 
             BlendClockUpdater.ResetRainCycleLogFlag();
         }
-        else
+        else if (!self.IsArenaSession)
         {
             RSPlugin.log.LogWarning("[ModResetter] No se pudo determinar la región después del reset");
         }

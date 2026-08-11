@@ -84,10 +84,28 @@ public static class BlendSettingsLoader
     {
         string path = ResolvePath(regionCode);
         if (path == null || !File.Exists(path)) return null;
-        
+        return LoadFile(path);
+    }
+
+    // Parseo de un archivo de blend settings (reutilizable por ruta arbitraria,
+    // p. ej. los blend settings per-level de Arena).
+    public static BlendSettings LoadFile(string path)
+    {
+        if (path == null || !File.Exists(path)) return null;
+        return ParseContent(File.ReadAllText(path, System.Text.Encoding.UTF8));
+    }
+
+    // Establece el blend activo desde una fuente externa (Arena).
+    // key = identificador (para arena, el nombre del level).
+    public static void SetActiveBlend(BlendSettings settings, string key)
+    {
+        _activeRegion = key ?? _activeRegion;
+        _activeSettings = settings;
+    }
+
+    private static BlendSettings ParseContent(string content)
+    {
         var settings = new BlendSettings();
-        string content = File.ReadAllText(path, System.Text.Encoding.UTF8);
-        
         ViewType currentView = ViewType.None;
         
         foreach (string line in content.Split('\n'))
