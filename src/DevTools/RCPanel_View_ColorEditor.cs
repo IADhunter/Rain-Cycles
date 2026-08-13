@@ -26,6 +26,7 @@ public class HSVSlider : PositionedDevUINode
     private DevUILabel _valueLabel;
     
     public Action<float> OnValueChanged { get; set; }
+    public Action OnDragEnd { get; set; }
     
     public HSVSlider(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos, string title, float minValue, float maxValue, float defaultValue)
         : base(owner, IDstring, parentNode, pos)
@@ -129,7 +130,10 @@ public class HSVSlider : PositionedDevUINode
         if (owner.mouseClick && over)
             _dragging = true;
         if (_dragging && !owner.mouseDown)
+        {
             _dragging = false;
+            OnDragEnd?.Invoke();
+        }
         
         if (_dragging)
         {
@@ -167,6 +171,8 @@ public class ColorEditor : RectangularDevUINode
     private HSVSlider _valSlider;
     
     public Action<Color> OnColorChanged { get; set; }
+    public Action OnDragEnd { get; set; }
+    public Action OnCommit { get; set; }
     public float CurrentHue01 => _hue;
     
     public ColorEditor(DevUI owner, DevUINode parentNode, Vector2 hexPos, float hexWidth, Vector2 sliderPos)
@@ -188,6 +194,10 @@ public class ColorEditor : RectangularDevUINode
         _hueSlider.OnValueChanged = OnHueChanged;
         _satSlider.OnValueChanged = OnSatChanged;
         _valSlider.OnValueChanged = OnValChanged;
+        
+        _hueSlider.OnDragEnd = () => OnDragEnd?.Invoke();
+        _satSlider.OnDragEnd = () => OnDragEnd?.Invoke();
+        _valSlider.OnDragEnd = () => OnDragEnd?.Invoke();
     }
     
     private void OnHexSubmitted(string hex)
@@ -201,6 +211,7 @@ public class ColorEditor : RectangularDevUINode
                 float b = Convert.ToInt32(hex.Substring(5, 2), 16) / 255f;
                 SetColor(new Color(r, g, b));
                 OnColorChanged?.Invoke(_currentColor);
+                OnCommit?.Invoke();
             }
             catch { }
         }
