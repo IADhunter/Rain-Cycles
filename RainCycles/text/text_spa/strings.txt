@@ -1,0 +1,29 @@
+Ignore the Cycle|No obedecer al ciclo
+descripcion de|Descripción de
+Custom Seed|Semilla personalizada
+Cycle Mode makes the states advance in a fixed, sequential order, following your save's cycle number. A new story starts at state 1, and if you are mid‑story it simply continues from the cycle you are on. The custom seed has no effect on this mode.|El modo Ciclo hace que los estados avancen en orden fijo y secuencial, siguiendo el número de ciclo de tu partida. Una historia nueva comienza en el estado 1, y si estás a mitad de partida simplemente continúa desde el ciclo en el que vas. La semilla personalizada no tiene efecto en este modo.
+Procedural Mode changes the fixed sequence into something more dynamic, where each state is chosen by a calculation based on your cycle number and the seed. That means leaving and re‑entering the same cycle keeps that state, and advancing to another cycle produces a pseudo‑random state that will also be locked to that next cycle.|El modo Procedural cambia la secuencia fija por algo más dinámico, donde cada estado se elige con un cálculo basado en tu número de ciclo y la semilla. Eso significa que salir y volver a entrar en el mismo ciclo mantiene ese estado, y al avanzar a otro ciclo produce un estado pseudo‑aleatorio que quedará anclado también a ese siguiente ciclo.
+This option stops the state from following the cycle-based calculation. The calculation becomes more flexible and less predictable, but coherence is kept, meaning that if a cycle starts with a specific state, the game keeps that same state until you advance to the next cycle.|Esta opción hace que el estado deje de seguir el cálculo basado en el ciclo. El cálculo se vuelve más libre y menos predecible, pero sin perder la coherencia, es decir que si un ciclo comienza con un estado concreto, el juego mantiene ese mismo estado hasta que avances al siguiente ciclo.
+Lets you customize the seed used for the calculation that picks the state.|Permite personalizar la semilla con la cual se realiza el cálculo para elegir el estado.
+Generate states for this region|Generar estados para esta región
+Random Mode is true randomness, with no rules or coherence. The state is picked unpredictably on each occasion, ignoring the cycle, your progress and previous plays.|El modo aleatorio es aleatoriedad de verdad, sin reglas ni coherencia. El estado se elige de forma impredecible en cada ocasión, sin tener en cuenta el ciclo, el progreso ni las partidas anteriores.
+SAVE STATES TO|GUARDAR ESTADOS EN
+Select|Elegir
+None (default: region's own mod / vanilla)|Ninguno (default: región propia / vanilla)
+Developer|Desarrollador
+- MODE -|- MODO -
+- CUSTOM SEED -|- SEMILLA PERSONALIZADA -
+Write a number|Escribe un número
+GENERATE STATES|GENERAR ESTADOS
+DESTINATION MOD|MOD DE DESTINO
+Search regions by ID or by name.|Buscar regiones por ID o por nombre.
+Switch search between region ID and region name.|Alternar la búsqueda entre ID de región y nombre de región.
+Search mods by ID or by name.|Buscar mods por ID o por nombre.
+Switch search between mod ID and mod name.|Alternar la búsqueda entre ID de mod y nombre de mod.
+ID|ID
+NAME|NOMBRE
+Generate|Generar
+Rooms folder not found for region |Carpeta de salas no encontrada para la región 
+Generated |Generados 
+ state files for | archivos de estado para 
+Error: |Error:
