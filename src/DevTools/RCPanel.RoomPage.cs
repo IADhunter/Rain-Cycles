@@ -50,6 +50,7 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
         if (room == null) return RcType.None;
 
         var roomSettings = room.roomSettings;
+
         if (roomSettings != null && roomSettings.IsRcStateLoaded())
             return roomSettings.GetRcType();
 

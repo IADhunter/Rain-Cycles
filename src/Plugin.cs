@@ -26,7 +26,10 @@ public class RSPlugin : BaseUnityPlugin
 
     public static ManualLogSource log;
 
-    public static Configurable<bool> randomCycles => _options?.randomCycles;
+    public static Configurable<string> cycleMode => _options?.cycleMode;
+    public static Configurable<string> customSeed => _options?.customSeed;
+    public static Configurable<bool> proceduralNoCycle => _options?.proceduralNoCycle;
+    public static Configurable<string> saveModId => _options?.saveModId;
     private static RCOptions _options;
 
     private void OnEnable()

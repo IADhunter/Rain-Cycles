@@ -80,12 +80,17 @@ public static class ArenaBlendController
     // ── Estado (settings_N.txt) ───────────────────────────────────────────
 
     // Aleatorio real por ronda o secuencial por contador. n > 0 garantizado por el llamador.
+    // El modo secuencial usa el contador de rondas; cualquier modo aleatorio (2/3/4) usa
+    // aleatorio real por ronda.
     public static int ResolveState(string roomName)
     {
         int n = CountSettingsFiles(roomName);
         if (n == 0) return 1;
 
-        if (RSPlugin.randomCycles != null && RSPlugin.randomCycles.Value)
+        string mode = RSPlugin.cycleMode?.Value ?? RCOptions.ModeCycle;
+        bool isRandomMode = mode != RCOptions.ModeCycle;
+
+        if (isRandomMode)
             return UnityEngine.Random.Range(1, n + 1);
 
         // _roundCount ya fue incrementado: primera ronda (1) -> estado 1.

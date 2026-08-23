@@ -165,6 +165,12 @@ Setting: 0";
         try
         {
             string upper = regionCode.ToUpperInvariant();
+
+            // Mod destino elegido en la pestaña Developer: escribe SIEMPRE ahí,
+            // sin buscar carpetas existentes (se crean al guardar).
+            string targetPath = SaveModResolver.PathForRegionBlend(upper);
+            if (targetPath != null) return targetPath;
+
             string existing = BlendSettingsLoader.ResolvePath(upper);
             if (existing != null) return existing;
 

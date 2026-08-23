@@ -35,6 +35,11 @@
       <HintPath>../lib/UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- Textura2D.LoadImage (PNG a textura) para el logo del menú Remix -->
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>../lib/UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
       <HintPath>../lib/UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>

@@ -54,17 +54,7 @@ public static class BlendSettingsLoader
         
         int cycle = GetCurrentCycleNumber();
         
-        int state;
-        if (RSPlugin.randomCycles != null && RSPlugin.randomCycles.Value)
-        {
-            int seed = unchecked(cycle * 1000003);
-            state = new System.Random(seed).Next(1, 5);
-        }
-        else
-        {
-            state = (cycle % 4) + 1;
-            if (cycle == 0) state = 1;
-        }
+        int state = Core.CycleStateResolver.ResolveState(cycle);
         
         Core.StateFileResolver.SetCurrentCycleState(state);
     }

@@ -28,6 +28,7 @@ public static class ModResetter
         typeof(RoomCameraExtensions),
         typeof(BlendSkyAtlasCache),
         typeof(RainCyclesEventDispatcher),
+        typeof(CycleStateResolver),
     };
     
     public static void Init()
@@ -62,19 +63,8 @@ public static class ModResetter
             BlendSettingsLoader.LoadRegion(regionCode);
             
             int cycle = self.GetStorySession?.saveState?.cycleNumber ?? 0;
-            int state;
-            
-            if (RSPlugin.randomCycles != null && RSPlugin.randomCycles.Value)
-            {
-                int seed = unchecked(cycle * 1000003);
-                state = new System.Random(seed).Next(1, 5);
-            }
-            else
-            {
-                state = (cycle % 4) + 1;
-                if (cycle == 0) state = 1;
-            }
-            
+            int state = CycleStateResolver.ResolveState(cycle);
+
             StateFileResolver.SetCurrentCycleState(state);
             
             SettingsSnapshot.InvalidateAllCache();

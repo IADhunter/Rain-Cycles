@@ -142,6 +142,16 @@ public static class StateFileResolver
         _cachedActiveDLCs = ComputeActiveDLCSuffixes();
     }
 
+    // Slugcat actual SIN el guion inicial del sufijo (p.ej. "yellow", "red", "").
+    // Se usa como clave en el archivo de anclaje de estado (modo coherente).
+    public static string GetCurrentSlugcatName()
+    {
+        string suffix = GetCurrentSlugcatSuffix();
+        return !string.IsNullOrEmpty(suffix) && suffix[0] == '-'
+            ? suffix.Substring(1)
+            : "";
+    }
+
     private static string ComputeSlugcatSuffix(RainWorldGame game)
     {
         try
@@ -190,6 +200,7 @@ public static class StateFileResolver
         
         string slugcatSuffix = GetCurrentSlugcatSuffix();
         var activeDLCs = GetActiveDLCSuffixes();
+        if (activeDLCs == null) activeDLCs = new List<string>();
         string dlcKey = string.Join(",", activeDLCs);
         
         var cacheKey = (roomName, state, slugcatSuffix, dlcKey);
@@ -321,7 +332,9 @@ public static class StateFileResolver
         if (_arenaMode)
             return ArenaBlendController.CreateSettingsFile(name, buttonCount, room);
 
-        string dir = BuildDirectoryPath(name);
+        // Si el usuario eligió un mod destino en la pestaña Developer, la
+        // escritura va SIEMPRE a ese mod (creando carpetas si faltan).
+        string dir = SaveModResolver.DirectoryForRoom(name) ?? BuildDirectoryPath(name);
         if (!Directory.Exists(dir))
             Directory.CreateDirectory(dir);
 
@@ -434,6 +447,19 @@ public static class StateFileResolver
 
         int cycle = _hasFrozenCycle ? _frozenCycle : session.saveState.cycleNumber;
         int stateNumber = _currentCycleState;
+        if (stateNumber < 1 || stateNumber > 4)
+        {
+            // Las salas construidas DENTRO del ctor del juego (durante orig) se crean
+            // con _currentCycleState recién reseteado a 0 por ModResetter. Si nos
+            // quedamos sin redirigir, el filePath queda vanilla y el blend nunca aplica.
+            // Resolvemos el estado aquí mismo para que la sala cargue un estado real.
+            // OJO: ModResetter también anuló el contexto DLC/slugcat por reflexión
+            // (los deja en null), así que lo reconstruimos antes de resolver rutas.
+            if (_cachedActiveDLCs == null || _cachedSlugcatSuffix == null)
+                RebuildContextCache(game);
+            stateNumber = CycleStateResolver.ResolveState(cycle);
+            _currentCycleState = stateNumber;
+        }
         string rainStatePath = ResolveSettingsPath(name, stateNumber);
         if (rainStatePath == null) return;
 
