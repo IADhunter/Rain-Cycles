@@ -55,9 +55,8 @@ public static class InputBlocker
             
             On.RainWorldGame.RawUpdate += OnRainWorldGameRawUpdate;
         }
-        catch (Exception ex)
+        catch
         {
-            RSPlugin.log.LogWarning($"[InputBlocker] Error creating hooks: {ex.Message}");
         }
     }
     

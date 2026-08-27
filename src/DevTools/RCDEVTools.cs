@@ -42,9 +42,8 @@ public static class RCInputGuard
 
             On.RainWorldGame.RawUpdate += OnRainWorldGameRawUpdate;
         }
-        catch (Exception ex)
+        catch
         {
-            RSPlugin.log.LogWarning($"[RCInputGuard] Error creating hooks: {ex.Message}");
         }
     }
 

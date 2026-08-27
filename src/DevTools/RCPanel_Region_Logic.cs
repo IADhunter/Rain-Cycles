@@ -426,7 +426,6 @@ public class RegionLogic
             if (CurrentMode == BlendMode.EndCycle)
             {
                 CurrentMode = BlendMode.Loop;
-                RSPlugin.log.LogWarning("[RegionLogic] EndCycle no disponible en arena — forzado a Loop.");
             }
             CurrentTrigger = LoopTrigger.None;
             SettingValue = 0;
@@ -629,9 +628,8 @@ public class RegionLogic
                 BlendSettingsLoader.LoadRegion(RegionCode);
             }
         }
-        catch (Exception ex)
+        catch
         {
-            RSPlugin.log.LogError($"[RegionLogic] Cannot save {path}: {ex.Message}");
         }
     }
     
