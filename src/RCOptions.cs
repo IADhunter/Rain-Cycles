@@ -33,8 +33,7 @@ public class RCOptions : OptionInterface
     private class SaveModRow
     {
         public ModManager.Mod Mod;
-        public OpSimpleButton SelectBtn;
-        public OpLabel Label;
+        public OpSimpleButton Btn;
     }
 
     // Pestaña Developer: creador de estados por lotes (regiones).
@@ -221,7 +220,7 @@ public class RCOptions : OptionInterface
         const float SEARCH_Y = 413f;    // -16px (era 429)
         const float SEARCH_W = 160f;
         const float TOGGLE_W = 100f;
-        const float STATUS_Y = 383f;    // -16px (era 399)
+        const float STATUS_Y = 3f;     // bajado 5px más (8 - 5 = 3)
         const float SCROLL_Y = 28f;     // -16px (era 44)
         const float SCROLL_H = 380f;
         const float SCROLL_CONTENT_H = 400f;
@@ -342,10 +341,14 @@ public class RCOptions : OptionInterface
         foreach (var row in _saveModRows)
         {
             bool isSelected = row.Mod.id == selectedId;
-            row.SelectBtn.colorEdge = isSelected
-                ? new Color(0.15f, 0.85f, 0.15f)
-                : new Color(0.6f, 0.6f, 0.6f);
+            if (row.Btn != null)
+            {
+                row.Btn.colorEdge = isSelected
+                    ? new Color(0.15f, 0.85f, 0.15f)
+                    : new Color(0.6f, 0.6f, 0.6f);
+            }
         }
+
     }
 
     private static ModManager.Mod FindActiveMod(string id)
@@ -425,22 +428,21 @@ public class RCOptions : OptionInterface
         _regionScrollBox.SetContentSize(contentHeight, true);
         _regionScrollBox.ScrollToTop(true);
 
-        float y = contentHeight - 26f - 10f;
+float y = contentHeight - 26f - 10f;
         foreach (var region in filtered)
         {
             float rowY = y;
 
-            var label = new OpLabel(10f, rowY, $"{region.code}    {region.name}", false);
-            label.color = new Color(0.8f, 0.8f, 0.8f);
-
-            var genBtn = new OpSimpleButton(new Vector2(222f, rowY - 3f), new Vector2(22f, 22f), "");
-            genBtn.description = Tr("Generate states for this region");
+            string display = $"{region.code}    {region.name}";
+            float btnW = Math.Max(100f, display.Length * 7f + 16f);
+            var genBtn = new OpSimpleButton(new Vector2(0f, rowY - 3f), new Vector2(btnW, 22f), "  " + display);
+            genBtn.alignment = FLabelAlignment.Left;
             genBtn.colorEdge = new Color(0.6f, 0.6f, 0.6f);
             string code = region.code;
             genBtn.OnClick += _ => GenerateRegionStates(code);
+            genBtn.description = Tr("Generate states for this region");
 
-            _regionScrollBox.AddItems(label, genBtn);
-            _regionRowItems.Add(label);
+            _regionScrollBox.AddItems(genBtn);
             _regionRowItems.Add(genBtn);
 
             y -= 26f;
@@ -501,10 +503,10 @@ public class RCOptions : OptionInterface
         {
             float rowY = y;
 
-            var label = new OpLabel(10f, rowY, $"{row.Mod.name}", false);
-            label.color = new Color(0.8f, 0.8f, 0.8f);
-
-            var selectBtn = new OpSimpleButton(new Vector2(420f, rowY - 3f), new Vector2(80f, 22f), Tr("Select"));
+            string display = row.Mod.name;
+            float btnW = Math.Max(100f, display.Length * 7f + 16f);
+            var selectBtn = new OpSimpleButton(new Vector2(0f, rowY - 3f), new Vector2(btnW, 22f), "  " + display);
+            selectBtn.alignment = FLabelAlignment.Left;
             selectBtn.colorEdge = new Color(0.6f, 0.6f, 0.6f);
             string modId = row.Mod.id;
             selectBtn.OnClick += _ =>
@@ -514,13 +516,9 @@ public class RCOptions : OptionInterface
                 SaveConfigNow();
             };
 
-            // Mantener referencias para RefreshDevUi
-            row.Label = label;
-            row.SelectBtn = selectBtn;
-
-            _saveModScrollBox.AddItems(label, selectBtn);
-            _modRowItems.Add(label);
+            _saveModScrollBox.AddItems(selectBtn);
             _modRowItems.Add(selectBtn);
+            row.Btn = selectBtn;
 
             y -= 26f;
         }
