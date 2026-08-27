@@ -10,7 +10,6 @@ namespace RainCycles;
 
 public class RCOptions : OptionInterface
 {
-    // Valores del selector de modo (código estable).
     public const string ModeCycle     = "cycle";
     public const string ModeProcedural = "procedural";
     public const string ModeRandom    = "random";
@@ -20,11 +19,9 @@ public class RCOptions : OptionInterface
     public readonly Configurable<string> customSeed;
     public readonly Configurable<string> saveModId;
 
-    // Pestañas del menú Remix (mismo patrón que DMSxMeadow).
     private OpTab _optionsTab;
     private OpTab _devTab;
 
-    // Pestaña Developer: botón de mod destino elegido + lista de mods activos.
     private OpSimpleButton _saveModStatusBtn;
     private OpScrollBox _saveModScrollBox;
     private OpSimpleButton _saveModClearBtn;
@@ -36,7 +33,6 @@ public class RCOptions : OptionInterface
         public OpSimpleButton Btn;
     }
 
-    // Pestaña Developer: creador de estados por lotes (regiones).
     private OpTextBox _regionSearchBox;
     private OpSimpleButton _regionSearchModeBtn;
     private OpScrollBox _regionScrollBox;
@@ -46,7 +42,6 @@ public class RCOptions : OptionInterface
     private readonly List<(string code, string name)> _allRegions = new List<(string, string)>();
     private readonly List<UIelement> _regionRowItems = new List<UIelement>();
 
-    // Pestaña Developer: búsqueda de mods para destino de guardado.
     private OpTextBox _modSearchBox;
     private OpSimpleButton _modSearchModeBtn;
     private OpLabel _modSearchStatusLabel;
@@ -55,7 +50,6 @@ public class RCOptions : OptionInterface
     private readonly List<SaveModRow> _allMods = new List<SaveModRow>();
     private readonly List<UIelement> _modRowItems = new List<UIelement>();
 
-    // Elementos de UI que se actualizan dinámicamente (pestaña Options).
     private OpSimpleButton _cycleBtn;
     private OpSimpleButton _proceduralBtn;
     private OpSimpleButton _randomBtn;
@@ -63,7 +57,6 @@ public class RCOptions : OptionInterface
     private OpLabel _noCycleCheckLabel;
     private OpTextBox _seedBox;
 
-    // Recuadro negro de información (estilo tooltip con fade) + alpha de fundido.
     private OpRect _infoRect;
     private OpLabel _infoLabel;
     private float _infoAlpha;
@@ -103,24 +96,17 @@ public class RCOptions : OptionInterface
                 "Destination Mod"));
     }
 
-    public override void Initialize()
+public override void Initialize()
     {
         base.Initialize();
 
         // ============================================================
         // TABS: "Options" (todo lo actual) y "Developer" (en desarrollo).
         // ============================================================
-        // Claves = claves vanilla para no sobreescribir ninguna entrada global:
-// "OPTIONS" viene traducida oficialmente en todos los idiomas (misma
-// mayuscula que el boton del menu principal). "Developer" no existe en
-// vanilla, asi que solo requiere entrada propia en strings.txt.
-// TabLabel() solo transforma la MAYUSCULA de nuestra etiqueta (title-case),
-// sin tocar el diccionario global.
         _optionsTab = new OpTab(this, TabLabel(Tr("OPTIONS")));
         _devTab = new OpTab(this, TabLabel(Tr("Developer")));
         Tabs = new[] { _optionsTab, _devTab };
 
-        // Botón de pestaña en rojo, como la pestaña "Cheats" de Remix.
         _devTab.colorButton = new Color(0.85f, 0.35f, 0.4f);
 
         // ============================================================
@@ -138,14 +124,11 @@ public class RCOptions : OptionInterface
         // El recuadro crece 70px hacia abajo (y=65, alto 385) para dejar
         // sitio al recuadro negro de información inferior.
         // ============================================================
-        float modeBoxY = 119f; // bajado 16px (antes 135)
+        float modeBoxY = 119f;
         const float MODE_BOX_X = 20f;
         var modeRect = new OpRect(new Vector2(MODE_BOX_X, 49f), new Vector2(560f, 385f));
         modeRect.colorFill = new Color(0.04f, 0.04f, 0.06f);
 
-        // Título centrado CORRECTAMENTE: se pasa el ancho del recuadro como
-        // "size" para que OpLabel centre en 20 + 560/2 = 300 (antes, con size
-        // vacío se clampeaba a 20px y el texto quedaba 10px a la derecha).
         var modeTitle = new OpLabel(new Vector2(MODE_BOX_X, modeBoxY + 275f), new Vector2(560f, 20f), Tr("- MODE -"), FLabelAlignment.Center, true);
         modeTitle.color = new Color(0.8f, 0.9f, 1f);
 
@@ -153,14 +136,10 @@ public class RCOptions : OptionInterface
         _proceduralBtn = MakeModeButton(new Vector2(MODE_BOX_X + 220f, modeBoxY + 215f), "PROCEDURAL", ModeProcedural);
         _randomBtn    = MakeModeButton(new Vector2(MODE_BOX_X + 360f, modeBoxY + 215f), "RANDOM",     ModeRandom);
 
-        // Check "No obedecer al ciclo" (solo relevante en Procedural).
         _noCycleCheck = new OpCheckBox(proceduralNoCycle, new Vector2(MODE_BOX_X + 20f, modeBoxY + 165f));
         _noCycleCheckLabel = new OpLabel(MODE_BOX_X + 48f, modeBoxY + 167f, Tr("Ignore the Cycle"), false);
         _noCycleCheckLabel.color = new Color(0.8f, 0.8f, 0.8f);
 
-        // Seed: recuadro subido 55px (antes modeBoxY+60 -> modeBoxY+115).
-        // Sin título superior; en su lugar, etiqueta "Seed" a la DERECHA del
-        // recuadro, (no en mayusculas), alineada verticalmente con él.
         _seedBox = new OpTextBox(customSeed, new Vector2(MODE_BOX_X + 20f, modeBoxY + 115f), 200f);
         _seedBox.description = Tr("Write a number");
 
@@ -193,15 +172,14 @@ public class RCOptions : OptionInterface
         // TODO bajado 10px global.
         // ============================================================
 
-        // Título global + botones de estado destino (centrado, arriba).
-        float devTitleY = 569f; // sin cambios
+        float devTitleY = 569f;
         var devTitle = new OpLabel(new Vector2(300f, devTitleY), new Vector2(), Tr("SAVE STATES TO"), FLabelAlignment.Center, true);
         devTitle.color = new Color(0.5f, 0.5f, 0.5f);
 
-        _saveModStatusBtn = new OpSimpleButton(new Vector2(85f, 503f), new Vector2(360f, 36f), ""); // -16px
+        _saveModStatusBtn = new OpSimpleButton(new Vector2(85f, 503f), new Vector2(360f, 36f), "");
         _saveModStatusBtn.colorEdge = new Color(0.6f, 0.6f, 0.6f);
 
-        _saveModClearBtn = new OpSimpleButton(new Vector2(460f, 503f), new Vector2(80f, 36f), "X"); // -16px
+        _saveModClearBtn = new OpSimpleButton(new Vector2(460f, 503f), new Vector2(80f, 36f), "X");
         _saveModClearBtn.colorEdge = new Color(0.85f, 0.35f, 0.4f);
         _saveModClearBtn.OnClick += _ =>
         {
@@ -216,12 +194,12 @@ public class RCOptions : OptionInterface
         const float COL_LEFT_X = 10f;
         const float COL_RIGHT_X = 320f;
         const float COL_W = 270f;
-        const float SEC_TITLE_Y = 448f; // -16px (era 464)
-        const float SEARCH_Y = 413f;    // -16px (era 429)
+        const float SEC_TITLE_Y = 448f;
+        const float SEARCH_Y = 413f;
         const float SEARCH_W = 160f;
         const float TOGGLE_W = 100f;
-        const float STATUS_Y = 3f;     // bajado 5px más (8 - 5 = 3)
-        const float SCROLL_Y = 28f;     // -16px (era 44)
+        const float STATUS_Y = 3f;
+        const float SCROLL_Y = 28f;
         const float SCROLL_H = 380f;
         const float SCROLL_CONTENT_H = 400f;
 
@@ -294,9 +272,6 @@ public class RCOptions : OptionInterface
         RebuildRegionList();
         RefreshUi();
 
-        // Remix solo escribe el .txt de config al CERRAR el menú del mod.
-        // Forzamos una escritura al abrirlo para que el archivo siempre
-        // exista (Nombre: ModConfigs/{mod.id}.txt).
         SaveConfigNow();
     }
 
@@ -373,7 +348,6 @@ public class RCOptions : OptionInterface
             string path = AssetManager.ResolveFilePath("World" + Path.DirectorySeparatorChar + "regions.txt");
             if (!File.Exists(path))
             {
-                RSPlugin.log.LogWarning($"[RC] regions.txt no encontrado: {path}");
                 return;
             }
 
@@ -385,11 +359,9 @@ public class RCOptions : OptionInterface
                 _allRegions.Add((code, name));
             }
             _allRegions.Sort((a, b) => string.CompareOrdinal(a.code, b.code));
-            RSPlugin.log.LogInfo($"[RC] Creador por lotes: {_allRegions.Count} regiones cargadas.");
         }
-        catch (Exception ex)
+        catch
         {
-            RSPlugin.log.LogWarning($"[RC] No se pudo cargar regions.txt: {ex.Message}");
         }
     }
 
@@ -563,11 +535,9 @@ float y = contentHeight - 26f - 10f;
             }
 
             _batchStatusLabel.text = Tr("Generated ") + copied + Tr(" state files for ") + upper;
-            RSPlugin.log.LogInfo($"[RC] Creador por lotes {upper}: {copied} archivos -> {destDir}");
         }
         catch (Exception ex)
         {
-            RSPlugin.log.LogWarning($"[RC] Falló la generación por lotes de {regionCode}: {ex.Message}");
             _batchStatusLabel.text = Tr("Error: ") + ex.Message;
         }
     }
@@ -619,7 +589,7 @@ float y = contentHeight - 26f - 10f;
     private void SaveConfigNow()
     {
         try { MachineConnector.SaveConfig(this); }
-        catch (Exception ex) { UnityEngine.Debug.LogWarning($"[RC] No se pudo guardar config: {ex.Message}"); }
+        catch { }
     }
 
     // Ruta del logo dentro del mod compilado (RainCycles/ui/).
@@ -637,7 +607,6 @@ float y = contentHeight - 26f - 10f;
             string path = AssetManager.ResolveFilePath(TitleLogoPath);
             if (!File.Exists(path))
             {
-                UnityEngine.Debug.LogWarning($"[RC] Logo de título no encontrado: {path}");
                 return null;
             }
 
@@ -645,7 +614,6 @@ float y = contentHeight - 26f - 10f;
             var texture = new Texture2D(0, 0);
             texture.filterMode = FilterMode.Point;
             texture.LoadImage(bytes);
-            UnityEngine.Debug.Log($"[RC] Logo de título cargado: {texture.width}x{texture.height}");
 
             var logo = new OpImage(new Vector2(300f, 479f), texture);
             logo.anchor = new Vector2(0.5f, 0f);
@@ -659,15 +627,10 @@ float y = contentHeight - 26f - 10f;
             {
                 logo.sprite.shader = menuTextShader;
             }
-            else
-            {
-                UnityEngine.Debug.LogWarning("[RC] Shader MenuText no disponible; logo sin brillo.");
-            }
             return logo;
         }
-        catch (Exception ex)
+        catch
         {
-            UnityEngine.Debug.LogWarning($"[RC] Error cargando logo de título: {ex.Message}");
             return null;
         }
     }
@@ -688,12 +651,10 @@ float y = contentHeight - 26f - 10f;
     {
         string mode = cycleMode.Value;
 
-        // Resaltar el botón activo.
         _cycleBtn.colorEdge     = ActiveButtonColor(mode == ModeCycle);
         _proceduralBtn.colorEdge = ActiveButtonColor(mode == ModeProcedural);
         _randomBtn.colorEdge    = ActiveButtonColor(mode == ModeRandom);
 
-        // El check solo aplica en Procedural.
         bool isProcedural = mode == ModeProcedural;
         _noCycleCheck.greyedOut = !isProcedural;
         _noCycleCheckLabel.color = isProcedural
@@ -717,8 +678,6 @@ float y = contentHeight - 26f - 10f;
         base.Update();
         if (_infoLabel == null) return;
 
-        // Determinar bajo qué control está el cursor y su descripcion
-        // provisional. De momento solo "Descripción de <X>".
         string txt = "";
         if (_cycleBtn != null && _cycleBtn.MouseOver)
         {
@@ -741,7 +700,6 @@ float y = contentHeight - 26f - 10f;
             txt = Tr("Lets you customize the seed used for the calculation that picks the state.");
         }
 
-        // Fundido de entrada/salida.
         if (txt.Length > 0)
         {
             _infoLabel.text = txt;
