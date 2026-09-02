@@ -227,6 +227,46 @@ public static class StateFileResolver
             }
         }
         
+        // Fallback: buscar recursivamente en subcarpetas
+        string foundRecursive = SearchRecursiveForState(dir, roomName, state);
+        if (foundRecursive != null)
+        {
+            _resolutionCache[cacheKey] = foundRecursive;
+            return foundRecursive;
+        }
+        
+        return null;
+    }
+    
+    private static string SearchRecursiveForState(string baseDir, string roomName, int state)
+    {
+        bool isDashTwo = roomName.EndsWith("-2");
+        string baseName = isDashTwo ? roomName.Substring(0, roomName.Length - 2) : roomName;
+        string dashTwoName = isDashTwo ? baseName + "-2" : null;
+        
+        string pattern = $"*_settings*_{state}.txt";
+        
+        try
+        {
+            var files = Directory.GetFiles(baseDir, pattern, SearchOption.AllDirectories);
+            
+            foreach (string file in files)
+            {
+                string fileName = Path.GetFileNameWithoutExtension(file);
+                if (isDashTwo)
+                {
+                    if (fileName.StartsWith(dashTwoName, StringComparison.OrdinalIgnoreCase))
+                        return file;
+                }
+                else
+                {
+                    if (fileName.StartsWith(baseName, StringComparison.OrdinalIgnoreCase))
+                        return file;
+                }
+            }
+        }
+        catch (Exception) { }
+        
         return null;
     }
     
@@ -297,8 +337,8 @@ public static class StateFileResolver
         string baseName = roomName.EndsWith("-2") ? roomName.Substring(0, roomName.Length - 2) : roomName;
         string patternDashTwo = $"{baseName}-2_settings*_*.txt";
         
-        var files = Directory.GetFiles(dir, pattern)
-            .Concat(Directory.GetFiles(dir, patternDashTwo))
+        var files = Directory.GetFiles(dir, pattern, SearchOption.AllDirectories)
+            .Concat(Directory.GetFiles(dir, patternDashTwo, SearchOption.AllDirectories))
             .Distinct()
             .ToList();
         
