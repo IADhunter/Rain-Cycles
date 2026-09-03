@@ -349,6 +349,7 @@ public class RCPanel : Panel, IDevUISignals
         if (path == null) return;
 
         owner.room.roomSettings.filePath = path;
+        RoomSettingsPatches.RefreshParent(owner.room.roomSettings, owner.room.world.region);
         owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
 
         var snapCheck = SettingsSnapshot.FromFile(path);
@@ -575,6 +576,7 @@ public class RCPanel : Panel, IDevUISignals
             ClearBlendOnly();
 
             owner.room.roomSettings.filePath = path;
+            RoomSettingsPatches.RefreshParent(owner.room.roomSettings, owner.room.world.region);
             owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
 
             var snapTerrain = SettingsSnapshot.FromFile(path);

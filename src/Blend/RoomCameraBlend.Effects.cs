@@ -207,8 +207,6 @@ public static partial class RoomCameraExtensions
         var effect = room.roomSettings.GetEffect(type);
         if (effect != null)
             effect.amount = amount;
-        else
-            room.roomSettings.effects.Add(new RoomSettings.RoomEffect(type, amount, false));
     }
 
     // ═════════════════════════════════════════════════════════════════════

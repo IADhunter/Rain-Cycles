@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
@@ -16,6 +17,17 @@ public static class RoomSettingsPatches
     {
         On.RoomSettings.Load_Timeline += OnLoad;
         On.RoomSettings.Save += OnSave;
+    }
+
+    // ============================================================
+    // FINDPARENT HELPER — recalcular template padre tras cambiar filePath
+    // ============================================================
+    private static readonly MethodInfo _findParentMI = typeof(RoomSettings)
+        .GetMethod("FindParent", BindingFlags.NonPublic | BindingFlags.Instance);
+
+    public static void RefreshParent(RoomSettings self, Region region)
+    {
+        _findParentMI?.Invoke(self, new object[] { region });
     }
 
     private static bool OnLoad(On.RoomSettings.orig_Load_Timeline orig, RoomSettings self, SlugcatStats.Timeline timelinePoint)

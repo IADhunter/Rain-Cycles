@@ -477,6 +477,7 @@ public static class StateFileResolver
             if (arenaPath == null) return;
 
             self.filePath = arenaPath;
+            RoomSettingsPatches.RefreshParent(self, region);
             self.Load((SlugcatStats.Timeline)null);
 
             var snapArena = SettingsSnapshot.GetCached(arenaPath, name);
@@ -504,6 +505,7 @@ public static class StateFileResolver
         if (rainStatePath == null) return;
 
         self.filePath = rainStatePath;
+        RoomSettingsPatches.RefreshParent(self, region);
         self.Load((SlugcatStats.Timeline)null);
 
         var snap = SettingsSnapshot.GetCached(rainStatePath, name);
