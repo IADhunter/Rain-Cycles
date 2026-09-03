@@ -211,9 +211,9 @@ public static class BlendSettingsLoader
 
     public static string ResolvePath(string regionCode)
     {
-        string upper    = regionCode.ToUpperInvariant();
-        string relative = Path.Combine("World", upper + "-Rooms", "RainCycles",
-            upper + "_blend_settings.txt");
+        string lower    = regionCode.ToLowerInvariant();
+        string relative = Path.Combine("world", lower + "-Rooms", "RainCycles",
+            lower + "_blend_settings.txt");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {

@@ -399,8 +399,8 @@ public static class StateFileResolver
     
     private static string BuildDirectoryPath(string roomName)
     {
-        string regionCode   = roomName.Split('_')[0].ToUpperInvariant();
-        string regionFolder = Path.Combine("World", regionCode + "-Rooms", "RainCycles");
+        string regionCode   = roomName.Split('_')[0].ToLowerInvariant();
+        string regionFolder = Path.Combine("world", regionCode + "-Rooms", "RainCycles");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {

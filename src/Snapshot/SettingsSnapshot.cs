@@ -144,9 +144,9 @@ public partial class SettingsSnapshot
     public static void PreloadRegionTemplates(string regionCode)
     {
         if (string.IsNullOrEmpty(regionCode)) return;
-        string upper = regionCode.ToUpperInvariant();
-        string searchPattern = $"{upper}_settingstemplate_*.txt";
-        string regionFolder = Path.Combine("World", upper);
+        string lower = regionCode.ToLowerInvariant();
+        string searchPattern = $"{lower}_settingstemplate_*.txt";
+        string regionFolder = Path.Combine("world", lower);
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {

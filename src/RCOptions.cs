@@ -345,7 +345,7 @@ public override void Initialize()
         _allRegions.Clear();
         try
         {
-            string path = AssetManager.ResolveFilePath("World" + Path.DirectorySeparatorChar + "regions.txt");
+            string path = AssetManager.ResolveFilePath("world" + Path.DirectorySeparatorChar + "regions.txt");
             if (!File.Exists(path))
             {
                 return;
@@ -549,8 +549,8 @@ float y = contentHeight - 26f - 10f;
     // ============================================================
     private static string FindRegionRoomsFolder(string regionCode)
     {
-        string upper = regionCode.ToUpperInvariant();
-        string rel = Path.Combine("World", upper + "-Rooms");
+        string lower = regionCode.ToLowerInvariant();
+        string rel = Path.Combine("world", lower + "-Rooms");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
@@ -569,8 +569,8 @@ float y = contentHeight - 26f - 10f;
     // ============================================================
     private static string DefaultRegionDirectory(string regionCode)
     {
-        string upper = regionCode.ToUpperInvariant();
-        string rel = Path.Combine("World", upper + "-Rooms", "RainCycles");
+        string lower = regionCode.ToLowerInvariant();
+        string rel = Path.Combine("world", lower + "-Rooms", "RainCycles");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {

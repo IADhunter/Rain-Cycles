@@ -240,7 +240,7 @@ public partial class SettingsSnapshot
                 string modRoot = GetModRoot(settingsModDir);
                 if (!string.IsNullOrEmpty(modRoot))
                 {
-                    string candidate = Path.Combine(modRoot, "World", upperRegion, "properties.txt");
+                    string candidate = Path.Combine(modRoot, "world", upperRegion, "properties.txt");
                     if (File.Exists(candidate))
                     {
                         string first = ParseFirstTemplate(candidate);
@@ -255,7 +255,7 @@ public partial class SettingsSnapshot
             for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
             {
                 if (ModManager.ActiveMods[i] == null) continue;
-                string candidate = Path.Combine(ModManager.ActiveMods[i].path, "World", upperRegion, "properties.txt");
+                string candidate = Path.Combine(ModManager.ActiveMods[i].path, "world", upperRegion, "properties.txt");
                 if (File.Exists(candidate))
                 {
                     string first = ParseFirstTemplate(candidate);
@@ -266,7 +266,7 @@ public partial class SettingsSnapshot
                 }
             }
 
-            string vanillaPath = Path.Combine(Application.streamingAssetsPath, "World", upperRegion, "properties.txt");
+            string vanillaPath = Path.Combine(Application.streamingAssetsPath, "world", upperRegion, "properties.txt");
             if (File.Exists(vanillaPath))
             {
                 string first = ParseFirstTemplate(vanillaPath);
@@ -335,14 +335,14 @@ public partial class SettingsSnapshot
             }
         }
 
-        string templateRelative = Path.Combine("World", region, templateFile);
+        string templateRelative = Path.Combine("world", region, templateFile);
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
             if (ModManager.ActiveMods[i] == null) continue;
             string candidate = Path.Combine(ModManager.ActiveMods[i].path, templateRelative);
             if (File.Exists(candidate)) return candidate;
 
-            string modDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region);
+            string modDir = Path.Combine(ModManager.ActiveMods[i].path, "world", region);
             if (Directory.Exists(modDir))
             {
                 foreach (string file in Directory.GetFiles(modDir, "*.txt"))
@@ -356,7 +356,7 @@ public partial class SettingsSnapshot
         string basePath = Path.Combine(Application.streamingAssetsPath, templateRelative);
         if (File.Exists(basePath)) return basePath;
 
-        string vanillaDir = Path.Combine(Application.streamingAssetsPath, "World", region);
+        string vanillaDir = Path.Combine(Application.streamingAssetsPath, "world", region);
         if (Directory.Exists(vanillaDir))
         {
             foreach (string file in Directory.GetFiles(vanillaDir, "*.txt"))
@@ -600,7 +600,7 @@ public partial class SettingsSnapshot
             string dir = Path.GetDirectoryName(settingsPath);
             while (!string.IsNullOrEmpty(dir))
             {
-                if (Path.GetFileName(dir).Equals("World", StringComparison.OrdinalIgnoreCase))
+                if (Path.GetFileName(dir).Equals("world", StringComparison.OrdinalIgnoreCase))
                 {
                     string regionDir = Path.Combine(dir, region);
                     if (Directory.Exists(regionDir)) return regionDir;
@@ -615,10 +615,10 @@ public partial class SettingsSnapshot
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
             if (ModManager.ActiveMods[i] == null) continue;
-            string regionRoomsDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region + "-Rooms");
+            string regionRoomsDir = Path.Combine(ModManager.ActiveMods[i].path, "world", region + "-Rooms");
             if (Directory.Exists(regionRoomsDir))
             {
-                string regionDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region);
+                string regionDir = Path.Combine(ModManager.ActiveMods[i].path, "world", region);
                 return Directory.Exists(regionDir) ? regionDir : regionRoomsDir;
             }
         }

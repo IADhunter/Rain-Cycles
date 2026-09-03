@@ -157,26 +157,26 @@ Setting: 0";
     {
         if (string.IsNullOrEmpty(roomName)) return null;
         string[] parts = roomName.Split('_');
-        return parts.Length >= 2 ? parts[0].ToUpperInvariant() : null;
+        return parts.Length >= 2 ? parts[0].ToLowerInvariant() : null;
     }
 
     private static string ResolveWritablePath(string regionCode)
     {
         try
         {
-            string upper = regionCode.ToUpperInvariant();
+            string lower = regionCode.ToLowerInvariant();
 
             // Mod destino elegido en la pestaña Developer: escribe SIEMPRE ahí,
             // sin buscar carpetas existentes (se crean al guardar).
-            string targetPath = SaveModResolver.PathForRegionBlend(upper);
+            string targetPath = SaveModResolver.PathForRegionBlend(lower);
             if (targetPath != null) return targetPath;
 
-            string existing = BlendSettingsLoader.ResolvePath(upper);
+            string existing = BlendSettingsLoader.ResolvePath(lower);
             if (existing != null) return existing;
 
             foreach (var mod in ModManager.ActiveMods)
             {
-                string candidate = Path.Combine(mod.path, "World", upper + "-Rooms", "RainCycles", upper + "_blend_settings.txt");
+                string candidate = Path.Combine(mod.path, "world", lower + "-Rooms", "RainCycles", lower + "_blend_settings.txt");
                 if (Directory.Exists(Path.GetDirectoryName(candidate)))
                     return candidate;
             }
@@ -184,7 +184,7 @@ Setting: 0";
             foreach (var mod in ModManager.ActiveMods)
             {
                 if (mod.id != RSPlugin.ID) continue;
-                return Path.Combine(mod.path, "World", upper + "-Rooms", "RainCycles", upper + "_blend_settings.txt");
+                return Path.Combine(mod.path, "world", lower + "-Rooms", "RainCycles", lower + "_blend_settings.txt");
             }
 
             return null;
