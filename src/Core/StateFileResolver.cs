@@ -529,6 +529,7 @@ public static class StateFileResolver
             self.filePath = arenaPath;
             RoomSettingsPatches.RefreshParent(self, region);
             self.Load((SlugcatStats.Timeline)null);
+            AncestorResolver.ApplyAncestor(self, region, arenaState);
 
             var snapArena = SettingsSnapshot.GetCached(arenaPath, name);
             if (!snapArena._hasTerrainFadePalette)
@@ -557,6 +558,7 @@ public static class StateFileResolver
         self.filePath = rainStatePath;
         RoomSettingsPatches.RefreshParent(self, region);
         self.Load((SlugcatStats.Timeline)null);
+        AncestorResolver.ApplyAncestor(self, region, stateNumber);
 
         var snap = SettingsSnapshot.GetCached(rainStatePath, name);
         if (!snap._hasTerrainFadePalette)

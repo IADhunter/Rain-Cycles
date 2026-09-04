@@ -351,6 +351,7 @@ public class RCPanel : Panel, IDevUISignals
         owner.room.roomSettings.filePath = path;
         RoomSettingsPatches.RefreshParent(owner.room.roomSettings, owner.room.world.region);
         owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
+        AncestorResolver.ApplyAncestor(owner.room.roomSettings, owner.room.world.region, ButtonSelectedA);
 
         var snapCheck = SettingsSnapshot.FromFile(path);
         if (!snapCheck._hasTerrainFadePalette)
@@ -578,6 +579,7 @@ public class RCPanel : Panel, IDevUISignals
             owner.room.roomSettings.filePath = path;
             RoomSettingsPatches.RefreshParent(owner.room.roomSettings, owner.room.world.region);
             owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
+            AncestorResolver.ApplyAncestor(owner.room.roomSettings, owner.room.world.region, sel);
 
             var snapTerrain = SettingsSnapshot.FromFile(path);
             if (!snapTerrain._hasTerrainFadePalette)

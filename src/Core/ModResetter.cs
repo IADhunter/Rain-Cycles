@@ -29,6 +29,7 @@ public static class ModResetter
         typeof(BlendSkyAtlasCache),
         typeof(RainCyclesEventDispatcher),
         typeof(CycleStateResolver),
+        typeof(AncestorResolver),
     };
     
     public static void Init()
@@ -61,6 +62,7 @@ public static class ModResetter
             string regionCode = self.world.region.name.ToUpperInvariant();
             
             BlendSettingsLoader.LoadRegion(regionCode);
+            AncestorResolver.EnsureAncestorFilesExist(regionCode);
             
             int cycle = self.GetStorySession?.saveState?.cycleNumber ?? 0;
             int state = CycleStateResolver.ResolveState(cycle);
