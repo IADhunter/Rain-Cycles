@@ -166,11 +166,16 @@ public partial class SettingsSnapshot
 
     private static void FillFromTemplate(SettingsSnapshot snap, string roomName, string settingsPath)
     {
-        if (snap.Template.ToUpperInvariant() == "NONE") return;
-
         string region = roomName.Contains("_")
             ? roomName.Split('_')[0].ToLower()
             : roomName.ToLower();
+
+        // Template: NONE → aplicar ancestor regional (fallback por estado)
+        if (snap.Template.ToUpperInvariant() == "NONE")
+        {
+            FillFromAncestor(snap, region, settingsPath);
+            return;
+        }
 
         string settingsModDir = GetSettingsModDirectory(settingsPath, region);
         string templateName;
@@ -227,6 +232,64 @@ public partial class SettingsSnapshot
         if (snap.TerrainStainHeight == null) snap.TerrainStainHeight = tmpl.TerrainStainHeight;
 
         FillEffectFromTemplate(snap, tmpl);
+    }
+
+    // ============================================================
+    // ANCESTOR REGIONAL — fallback para Template: NONE
+    // ============================================================
+    // Aplica los valores del ancestor regional (ancestor_X.txt) al snapshot
+    // cuando la sala no declara un campo. Misma lógica que FillFromTemplate
+    // pero usando el ancestor regional como fuente de defaults.
+    private static void FillFromAncestor(SettingsSnapshot snap, string region, string settingsPath)
+    {
+        int state = StateFileResolver.GetStateFromPath(settingsPath);
+        if (state < 1 || state > 4) return;
+
+        string ancestorPath = GetAncestorPath(region, state);
+        if (ancestorPath == null || !File.Exists(ancestorPath)) return;
+
+        SettingsSnapshot ancestor;
+        if (!TryGetCached(ancestorPath, out ancestor))
+        {
+            ancestor = FromFile(ancestorPath);
+            _snapshotCache[ancestorPath] = ancestor;
+        }
+
+        if (!snap._hasPalette) snap.Palette = ancestor.Palette;
+        if (!snap._hasGrime) snap.Grime = ancestor.Grime;
+        if (!snap._hasClouds) snap.Clouds = ancestor.Clouds;
+        if (!snap._hasCeilingDrips) snap.CeilingDrips = ancestor.CeilingDrips;
+        if (!snap._hasBkgDroneVolume) snap.BkgDroneVolume = ancestor.BkgDroneVolume;
+        if (!snap._hasRandomItemDensity) snap.RandomItemDensity = ancestor.RandomItemDensity;
+        if (!snap._hasRandomItemSpearChance) snap.RandomItemSpearChance = ancestor.RandomItemSpearChance;
+        if (!snap._hasEffectColorA) snap.EffectColorA = ancestor.EffectColorA;
+        if (!snap._hasEffectColorB) snap.EffectColorB = ancestor.EffectColorB;
+        if (!snap._hasTerrainPalette) snap.TerrainPaletteName = ancestor.TerrainPaletteName;
+
+        if (snap.TerrainWaves == null) snap.TerrainWaves = ancestor.TerrainWaves;
+        if (snap.TerrainLight == null) snap.TerrainLight = ancestor.TerrainLight;
+        if (snap.TerrainGrain == null) snap.TerrainGrain = ancestor.TerrainGrain;
+        if (snap.TerrainSkyFade == null) snap.TerrainSkyFade = ancestor.TerrainSkyFade;
+        if (snap.TerrainStainAmount == null) snap.TerrainStainAmount = ancestor.TerrainStainAmount;
+        if (snap.TerrainStainBrightness == null) snap.TerrainStainBrightness = ancestor.TerrainStainBrightness;
+        if (snap.TerrainStainHeight == null) snap.TerrainStainHeight = ancestor.TerrainStainHeight;
+
+        FillEffectFromTemplate(snap, ancestor);
+    }
+
+    private static string GetAncestorPath(string region, int state)
+    {
+        string regionCode = region.ToUpperInvariant();
+        string relativePath = Path.Combine("world", regionCode, "raincycles", $"ancestor_{state}.txt");
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, relativePath);
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        string basePath = Path.Combine(Application.streamingAssetsPath, relativePath);
+        return File.Exists(basePath) ? basePath : null;
     }
 
     private static string GetFirstTemplateFromProperties(string region, string settingsModDir)
