@@ -604,7 +604,7 @@ public partial class SettingsSnapshot
                 {
                     string regionDir = Path.Combine(dir, region);
                     if (Directory.Exists(regionDir)) return regionDir;
-                    string regionRoomsDir = Path.Combine(dir, region + "-Rooms");
+                    string regionRoomsDir = Path.Combine(dir, region + "-rooms");
                     if (Directory.Exists(regionRoomsDir)) return regionRoomsDir;
                     break;
                 }
@@ -615,7 +615,7 @@ public partial class SettingsSnapshot
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
             if (ModManager.ActiveMods[i] == null) continue;
-            string regionRoomsDir = Path.Combine(ModManager.ActiveMods[i].path, "world", region + "-Rooms");
+            string regionRoomsDir = Path.Combine(ModManager.ActiveMods[i].path, "world", region + "-rooms");
             if (Directory.Exists(regionRoomsDir))
             {
                 string regionDir = Path.Combine(ModManager.ActiveMods[i].path, "world", region);

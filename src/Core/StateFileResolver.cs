@@ -71,6 +71,17 @@ public static class StateFileResolver
             if (!IsPendingDelete(roomName, i))
                 result.Add(i);
         }
+
+        // Setting vanilla: si el estado mapeado no está en la lista, agregarlo
+        int vanillaMapping = BlendSettingsLoader.Active?.Setting ?? 0;
+        if (vanillaMapping >= 1 && vanillaMapping <= 4 && !result.Contains(vanillaMapping))
+        {
+            string vanillaPath = BuildVanillaSettingsPath(roomName);
+            if (vanillaPath != null && File.Exists(vanillaPath) && !IsPendingDelete(roomName, vanillaMapping))
+                result.Add(vanillaMapping);
+        }
+
+        result.Sort();
         return result;
     }
     
@@ -234,7 +245,19 @@ public static class StateFileResolver
             _resolutionCache[cacheKey] = foundRecursive;
             return foundRecursive;
         }
-        
+
+        // Fallback Setting: si state == blendSetting.Setting, usar el archivo vanilla
+        int vanillaMapping = BlendSettingsLoader.Active?.Setting ?? 0;
+        if (vanillaMapping >= 1 && vanillaMapping <= 4 && state == vanillaMapping)
+        {
+            string vanillaPath = BuildVanillaSettingsPath(roomName);
+            if (vanillaPath != null && File.Exists(vanillaPath))
+            {
+                _resolutionCache[cacheKey] = vanillaPath;
+                return vanillaPath;
+            }
+        }
+
         return null;
     }
     
@@ -352,6 +375,15 @@ public static class StateFileResolver
                 states.Add(state);
             }
         }
+
+        // Setting vanilla: si el estado mapeado no tiene archivo numerado, contar el vanilla
+        int vanillaMapping = BlendSettingsLoader.Active?.Setting ?? 0;
+        if (vanillaMapping >= 1 && vanillaMapping <= 4 && !states.Contains(vanillaMapping))
+        {
+            string vanillaPath = BuildVanillaSettingsPath(roomName);
+            if (vanillaPath != null && File.Exists(vanillaPath))
+                states.Add(vanillaMapping);
+        }
         
         return states.Count;
     }
@@ -400,7 +432,7 @@ public static class StateFileResolver
     private static string BuildDirectoryPath(string roomName)
     {
         string regionCode   = roomName.Split('_')[0].ToLowerInvariant();
-        string regionFolder = Path.Combine("world", regionCode + "-Rooms", "RainCycles");
+        string regionFolder = Path.Combine("world", regionCode + "-rooms", "raincycles");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
@@ -410,6 +442,24 @@ public static class StateFileResolver
         }
 
         return Path.Combine(Application.streamingAssetsPath, regionFolder);
+    }
+
+    // Ruta al archivo vanilla {room}_settings.txt (sin número).
+    // El vanilla vive en world/{region}-rooms/ (directamente, sin subcarpeta RainCycles).
+    private static string BuildVanillaSettingsPath(string roomName)
+    {
+        string regionCode = roomName.Split('_')[0].ToLowerInvariant();
+        string fileName   = roomName.ToLowerInvariant() + "_settings.txt";
+        string vanillaDir = Path.Combine("world", regionCode + "-rooms");
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, vanillaDir, fileName);
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        string basePath = Path.Combine(Application.streamingAssetsPath, vanillaDir, fileName);
+        return File.Exists(basePath) ? basePath : null;
     }
     
     // ============================================================

@@ -550,7 +550,7 @@ float y = contentHeight - 26f - 10f;
     private static string FindRegionRoomsFolder(string regionCode)
     {
         string lower = regionCode.ToLowerInvariant();
-        string rel = Path.Combine("world", lower + "-Rooms");
+        string rel = Path.Combine("world", lower + "-rooms");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
@@ -570,7 +570,7 @@ float y = contentHeight - 26f - 10f;
     private static string DefaultRegionDirectory(string regionCode)
     {
         string lower = regionCode.ToLowerInvariant();
-        string rel = Path.Combine("world", lower + "-Rooms", "RainCycles");
+        string rel = Path.Combine("world", lower + "-rooms", "raincycles");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {

@@ -40,7 +40,7 @@ public static class SaveModResolver
         string regionCode = ExtractRegionCode(roomName);
         if (regionCode == null) return null;
 
-        return Path.Combine(mod.path, "world", regionCode + "-Rooms", "RainCycles");
+        return Path.Combine(mod.path, "world", regionCode + "-rooms", "raincycles");
     }
 
     // Ruta destino para blend_settings de una región (con el mod elegido).
@@ -51,7 +51,7 @@ public static class SaveModResolver
         if (mod == null) return null;
 
         string lower = regionCode.ToLowerInvariant();
-        return Path.Combine(mod.path, "world", lower + "-Rooms", "RainCycles", lower + "_blend_settings.txt");
+        return Path.Combine(mod.path, "world", lower + "-rooms", "raincycles", lower + "_blend_settings.txt");
     }
 
     // Ruta destino para el creador por lotes de una región (con el mod elegido).
@@ -62,7 +62,7 @@ public static class SaveModResolver
         if (mod == null) return null;
 
         string lower = regionCode.ToLowerInvariant();
-        return Path.Combine(mod.path, "world", lower + "-Rooms", "RainCycles");
+        return Path.Combine(mod.path, "world", lower + "-rooms", "raincycles");
     }
 
     private static string ExtractRegionCode(string roomName)

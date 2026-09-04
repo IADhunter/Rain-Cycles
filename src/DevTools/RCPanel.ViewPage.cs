@@ -410,7 +410,7 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         string fp = ParentPanel.CurrentRoom?.roomSettings?.filePath;
         if (string.IsNullOrEmpty(fp)) return false;
         string dir = System.IO.Path.GetDirectoryName(fp);
-        return dir != null && dir.EndsWith("RainCycles", System.StringComparison.OrdinalIgnoreCase);
+        return dir != null && dir.EndsWith("raincycles", System.StringComparison.OrdinalIgnoreCase);
     }
 
     private void SaveTintsToFile()

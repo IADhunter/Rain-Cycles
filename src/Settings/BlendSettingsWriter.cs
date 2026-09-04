@@ -176,7 +176,7 @@ Setting: 0";
 
             foreach (var mod in ModManager.ActiveMods)
             {
-                string candidate = Path.Combine(mod.path, "world", lower + "-Rooms", "RainCycles", lower + "_blend_settings.txt");
+                string candidate = Path.Combine(mod.path, "world", lower + "-rooms", "raincycles", lower + "_blend_settings.txt");
                 if (Directory.Exists(Path.GetDirectoryName(candidate)))
                     return candidate;
             }
@@ -184,7 +184,7 @@ Setting: 0";
             foreach (var mod in ModManager.ActiveMods)
             {
                 if (mod.id != RSPlugin.ID) continue;
-                return Path.Combine(mod.path, "world", lower + "-Rooms", "RainCycles", lower + "_blend_settings.txt");
+                return Path.Combine(mod.path, "world", lower + "-rooms", "raincycles", lower + "_blend_settings.txt");
             }
 
             return null;
