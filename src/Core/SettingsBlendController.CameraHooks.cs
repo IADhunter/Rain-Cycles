@@ -23,31 +23,27 @@ public static partial class SettingsBlendController
         string nextRoomName = newRoom?.abstractRoom?.name;
         bool nextIsManaged = nextRoomName != null && IsBlendRoom(newRoom);
 
-        if (!string.IsNullOrEmpty(prevRoomName))
-            RoomCameraExtensions.InvalidateRoomCache(prevRoomName);
-        if (!string.IsNullOrEmpty(nextRoomName))
-            RoomCameraExtensions.InvalidateRoomCache(nextRoomName);
-
         if (prevWasManaged && !nextIsManaged)
         {
+            Detach();
+
             var blendData = self.GetBlendData();
             if (blendData != null)
             {
                 blendData.isBlendActive = false;
             }
 
-            if (!_active && _room != null)
+            var cam = self.game?.cameras?[0];
+            if (cam != null)
             {
-                _room = null;
-                _pathA = null;
-                _pathB = null;
-                _snapA = null;
-                _snapB = null;
+                cam.paletteA = -1;
+                cam.paletteBlend = 0f;
             }
 
             _activeSnapshot = null;
             _psvScene = null;
             _acvScene = null;
+            _orvScene = null;
             ClearCachedVanillaFog();
 
             if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Idle && self.room != null)

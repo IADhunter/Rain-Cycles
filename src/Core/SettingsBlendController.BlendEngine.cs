@@ -107,6 +107,7 @@ public static partial class SettingsBlendController
         {
             return;
         }
+
         orig(self, palA, palB, blend);
     }
 
