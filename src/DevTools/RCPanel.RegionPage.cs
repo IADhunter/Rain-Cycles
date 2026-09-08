@@ -34,7 +34,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private const float SETTING_ARROW_X = 100f;
     private const float SETTING_LABEL_X = 121f;
     private const float SETTING_ARROW2_X = 156f;
-    private const float SETTING_Y = 120f;
+    private const float SETTING_Y = 103f;
     
     private const float WAITTIME_X = 100f;
     

@@ -509,7 +509,7 @@ float y = contentHeight - 26f - 10f;
         try
         {
             string upper = regionCode.ToUpperInvariant();
-            string srcDir = FindRegionRoomsFolder(upper);
+            string srcDir = FindRegionRoomsWithSettings(upper);
             if (srcDir == null)
             {
                 _batchStatusLabel.text = Tr("Rooms folder not found for region ") + upper;
@@ -517,6 +517,13 @@ float y = contentHeight - 26f - 10f;
             }
 
             string destDir = SaveModResolver.DirectoryForRegion(upper) ?? DefaultRegionDirectory(upper);
+
+            if (Directory.Exists(destDir) && Directory.GetFiles(destDir, "*.txt").Length > 0)
+            {
+                _batchStatusLabel.text = upper + Tr(" already has state files, skipping.");
+                return;
+            }
+
             Directory.CreateDirectory(destDir);
 
             int copied = 0;
@@ -560,6 +567,30 @@ float y = contentHeight - 26f - 10f;
 
         string vanilla = Path.Combine(Application.streamingAssetsPath, rel);
         return Directory.Exists(vanilla) ? vanilla : null;
+    }
+
+    // ============================================================
+    // CREADOR POR LOTES - origen con settings*.txt.
+    // Igual que FindRegionRoomsFolder pero solo acepta carpetas
+    // que contengan archivos de settings para copiar.
+    // ============================================================
+    private static string FindRegionRoomsWithSettings(string regionCode)
+    {
+        string lower = regionCode.ToLowerInvariant();
+        string rel = Path.Combine("world", lower + "-rooms");
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, rel);
+            if (Directory.Exists(candidate) && Directory.GetFiles(candidate, "*settings*").Length > 0)
+                return candidate;
+        }
+
+        string vanilla = Path.Combine(Application.streamingAssetsPath, rel);
+        if (Directory.Exists(vanilla) && Directory.GetFiles(vanilla, "*settings*").Length > 0)
+            return vanilla;
+
+        return null;
     }
 
     // ============================================================
