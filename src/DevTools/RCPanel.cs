@@ -370,7 +370,7 @@ public class RCPanel : Panel, IDevUISignals
         ApplyTintsFromSnapshot(snapCheck);
 
         owner.room.ApplyDecalOpacities(SettingsSnapshot.GetCached(path, CurrentRoomName));
-        RoomCameraExtensions.ApplyLightSourcesFromSnapshot(owner.room, path);
+        ApplyLightSourcesDirectly(snapCheck);
         RoomCameraExtensions.ApplyLightBeamsFromSnapshot(owner.room, path);
         Shader.SetGlobalFloat(RainWorld.ShadPropGrime, owner.room.roomSettings.Grime);
         SettingsBlendController.ApplySkyForState(ButtonSelectedA, owner.room);
@@ -599,7 +599,7 @@ public class RCPanel : Panel, IDevUISignals
             ApplyTintsFromSnapshot(snapTint);
 
             owner.room.ApplyDecalOpacities(SettingsSnapshot.GetCached(path, CurrentRoomName));
-            RoomCameraExtensions.ApplyLightSourcesFromSnapshot(owner.room, path);
+            ApplyLightSourcesDirectly(snapTint);
             RoomCameraExtensions.ApplyLightBeamsFromSnapshot(owner.room, path);
             Shader.SetGlobalFloat(RainWorld.ShadPropGrime, owner.room.roomSettings.Grime);
             SettingsBlendController.ApplySkyForState(sel, owner.room);
@@ -710,6 +710,112 @@ public class RCPanel : Panel, IDevUISignals
             }
 
             return;
+        }
+    }
+
+    // ============================================================
+    // APLICAR LIGHT SOURCES DIRECTAMENTE POR ORDEN
+    // ============================================================
+    private void ApplyLightSourcesDirectly(SettingsSnapshot snap)
+    {
+        if (snap == null || owner.room == null) return;
+        if (owner.room.lightSources == null) return;
+        if (owner.room.roomSettings == null) return;
+
+        var room = owner.room;
+        var placedObjects = room.roomSettings.placedObjects;
+        var lightSources = room.lightSources;
+
+        // ── FASE 1: Destruir light sources huérfanos ──
+        // Un light source es huérfano si no tiene placed object correspondiente
+        // en el estado actual (su placed object fue eliminado al cambiar de estado).
+        var orphans = new List<LightSource>();
+        for (int i = lightSources.Count - 1; i >= 0; i--)
+        {
+            var light = lightSources[i];
+            if (light == null || light.slatedForDeletetion) continue;
+
+            bool hasPlacedObject = false;
+            for (int j = 0; j < placedObjects.Count; j++)
+            {
+                if (placedObjects[j].type != PlacedObject.Type.LightSource) continue;
+                if (placedObjects[j].pos == light.pos)
+                {
+                    hasPlacedObject = true;
+                    break;
+                }
+            }
+
+            if (!hasPlacedObject)
+            {
+                orphans.Add(light);
+                light.Destroy();
+
+                // Limpiar sprites inmediatamente
+                var rCam = room.game.cameras[0];
+                if (rCam != null)
+                {
+                    for (int s = rCam.spriteLeasers.Count - 1; s >= 0; s--)
+                    {
+                        if (rCam.spriteLeasers[s].drawableObject == light)
+                        {
+                            rCam.spriteLeasers[s].CleanSpritesAndRemove();
+                            break;
+                        }
+                    }
+                }
+
+                // Remover de todas las listas de la sala
+                room.updateList.Remove(light);
+                room.drawableObjects.Remove(light);
+                room.lightSources.Remove(light);
+                room.cosmeticLightSources.Remove(light);
+            }
+        }
+
+        // ── FASE 2: Aplicar intensidades del snapshot ──
+        var validLights = new List<LightSource>();
+        for (int i = 0; i < lightSources.Count; i++)
+        {
+            var light = lightSources[i];
+            if (light != null && !light.slatedForDeletetion)
+                validLights.Add(light);
+        }
+
+        int lightIdx = 0;
+        for (int i = 0; i < placedObjects.Count; i++)
+        {
+            if (placedObjects[i].type != PlacedObject.Type.LightSource) continue;
+
+            if (lightIdx < validLights.Count)
+            {
+                var light = validLights[lightIdx];
+
+                if (snap.LightIntensities.TryGetValue(i, out float intensity))
+                {
+                    light.alpha = intensity;
+                    light.lastAlpha = intensity;
+                    light.setAlpha = null;
+
+                    var data = placedObjects[i].data as PlacedObject.LightSourceData;
+                    if (data != null)
+                    {
+                        data.strength = intensity;
+                    }
+                }
+
+                lightIdx++;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        // Forzar refresh de la página de objetos para sincronizar sliders
+        if (owner?.activePage is ObjectsPage objectsPage)
+        {
+            objectsPage.Refresh();
         }
     }
 
