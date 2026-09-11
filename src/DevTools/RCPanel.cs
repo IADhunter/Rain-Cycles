@@ -581,6 +581,8 @@ public class RCPanel : Panel, IDevUISignals
             owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
             AncestorResolver.ApplyAncestor(owner.room.roomSettings, owner.room.world.region, sel);
 
+            RefreshRoomObjects();
+
             var snapTerrain = SettingsSnapshot.FromFile(path);
             if (!snapTerrain._hasTerrainFadePalette)
                 owner.room.roomSettings.terrainFadePalette = null;
@@ -626,8 +628,6 @@ public class RCPanel : Panel, IDevUISignals
             }
 
             foreach (var node in subNodes) node.Refresh();
-            if (parentNode is not ObjectsPage)
-                parentNode?.Refresh();
             return;
         }
 
@@ -710,6 +710,63 @@ public class RCPanel : Panel, IDevUISignals
             }
 
             return;
+        }
+    }
+
+    // ============================================================
+    // REFRESH ROOM OBJECTS (LightBeams + CustomDecals)
+    // Destruye los existentes y recrea desde placedObjects actuales.
+    // Solo para preview de devtools — no toca blend.
+    // ============================================================
+    private void RefreshRoomObjects()
+    {
+        var room = owner.room;
+        if (room == null) return;
+
+        var rCam = room.game.cameras[0];
+
+        // ── FASE 1: Destruir LightBeams y CustomDecals existentes ──
+        for (int i = room.updateList.Count - 1; i >= 0; i--)
+        {
+            var obj = room.updateList[i];
+            if (obj is not LightBeam && obj is not CustomDecal) continue;
+
+            obj.Destroy();
+
+            if (rCam != null)
+            {
+                for (int s = rCam.spriteLeasers.Count - 1; s >= 0; s--)
+                {
+                    if (rCam.spriteLeasers[s].drawableObject == obj)
+                    {
+                        rCam.spriteLeasers[s].CleanSpritesAndRemove();
+                        break;
+                    }
+                }
+            }
+
+            room.updateList.Remove(obj);
+            if (obj is IDrawable d)
+                room.drawableObjects.Remove(d);
+        }
+
+        // ── FASE 2: Recrear desde placedObjects actuales ──
+        var placedObjects = room.roomSettings?.placedObjects;
+        if (placedObjects == null) return;
+
+        for (int i = 0; i < placedObjects.Count; i++)
+        {
+            var po = placedObjects[i];
+            if (po.type == PlacedObject.Type.LightBeam)
+            {
+                var beam = new LightBeam(po);
+                room.SetLightBeamBlink(beam, i);
+                room.AddObject(beam);
+            }
+            else if (po.type == PlacedObject.Type.CustomDecal)
+            {
+                room.AddObject(new CustomDecal(po));
+            }
         }
     }
 
