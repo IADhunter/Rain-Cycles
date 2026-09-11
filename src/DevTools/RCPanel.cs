@@ -559,7 +559,7 @@ public class RCPanel : Panel, IDevUISignals
 
         if (sender.IDstring.StartsWith("RCA_"))
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
 
             int sel = int.Parse(sender.IDstring.Split('_')[1]);
 
@@ -633,7 +633,7 @@ public class RCPanel : Panel, IDevUISignals
 
         if (sender.IDstring == "RC_Plus")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
 
             var activeStates = StateFileResolver.GetActiveStates(CurrentRoomName);
             int nextState = activeStates.Count + 1;
@@ -662,7 +662,7 @@ public class RCPanel : Panel, IDevUISignals
 
         if (sender.IDstring == "RC_Minus")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
 
             var activeStates = StateFileResolver.GetActiveStates(CurrentRoomName);
             if (activeStates.Count == 0) return;

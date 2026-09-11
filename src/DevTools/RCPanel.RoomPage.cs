@@ -82,7 +82,7 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
 
         if (sender.IDstring == "RC_Type_Static")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             var roomSettings = ParentPanel.CurrentRoom.roomSettings;
             roomSettings.SetRcType(RcType.Static);
             var snap = SettingsSnapshot.FromFile(roomSettings.filePath);
@@ -94,7 +94,7 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
 
         if (sender.IDstring == "RC_Type_Blend")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             var roomSettings = ParentPanel.CurrentRoom.roomSettings;
             roomSettings.SetRcType(RcType.Blend);
             var snap = SettingsSnapshot.FromFile(roomSettings.filePath);
@@ -106,7 +106,7 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
 
         if (sender.IDstring == "RC_Type_Vanilla")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             var roomSettings = ParentPanel.CurrentRoom.roomSettings;
             roomSettings.ClearExtendedData();
             var snap = SettingsSnapshot.FromFile(roomSettings.filePath);

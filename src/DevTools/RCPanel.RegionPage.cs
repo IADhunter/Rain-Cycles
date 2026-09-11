@@ -312,7 +312,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         
         if (sender.IDstring == "RC_Mode_Prev")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             _logic.CycleMode(-1);
             UpdateModeLabel();
             UpdateTriggerLabel();
@@ -324,7 +324,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         
         if (sender.IDstring == "RC_Mode_Next")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             _logic.CycleMode(1);
             UpdateModeLabel();
             UpdateTriggerLabel();
@@ -382,14 +382,14 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         
         if (sender.IDstring == "RC_Setting_Prev")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             CycleSetting(-1);
             return;
         }
         
         if (sender.IDstring == "RC_Setting_Next")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             CycleSetting(1);
             return;
         }

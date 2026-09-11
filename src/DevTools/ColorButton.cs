@@ -27,7 +27,7 @@ public class SelectButton : Button
     public override void Clicked()
     {
         base.Clicked();
-        if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+        if (!BlendClock.EditMode) return;
         if (!isSelected)
         {
             if (parentNode != null)

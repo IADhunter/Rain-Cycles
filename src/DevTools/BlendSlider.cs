@@ -71,7 +71,7 @@ public class BlendSlider : PositionedDevUINode, IDevUISignals
     {
         if (sender.IDstring == IDstring + "_Reset")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             BlendFactor = 0f;
             _wasMoving  = false;
             SettingsBlendController.Detach();

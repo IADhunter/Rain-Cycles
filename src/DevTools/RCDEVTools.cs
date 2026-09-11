@@ -99,6 +99,15 @@ public class RCDEVTools
     {
         RCInputGuard.Init();
         On.DevInterface.Page.ctor += DevInterface_Page_ctor;
+        On.DevInterface.Button.Clicked += OnButtonClicked;
+    }
+
+    private static void OnButtonClicked(On.DevInterface.Button.orig_Clicked orig, Button self)
+    {
+        if (self.IDstring == "Save_Settings" && !BlendClock.EditMode)
+            return;
+
+        orig(self);
     }
 
     public static void DevInterface_Page_ctor(On.DevInterface.Page.orig_ctor orig, Page self, DevUI owner, string IDstring, DevUINode parentNode, string name)
