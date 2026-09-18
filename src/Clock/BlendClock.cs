@@ -169,11 +169,11 @@ public static class BlendClock
         _regionCode = regionCode?.ToUpperInvariant();
         _mode = s.Mode;
 
-        _idleDuration = ResolveEffectiveDuration(s.IdleTime, 5f);
-        _blendDuration = ResolveEffectiveDuration(s.Duration, 10f);
-
         _rainTimer = rainTimer;
         _rainCycleLen = Mathf.Max(1, rainCycleLen);
+
+        _idleDuration = ResolveEffectiveDuration(s.IdleTime, 5f);
+        _blendDuration = ResolveEffectiveDuration(s.Duration, 10f);
 
         _deathRainTriggered = false;
         _waitingForThreshold = false;
