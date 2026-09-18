@@ -55,6 +55,35 @@ public static partial class SettingsBlendController
         return slots;
     }
 
+    // ============================================================
+    // DESTRUIR SLOTS - limpia escena, sprite y referencia
+    // ============================================================
+    private static void DestroyRcSlots(
+        List<BackgroundScene.Simple2DBackgroundIllustration> slots, BackgroundScene scene)
+    {
+        if (slots == null) return;
+        var cam = scene?.room?.game?.cameras?[0];
+        for (int i = 0; i < slots.Count; i++)
+        {
+            var slot = slots[i];
+            if (slot == null) continue;
+            if (cam != null && cam.spriteLeasers != null)
+            {
+                for (int j = 0; j < cam.spriteLeasers.Count; j++)
+                {
+                    var sl = cam.spriteLeasers[j];
+                    if (sl.drawableObject == slot && sl.sprites != null && sl.sprites.Length > 0)
+                    {
+                        sl.sprites[0]?.RemoveFromContainer();
+                        break;
+                    }
+                }
+            }
+            scene?.elements?.Remove(slot);
+            slot.Destroy();
+        }
+    }
+
     private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateStaticSlotsVanilla(
         BackgroundScene scene, Room room, SkyType sky)
     {
@@ -353,7 +382,7 @@ public static partial class SettingsBlendController
         string oldName = slot.illustrationName;
         
         string finalName = newName;
-        
+
         if (!Futile.atlasManager.DoesContainElementWithName(newName))
         {
             string modName = BlendSettingsLoader.ActiveModName;
@@ -503,8 +532,7 @@ public static partial class SettingsBlendController
                 break;
             }
         }
-        if (vanillaSprite == null)
-            return;
+        if (vanillaSprite == null) return;
 
         for (int j = 0; j < _rcSlotsPSVFog.Count; j++)
         {

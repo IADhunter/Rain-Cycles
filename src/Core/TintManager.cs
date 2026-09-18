@@ -397,7 +397,7 @@ public static class TintManager
         bool hasTint = state.HasTint;
         bool roomChanged = (roomName != _lastRoomName);
         _lastRoomName = roomName;
-        
+
         if (isStatic && !_inStaticRoom && roomChanged)
         {
             _inStaticRoom = true;

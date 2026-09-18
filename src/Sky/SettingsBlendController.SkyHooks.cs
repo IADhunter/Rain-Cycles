@@ -26,6 +26,8 @@ public static partial class SettingsBlendController
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
         bool isStaticManaged = hasRcType && snap.RcType == RcType.Static;
 
+
+
         if (!hasRcType)
         {
             orig(self, room, effect);
@@ -64,6 +66,7 @@ public static partial class SettingsBlendController
 
         if (shouldCreateRTV && isBlendManaged)
         {
+            DestroyRcSlots(_rcSlotsRTV, _rtvScene);
             _rcSlotsRTV = CreateRcSlotsVanilla(self, room, SkyType.RTV);
             _rtvScene = self;
 
@@ -156,6 +159,8 @@ public static partial class SettingsBlendController
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
         bool isStaticManaged = hasRcType && snap.RcType == RcType.Static;
 
+
+
         if (!hasRcType)
         {
             orig(self, room, effect);
@@ -198,6 +203,7 @@ public static partial class SettingsBlendController
         {
             if (targetSky == SkyType.ACV)
             {
+                DestroyRcSlots(_rcSlotsACV, _acvScene);
                 _rcSlotsACV = CreateRcSlotsVanilla(self, room, SkyType.ACV);
                 _acvScene = self;
                 
@@ -213,6 +219,9 @@ public static partial class SettingsBlendController
             }
             else if (targetSky == SkyType.PSV)
             {
+                DestroyRcSlots(_rcSlotsPSV, _psvScene);
+                DestroyRcSlots(_rcSlotsPSVFog, _psvScene);
+                DestroyRcSlots(_rcSlotsPSVSun, _psvScene);
                 _rcSlotsPSV = CreateRcSlotsVanilla(self, room, SkyType.PSV);
                 _rcSlotsPSVFog = CreateRcSlotsVanilla(self, room, SkyType.PSV);
                 _rcSlotsPSVSun = CreateSunSlots(self, room, SkyType.PSV, false);
@@ -422,6 +431,8 @@ public static partial class SettingsBlendController
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
         bool isStaticManaged = hasRcType && snap.RcType == RcType.Static;
 
+
+
         if (!hasRcType)
         {
             orig(self, room, effect);
@@ -460,6 +471,7 @@ public static partial class SettingsBlendController
         if (roomView == ViewType.ORV && isBlendManaged)
         {
             HideVanillaOuterRimSky(self);
+            DestroyRcSlots(_rcSlotsORV, _orvScene);
             _rcSlotsORV = CreateRcSlotsVanilla(self, room, SkyType.ORV);
             _orvScene = self;
             DefaultOrvSlotsToVanillaSky(_rcSlotsORV);

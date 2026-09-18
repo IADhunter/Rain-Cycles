@@ -143,6 +143,9 @@ public static partial class SettingsBlendController
                     sprite.RemoveFromContainer();
                     waterContainer.AddChildAtIndex(sprite, 3 - i);
                 }
+                else
+                {
+                }
             }
         }
 
