@@ -386,6 +386,12 @@ public class RCPanel : Panel, IDevUISignals
         {
             roomPage.RefreshButtons();
         }
+
+        if (owner.activePage is RoomSettingsPage rsp)
+        {
+            rsp.Refresh();
+            foreach (var node in rsp.subNodes) node.Refresh();
+        }
     }
 
     public void ApplyTintsFromSnapshot(SettingsSnapshot snap)
@@ -625,6 +631,12 @@ public class RCPanel : Panel, IDevUISignals
             if (_currentContent is RCPanel_RoomPage roomPage)
             {
                 roomPage.RefreshButtons();
+            }
+
+            if (owner.activePage is RoomSettingsPage rsp)
+            {
+                rsp.Refresh();
+                foreach (var node in rsp.subNodes) node.Refresh();
             }
 
             foreach (var node in subNodes) node.Refresh();
