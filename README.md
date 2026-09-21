@@ -205,6 +205,16 @@ Controls the global behavior of the region:
 * **Mod:** Name of the mod containing the background images.
 * **Acv / Rtv / Orv / Psv:** Sections to assign images to each state.
 
+### Setting
+
+* **Setting:** `0` to `4` (default: `0`).
+
+Maps a state number to the vanilla `settings.txt` file. When the blend reaches a state that matches this value, Rain Cycles uses the vanilla settings file as a fallback for rooms that don't have a dedicated `settings_N.txt` file.
+
+This avoids duplicating the vanilla settings across multiple numbered files. For example, if a region's vanilla settings work well for state 2, set `Setting: 2` and only create `settings_1.txt`, `settings_3.txt`, and `settings_4.txt` for the states that differ.
+
+In DevTools, this value is shown as **St:** with arrows to adjust it (0–4).
+
 ---
 
 ## Arena Mode
@@ -213,6 +223,41 @@ Rain Cycles works in Arena matches, blending room states per round on a per-leve
 
 * Configuration lives in `{level}_blend_settings.txt` inside `levels/raincycles/` of any active mod or `StreamingAssets` (searched recursively). The same `settings_N.txt` state files (up to 4) are resolved per level from the same location.
 * DevTools EditMode works in Arena; the clock restarts when leaving EditMode.
+
+---
+
+## Gates
+
+Rain Cycles treats gate rooms as independent mini-regions, each with their own blend configuration and state files.
+
+### How it works
+
+* Any room whose name starts with `GATE_` is automatically detected as a gate.
+* When the player enters a gate, its blend settings replace the region's active settings.
+* When the player leaves the gate, the region's blend settings are restored.
+
+### Configuration Files
+
+Gate blend settings follow the same format as region blend settings, but are stored separately:
+
+* **File:** `gate_{region1}_{region2}_blend_settings.txt`
+* **Location:** `world/gate-rooms/raincycles/` inside any active mod or `StreamingAssets`.
+
+State files (`settings_N.txt`) for gates are also resolved from the same `gate-rooms/raincycles/` folder.
+
+### Example
+
+For a gate between CC and UW, create:
+
+```
+world/gate-rooms/raincycles/
+  gate_cc_uw_blend_settings.txt
+  gate_cc_uw_settings_1.txt
+  gate_cc_uw_settings_2.txt
+  ...
+```
+
+> **Note:** Gates do not inherit settings from their parent region. Each gate is fully self-contained.
 
 ---
 
@@ -244,8 +289,10 @@ Views are a system that adds images and tints to a specific depth layer of the r
 * **ACV (Above Clouds View):** Sky images.
 * **RTV (Roof Top View):** Rooftop sky images.
 * **PSV (Pink Sky View):** Sky, Fog, and Sun layers.
-* **AUV (Ancient Urban View):** Supports tints, no configurable background images.
-* **ORV (Outer Rim View):** Sky images.
+* **AUV (Ancient Urban View):** Watcher DLC view. Supports tints; no configurable background images.
+* **ORV (Outer Rim View):** Watcher DLC view. Sky images; replaces the vanilla `otr_sky` element.
+
+> 💡 **Tint channels are not universal:** The Multiply channel is inert in `ORV`, and the Atmosphere channel is inert in `RTV` and `AUV` (no shader consumes those globals in those views).
 
 ---
 
@@ -351,6 +398,30 @@ Accessible from the developer menu (Default key: `O`). It includes:
 * Mode and timer selector
 * Trigger selector (None/Cycle/Rain) with wait_time editor
 * Edit Mode with automatic state selection
+
+---
+
+## Developer Tab in Remix Menu
+
+The Developer tab provides tools for mod creators to batch-generate room states and control where files are saved. Access it from the Rain Cycles options in the Remix menu.
+
+### Destination Mod
+
+Select which active mod receives the generated `settings_N.txt` files. By default, files are written to the region's own mod folder (or vanilla if no mod owns the region).
+
+* Use the search box to filter mods by ID or name.
+* Click a mod to select it as the save destination.
+* Click **X** to clear the selection and restore default behavior.
+
+### Generate States
+
+Batch-generates the 4 state files (`settings_1.txt` through `settings_4.txt`) for a region. Each file is a copy of the existing `settings.txt` found in the region's rooms folder.
+
+* Use the search box to filter regions by ID or name.
+* Click a region to generate its states.
+* If the region already has state files, it is skipped.
+
+> **Note:** This tool only affects file writing. Reading always follows the standard mod priority order described in [File Resolution](#file-resolution).
 
 ---
 
