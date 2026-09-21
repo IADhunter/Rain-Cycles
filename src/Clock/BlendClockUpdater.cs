@@ -74,6 +74,7 @@ public static class BlendClockUpdater
             }
 
             SettingsBlendController.ClearAllSlots();
+            SettingsSnapshot.InvalidateAllCache();
             BlendSkyAtlasCache.PreloadRegion(regionAfter);
             SettingsSnapshot.PreloadRegionTemplates(regionAfter);
             BlendSettingsLoader.LoadRegion(regionAfter);
@@ -82,7 +83,7 @@ public static class BlendClockUpdater
             _startFailed = false;
             _lastRegion = regionAfter;
             RoomCameraExtensions.ClearAllCaches();
-            StateFileResolver.InvalidatePathCache(); // ⭐ NUEVO
+            StateFileResolver.InvalidatePathCache();
 
             var settings = BlendSettingsLoader.Active;
             bool isClockEnabled = settings != null && settings.Clock;
@@ -105,8 +106,6 @@ public static class BlendClockUpdater
 
         if (self.GamePaused)
         {
-            if (!BlendClock.EditMode)
-                UpdateCameras(self);
             return;
         }
 
@@ -114,9 +113,6 @@ public static class BlendClockUpdater
         if (isArena && BlendSettingsLoader.Active == null) return;
         if (!isArena && self.GetStorySession == null) return;
 
-        // ============================================================
-        // BLEND CLOCK STARTUP
-        // ============================================================
         if (!isArena && !_winHandledThisSession && !BlendClock.IsRunning && !BlendClock.EditMode && !_startFailed)
         {
             var s = BlendSettingsLoader.Active;
@@ -152,6 +148,32 @@ public static class BlendClockUpdater
             }
         }
 
+        // Arena: mismo gate s.Clock y auto-restart al salir de EditMode.
+        // El estado y el blend per-level los prepara ArenaBlendController en su ctor hook.
+        if (isArena && !BlendClock.IsRunning && !BlendClock.EditMode && !_startFailed)
+        {
+            var s = BlendSettingsLoader.Active;
+
+            if (s != null && s.Clock)
+            {
+                string roomName = self.GetArenaGameSession?.arenaSitting?.GetCurrentLevel;
+                int initialState = ResolveInitial(s);
+
+                float rainTimer = 0f;
+                int rainLen = 1;
+                if (self.world?.rainCycle != null)
+                {
+                    rainTimer = self.world.rainCycle.timer;
+                    rainLen = self.world.rainCycle.cycleLength;
+                }
+
+                BlendClock.Start(roomName, initialState, rainTimer, rainLen);
+
+                if (!BlendClock.IsRunning)
+                    _startFailed = true;
+            }
+        }
+
         if (!BlendClock.EditMode && BlendClock.IsRunning)
         {
             float rainTimer = 0f;
@@ -164,10 +186,6 @@ public static class BlendClockUpdater
                 if (!_loggedRainCycleThisSession)
                 {
                     _loggedRainCycleThisSession = true;
-                    float cycleLenSeconds = rainLen / 40f;
-                    RSPlugin.log.LogInfo(
-                        $"[RainCycleCheck] cycleLength={rainLen} ticks " +
-                        $"(~{cycleLenSeconds:F1}s) | timer inicial={self.world.rainCycle.timer}");
                 }
             }
             BlendClock.Tick(GameDelta(self), rainTimer, rainLen);
@@ -181,9 +199,6 @@ public static class BlendClockUpdater
 
         SettingsBlendController.ProcessPendingSkyRefresh();
 
-        // ============================================================
-        // ACTUALIZAR CÁMARAS - CACHES EVITAN TRABAJO PESADO
-        // ============================================================
         UpdateCameras(self);
     }
 
@@ -216,14 +231,27 @@ public static class BlendClockUpdater
             if (cam?.room == null) continue;
             string room = cam.room.abstractRoom?.name;
             if (room == null) continue;
-            
-            if (!RoomCameraExtensions.IsBlendRoomCached(cam.room)) continue;
 
-            bool hasFullStates = RoomCameraExtensions.HasFullStatesCached(room);
+            // Gate rooms: cargar blend settings específicos de esta gate
+            if (BlendSettingsLoader.IsGateRoom(room) && !BlendSettingsLoader.IsGateActive)
+            {
+                BlendSettingsLoader.LoadGateSettings(room);
+                s = BlendSettingsLoader.Active;
+            }
+            // Salir de gate: restaurar settings de la región
+            else if (!BlendSettingsLoader.IsGateRoom(room) && BlendSettingsLoader.IsGateActive)
+            {
+                BlendSettingsLoader.LoadRegion(_lastRegion);
+                s = BlendSettingsLoader.Active;
+            }
+
+            var state = RoomCameraExtensions.GetRoomBlendState(cam.room);
+            if (!state.IsBlend) continue;
+
+            bool hasFullStates = state.HasFullStates;
 
             if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending && hasFullStates)
             {
-                // ⭐ Ahora usa StateFileResolver.ResolveSettingsPath()
                 string pA = GetSettingsFile(game, room, BlendClock.StateA);
                 string pB = GetSettingsFile(game, room, BlendClock.StateB);
 
@@ -290,6 +318,13 @@ public static class BlendClockUpdater
             if (BlendClock.IsRunning && hasFullStates)
             {
                 cam.UpdateBlendPalette();
+
+                var blendTexData = cam.GetBlendData();
+                if (blendTexData != null && blendTexData.isBlendActive &&
+                    blendTexData.terrainBlendedTexture != null)
+                {
+                    Shader.SetGlobalTexture("_terrainPalette", blendTexData.terrainBlendedTexture);
+                }
             }
             else if (!hasFullStates)
             {
@@ -304,13 +339,9 @@ public static class BlendClockUpdater
         UpdateSliders(game);
     }
 
-    // ============================================================
-    // ⭐ CAMBIO PRINCIPAL: Ahora usa StateFileResolver.ResolveSettingsPath()
-    // ============================================================
     private static string GetSettingsFile(RainWorldGame game, string room, int state)
     {
-        if (game?.IsArenaSession == true)
-            return ArenaStateResolver.GetSettingsPath(room, state);
+        // StateFileResolver delega a ArenaBlendController cuando el modo arena está activo.
         return StateFileResolver.ResolveSettingsPath(room, state);
     }
 
@@ -394,6 +425,7 @@ public static class BlendClockUpdater
             BlendClock.Stop();
         orig(self);
         StateFileResolver.SetBlockLoad(false);
+        _startFailed = false; // partida nueva -> reintentos frescos (historia y arena)
         RoomCameraExtensions.InvalidateAllRoomCaches();
         StateFileResolver.InvalidatePathCache(); // ⭐ NUEVO
     }

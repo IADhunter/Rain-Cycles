@@ -66,6 +66,8 @@ public partial class SettingsSnapshot
     public float EffectLightBurn        = -1f;
     public float EffectBloom            = -1f;
     public float EffectSurfaceSandstorm = -1f;
+    public float EffectSnowLight        = -1f;
+    public float EffectSnowSparkle      = -1f;
 
     public float? ModifyEffectColorA_Hue = null;
     public float? ModifyEffectColorA_Saturation = null;
@@ -142,9 +144,9 @@ public partial class SettingsSnapshot
     public static void PreloadRegionTemplates(string regionCode)
     {
         if (string.IsNullOrEmpty(regionCode)) return;
-        string upper = regionCode.ToUpperInvariant();
-        string searchPattern = $"{upper}_settingstemplate_*.txt";
-        string regionFolder = Path.Combine("World", upper);
+        string lower = regionCode.ToLowerInvariant();
+        string searchPattern = $"{lower}_settingstemplate_*.txt";
+        string regionFolder = Path.Combine("world", lower);
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
@@ -183,7 +185,9 @@ public enum ViewType
     None,
     ACV,
     RTV,
-    PSV
+    PSV,
+    AUV,
+    ORV
 }
 
 public enum RcType

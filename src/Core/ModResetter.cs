@@ -28,6 +28,8 @@ public static class ModResetter
         typeof(RoomCameraExtensions),
         typeof(BlendSkyAtlasCache),
         typeof(RainCyclesEventDispatcher),
+        typeof(CycleStateResolver),
+        typeof(AncestorResolver),
     };
     
     public static void Init()
@@ -38,54 +40,42 @@ public static class ModResetter
         On.RainWorldGame.ctor += OnGameCtor;
         
         _isInitialized = true;
-        RSPlugin.log.LogInfo("[ModResetter] Inicializado");
     }
     
     private static void OnGameShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
     {
-        RSPlugin.log.LogInfo("[ModResetter] Ejecutando eliminaciones pendientes");
         StateFileResolver.ExecutePendingDeletes();
-        
-        RSPlugin.log.LogInfo("[ModResetter] Limpiando estado del mod");
+
         ResetAllModState();
         orig(self);
     }
     
     private static void OnGameCtor(On.RainWorldGame.orig_ctor orig, RainWorldGame self, ProcessManager manager)
     {
-        RSPlugin.log.LogInfo("[ModResetter] Preparando estado limpio para nueva partida");
         ResetAllModState();
         orig(self, manager);
         
-        if (self.world?.region?.name != null)
+        // La carga de región/blend y el estado por ciclo son de historia.
+        // En arena (GetStorySession null) lo gestiona ArenaBlendController (blend per-level).
+        if (self.GetStorySession != null && self.world?.region?.name != null)
         {
             string regionCode = self.world.region.name.ToUpperInvariant();
-            RSPlugin.log.LogInfo($"[ModResetter] Recargando configuración para región {regionCode}");
             
             BlendSettingsLoader.LoadRegion(regionCode);
+            AncestorResolver.EnsureAncestorFilesExist(regionCode);
             
             int cycle = self.GetStorySession?.saveState?.cycleNumber ?? 0;
-            int state;
-            
-            if (RSPlugin.randomCycles != null && RSPlugin.randomCycles.Value)
-            {
-                int seed = unchecked(cycle * 1000003);
-                state = new System.Random(seed).Next(1, 5);
-            }
-            else
-            {
-                state = (cycle % 4) + 1;
-                if (cycle == 0) state = 1;
-            }
-            
+            int state = CycleStateResolver.ResolveState(cycle);
+
             StateFileResolver.SetCurrentCycleState(state);
             
+            SettingsSnapshot.InvalidateAllCache();
             SettingsSnapshot.PreloadRegionTemplates(regionCode);
             RoomCameraExtensions.ClearAllCaches();
 
             BlendClockUpdater.ResetRainCycleLogFlag();
         }
-        else
+        else if (!self.IsArenaSession)
         {
             RSPlugin.log.LogWarning("[ModResetter] No se pudo determinar la región después del reset");
         }
@@ -93,8 +83,6 @@ public static class ModResetter
     
     public static void ResetAllModState()
     {
-        RSPlugin.log.LogInfo("[ModResetter] Iniciando limpieza completa");
-        
         StopActiveSystems();
         
         foreach (var type in _typesToReset)
@@ -104,8 +92,6 @@ public static class ModResetter
         
         PerformSpecificCleanup();
         StateFileResolver.ClearAllPendingDeletes();
-        
-        RSPlugin.log.LogInfo("[ModResetter] Limpieza completada");
     }
     
     private static void StopActiveSystems()
@@ -139,9 +125,8 @@ public static class ModResetter
                     object defaultValue = GetDefaultValue(field.FieldType);
                     field.SetValue(null, defaultValue);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    RSPlugin.log.LogDebug($"[ModResetter] No se pudo resetear {type.Name}.{field.Name}: {ex.Message}");
                 }
             }
         }
@@ -214,6 +199,7 @@ public static class ModResetter
         SetFieldValue(type, "_rtvScene", null);
         SetFieldValue(type, "_acvScene", null);
         SetFieldValue(type, "_psvScene", null);
+        SetFieldValue(type, "_orvScene", null);
         
         ClearCollectionField(type, "_rcViewInjected");
         ClearCollectionField(type, "_rcSlotsACV");
@@ -221,9 +207,11 @@ public static class ModResetter
         ClearCollectionField(type, "_rcSlotsPSV");
         ClearCollectionField(type, "_rcSlotsPSVFog");
         ClearCollectionField(type, "_rcSlotsPSVSun");
+        ClearCollectionField(type, "_rcSlotsORV");
         ClearCollectionField(type, "_rcSlotsStaticACV");
         ClearCollectionField(type, "_rcSlotsStaticRTV");
         ClearCollectionField(type, "_rcSlotsStaticPSV");
+        ClearCollectionField(type, "_rcSlotsStaticORV");
         
         SetFieldValue(type, "_snapA", null);
         SetFieldValue(type, "_snapB", null);
@@ -237,7 +225,6 @@ public static class ModResetter
         SetFieldValue(type, "_lastT", -1f);
         SetFieldValue(type, "_lastLightT", -1f);
         SetFieldValue(type, "_forcedT", 0f);
-        SetFieldValue(type, "_entryFrameT", -1f);
     }
     
     private static void CleanupRoomCameraExtensions()
@@ -245,9 +232,6 @@ public static class ModResetter
         var type = typeof(RoomCameraExtensions);
         ClearCollectionField(type, "_stateCache");
         SetFieldValue(type, "_preloadHooksInitialized", false);
-        // NOTA: el loop genérico de ResetTypeStaticFields ya resetearía esto solo
-        // (no es readonly), pero se deja explícito por el mismo motivo que
-        // _preloadHooksInitialized arriba: claridad sobre qué se está limpiando.
         SetFieldValue(type, "_lightsInitialized", false);
     }
     

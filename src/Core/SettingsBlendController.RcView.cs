@@ -3,7 +3,6 @@ using RainCycles.Patches;
 
 namespace RainCycles.Core;
 
-// Inyección y preservación de RainCycles: en settings files.
 public static partial class SettingsBlendController
 {
     private static void OnDevUIUpdate(On.DevInterface.DevUI.orig_Update orig, DevInterface.DevUI self)
@@ -53,7 +52,6 @@ public static partial class SettingsBlendController
             string suffix = content.EndsWith("\n") ? "" : "\n";
             string defaultBlock = "RainCycles: <Type:None>";
             System.IO.File.AppendAllText(filePath, suffix + defaultBlock + "\n", System.Text.Encoding.UTF8);
-            RSPlugin.log.LogDebug($"[RC_VIEW] RainCycles: inyectado en {filePath}");
         }
         catch (System.Exception e)
         {

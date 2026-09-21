@@ -17,9 +17,6 @@ namespace RainCycles.Patches
         private static FShader _originalFastSnowFallShader;
         private static FShader _originalBlizzardShader;
         private static FShader _originalFastBlizzardShader;
-        
-        // Último valor loggeado de SnowGrain (evitar spam)
-        private static float _lastLoggedSnowGrain = -1f;
 
         // Shaders tintados
         private static FShader _snowTintShader;
@@ -32,7 +29,7 @@ namespace RainCycles.Patches
         public static readonly RoomSettings.RoomEffect.Type SnowLightEffect = 
             new RoomSettings.RoomEffect.Type("SnowLight", true);
         
-        public static readonly RoomSettings.RoomEffect.Type SnowGrainEffect = 
+        public static readonly RoomSettings.RoomEffect.Type SnowSparkleEffect = 
             new RoomSettings.RoomEffect.Type("SnowSparkle", true);
         
         public static void Init()
@@ -50,7 +47,6 @@ namespace RainCycles.Patches
                 HookRoomCameraDrawUpdate();
                 
                 _initialized = true;
-                RSPlugin.log.LogInfo("[SnowLightController] Inicializado con SnowLight y SnowGrain");
             }
             catch (Exception ex)
             {
@@ -62,10 +58,7 @@ namespace RainCycles.Patches
         {
             string assemblyDir = Path.GetDirectoryName(typeof(RSPlugin).Assembly.Location);
             string bundlePath = Path.GetFullPath(Path.Combine(assemblyDir, "..", "assetbundles", "snowtint"));
-            
-            RSPlugin.log.LogDebug($"[SnowLightController] Assembly en: {assemblyDir}");
-            RSPlugin.log.LogDebug($"[SnowLightController] Intentando cargar asset bundle desde: {bundlePath}");
-            
+
             if (!File.Exists(bundlePath))
             {
                 throw new FileNotFoundException($"Asset bundle no encontrado: {bundlePath}");
@@ -77,43 +70,34 @@ namespace RainCycles.Patches
             {
                 throw new Exception($"AssetBundle.LoadFromFile devolvió null para: {bundlePath}");
             }
-            
-            RSPlugin.log.LogInfo("[SnowLightController] Asset bundle cargado correctamente");
         }
         
         private static void RegisterShaders()
         {
-            // Snow (suelo)
             Shader snowShader = _bundle.LoadAsset<Shader>("Assets/Shaders/SnowTintShader.shader");
             if (snowShader == null) throw new Exception("No se encontró SnowTintShader.shader");
             _snowTintShader = FShader.CreateShader("SnowTintShader", snowShader);
             Custom.rainWorld.Shaders["SnowTintShader"] = _snowTintShader;
             
-            // SnowFall (nieve cayendo, calidad normal)
             Shader snowFallShader = _bundle.LoadAsset<Shader>("Assets/Shaders/SnowFallTintShader.shader");
             if (snowFallShader == null) throw new Exception("No se encontró SnowFallTintShader.shader");
             _snowFallTintShader = FShader.CreateShader("SnowFallTintShader", snowFallShader);
             Custom.rainWorld.Shaders["SnowFallTintShader"] = _snowFallTintShader;
             
-            // FastSnowFall (nieve cayendo, calidad baja)
             Shader fastSnowFallShader = _bundle.LoadAsset<Shader>("Assets/Shaders/FastSnowFallTintShader.shader");
             if (fastSnowFallShader == null) throw new Exception("No se encontró FastSnowFallTintShader.shader");
             _fastSnowFallTintShader = FShader.CreateShader("FastSnowFallTintShader", fastSnowFallShader);
             Custom.rainWorld.Shaders["FastSnowFallTintShader"] = _fastSnowFallTintShader;
             
-            // Blizzard (ventisca, calidad normal)
             Shader blizzardShader = _bundle.LoadAsset<Shader>("Assets/Shaders/BlizzardTintShader.shader");
             if (blizzardShader == null) throw new Exception("No se encontró BlizzardTintShader.shader");
             _blizzardTintShader = FShader.CreateShader("BlizzardTintShader", blizzardShader);
             Custom.rainWorld.Shaders["BlizzardTintShader"] = _blizzardTintShader;
             
-            // FastBlizzard (ventisca, calidad baja)
             Shader fastBlizzardShader = _bundle.LoadAsset<Shader>("Assets/Shaders/FastBlizzardTintShader.shader");
             if (fastBlizzardShader == null) throw new Exception("No se encontró FastBlizzardTintShader.shader");
             _fastBlizzardTintShader = FShader.CreateShader("FastBlizzardTintShader", fastBlizzardShader);
             Custom.rainWorld.Shaders["FastBlizzardTintShader"] = _fastBlizzardTintShader;
-            
-            RSPlugin.log.LogInfo("[SnowLightController] 5 shaders registrados correctamente");
         }
         
         private static void CacheOriginalShaders()
@@ -124,10 +108,19 @@ namespace RainCycles.Patches
             Custom.rainWorld.Shaders.TryGetValue("Blizzard", out _originalBlizzardShader);
             Custom.rainWorld.Shaders.TryGetValue("FastBlizzard", out _originalFastBlizzardShader);
         }
-        
         private static void RegisterEffectCategories()
         {
             On.DevInterface.RoomSettingsPage.DevEffectGetCategoryFromEffectType += OnDevEffectGetCategory;
+            On.RoomSettings.RoomEffect.GetSliderDefault += OnGetSliderDefault;
+        }
+        
+        private static float OnGetSliderDefault(
+            On.RoomSettings.RoomEffect.orig_GetSliderDefault orig,
+            RoomSettings.RoomEffect.Type type,
+            int index)
+        {
+            if (index == 0 && type == SnowLightEffect) return 0.5f;
+            return orig(type, index);
         }
         
         private static DevInterface.RoomSettingsPage.DevEffectsCategories OnDevEffectGetCategory(
@@ -138,7 +131,7 @@ namespace RainCycles.Patches
             if (type == SnowLightEffect)
                 return DevInterface.RoomSettingsPage.DevEffectsCategories.Lighting;
             
-            if (type == SnowGrainEffect)
+            if (type == SnowSparkleEffect)
                 return DevInterface.RoomSettingsPage.DevEffectsCategories.Decorations;
             
             return orig(self, type);
@@ -195,10 +188,7 @@ namespace RainCycles.Patches
             orig(self, timeStacker, timeSpeed);
             
             if (self.room == null) return;
-            
-            // ============================================
-            // PROCESAR SNOWLIGHT
-            // ============================================
+
             RoomSettings.RoomEffect snowLightEffect = self.room.roomSettings.GetEffect(SnowLightEffect);
             bool hasSnowLight = snowLightEffect != null;
             float snowLightAmount = hasSnowLight ? Mathf.Clamp01(snowLightEffect.amount) : 0.5f;
@@ -208,38 +198,24 @@ namespace RainCycles.Patches
                 Shader.SetGlobalFloat("_SnowTintAmount", snowLightAmount);
             }
             
-            // ============================================
-            // PROCESAR SNOWGRAIN
-            // ============================================
-            RoomSettings.RoomEffect snowGrainEffect = self.room.roomSettings.GetEffect(SnowGrainEffect);
-            bool hasSnowGrain = snowGrainEffect != null;
-            float snowGrainAmount = hasSnowGrain ? Mathf.Clamp01(snowGrainEffect.amount) : 0f;
+            RoomSettings.RoomEffect snowSparkleEffect = self.room.roomSettings.GetEffect(SnowSparkleEffect);
+            bool hasSnowSparkle = snowSparkleEffect != null;
+            float snowSparkleAmount = hasSnowSparkle ? Mathf.Clamp01(snowSparkleEffect.amount) : 0f;
             
-            if (hasSnowGrain)
+            if (hasSnowSparkle)
             {
-                Shader.SetGlobalFloat("_SnowGrainAmount", snowGrainAmount);
-                if (!Mathf.Approximately(snowGrainAmount, _lastLoggedSnowGrain))
-                {
-                    _lastLoggedSnowGrain = snowGrainAmount;
-                    RSPlugin.log.LogDebug($"[SnowGrain] Activo en {self.room.abstractRoom.name} con valor: {snowGrainAmount}");
-                }
+                Shader.SetGlobalFloat("_SnowGrainAmount", snowSparkleAmount);
             }
             else
             {
                 Shader.SetGlobalFloat("_SnowGrainAmount", 0f);
             }
             
-            // ============================================
-            // PROCESAR Snow (suelo)
-            // ============================================
             if (self.room.snow)
             {
                 ProcessSnowSpriteLeaser(self, hasSnowLight);
             }
             
-            // ============================================
-            // PROCESAR BlizzardGraphics (nieve cayendo + ventisca)
-            // ============================================
             ProcessBlizzardGraphics(self, hasSnowLight);
         }
         
@@ -259,7 +235,6 @@ namespace RainCycles.Patches
                         if (snowSprite.shader != _snowTintShader)
                         {
                             snowSprite.shader = _snowTintShader;
-                            RSPlugin.log.LogDebug($"[SnowLight] Snow shader aplicado en: {rCam.room.abstractRoom.name}");
                         }
                     }
                     else
@@ -267,7 +242,6 @@ namespace RainCycles.Patches
                         if (snowSprite.shader == _snowTintShader)
                         {
                             snowSprite.shader = _originalDisplaySnowShader ?? rCam.room.game.rainWorld.Shaders["DisplaySnowShader"];
-                            RSPlugin.log.LogDebug($"[SnowLight] Snow shader restaurado en: {rCam.room.abstractRoom.name}");
                         }
                     }
                     break;

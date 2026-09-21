@@ -1,5 +1,6 @@
 using UnityEngine;
 using RainCycles.Snapshot;
+using RainCycles.Patches;
 using RWCustom;
 using System.Collections.Generic;
 
@@ -136,43 +137,7 @@ public static partial class RoomCameraExtensions
 
     public static void ClearEffectData(RoomCamera cam)
     {
-        if (cam?.room?.roomSettings == null) return;
-        string filePath = cam.room.roomSettings.filePath;
-        if (string.IsNullOrEmpty(filePath)) return;
-
-        var snap = SettingsSnapshot.GetCached(filePath, cam.room.abstractRoom?.name);
-        if (snap == null) return;
-
-        var rs = cam.room.roomSettings;
-
-        void RestoreEffect(RoomSettings.RoomEffect.Type type, float original)
-        {
-            float amount = original >= 0f ? original : 0f;
-            var existing = rs.GetEffect(type);
-            if (existing != null)
-                existing.amount = amount;
-            else if (amount > 0f)
-                rs.effects.Add(new RoomSettings.RoomEffect(type, amount, false));
-        }
-
-        RestoreEffect(RoomSettings.RoomEffect.Type.Darkness,         snap.EffectDarkness);
-        RestoreEffect(RoomSettings.RoomEffect.Type.Brightness,       snap.EffectBrightness);
-        RestoreEffect(RoomSettings.RoomEffect.Type.Contrast,         snap.EffectContrast);
-        RestoreEffect(RoomSettings.RoomEffect.Type.Desaturation,     snap.EffectDesaturation);
-        RestoreEffect(RoomSettings.RoomEffect.Type.Hue,              snap.EffectHue);
-        RestoreEffect(RoomSettings.RoomEffect.Type.DarkenLights,     snap.EffectDarkenLights);
-        RestoreEffect(RoomSettings.RoomEffect.Type.Fog,              snap.EffectFog);
-        RestoreEffect(RoomSettings.RoomEffect.Type.SkyBloom,         snap.EffectSkyBloom);
-        RestoreEffect(RoomSettings.RoomEffect.Type.SkyAndLightBloom, snap.EffectSkyAndLightBloom);
-        RestoreEffect(RoomSettings.RoomEffect.Type.LightBurn,        snap.EffectLightBurn);
-        RestoreEffect(RoomSettings.RoomEffect.Type.Bloom,            snap.EffectBloom);
-
-        float sandstorm = snap.EffectSurfaceSandstorm >= 0f ? snap.EffectSurfaceSandstorm : 0f;
-        var ssExisting = rs.GetEffect(new RoomSettings.RoomEffect.Type("SurfaceSandstorm"));
-        if (ssExisting != null)
-            ssExisting.amount = sandstorm;
-        else if (sandstorm > 0f)
-            rs.effects.Add(new RoomSettings.RoomEffect(new RoomSettings.RoomEffect.Type("SurfaceSandstorm"), sandstorm, false));
+        // VACIADO INTENCIONAL (regresión corregida 03/08/2026)
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -206,12 +171,15 @@ public static partial class RoomCameraExtensions
         float sandstorm = LerpScalarEffect(a.EffectSurfaceSandstorm, b.EffectSurfaceSandstorm, t);
         if (sandstorm >= 0f)
             ApplyEffect(room, new RoomSettings.RoomEffect.Type("SurfaceSandstorm"), sandstorm);
+
+        ApplyEffect(room, SnowLightController.SnowLightEffect,   LerpScalarEffect(a.EffectSnowLight,   b.EffectSnowLight,   t, 0.5f));
+        ApplyEffect(room, SnowLightController.SnowSparkleEffect, LerpScalarEffect(a.EffectSnowSparkle, b.EffectSnowSparkle, t));
     }
 
-    private static float LerpScalarEffect(float va, float vb, float t)
+    private static float LerpScalarEffect(float va, float vb, float t, float fallback = 0f)
     {
-        float a = va < 0f ? 0f : va;
-        float b = vb < 0f ? 0f : vb;
+        float a = va < 0f ? fallback : va;
+        float b = vb < 0f ? fallback : vb;
         return Mathf.Lerp(a, b, t);
     }
 
@@ -239,50 +207,65 @@ public static partial class RoomCameraExtensions
         var effect = room.roomSettings.GetEffect(type);
         if (effect != null)
             effect.amount = amount;
-        else
-            room.roomSettings.effects.Add(new RoomSettings.RoomEffect(type, amount, false));
     }
 
     // ═════════════════════════════════════════════════════════════════════
     //  DECALS - INTERPOLACIÓN Y APLICACIÓN DURANTE EL BLEND
-    //  (Extraído de SettingsSnapshotLerp y RoomEffectsApplier)
     // ═════════════════════════════════════════════════════════════════════
 
-    public static SettingsSnapshot LerpDecals(SettingsSnapshot a, SettingsSnapshot b, float t)
+    public static DecalLerpResult LerpDecals(SettingsSnapshot a, SettingsSnapshot b, float t)
     {
-        var snap = new SettingsSnapshot();
-        snap.PlacedObjectLines = new List<string>(a.PlacedObjectLines);
+        var result = new DecalLerpResult
+        {
+            DecalOpacities = new Dictionary<int, float[]>(),
+            DecalIndices = new List<int>(),
+        };
+
+        for (int i = 0; i < a.PlacedObjectLines.Count; i++)
+            if (a.PlacedObjectLines[i].StartsWith("CustomDecal><"))
+                result.DecalIndices.Add(i);
 
         foreach (var kv in a.DecalOpacities)
         {
             if (!b.DecalOpacities.TryGetValue(kv.Key, out float[] opsB)) opsB = new float[4];
             float[] lerped = new float[4];
             for (int i = 0; i < 4; i++) lerped[i] = Mathf.Lerp(kv.Value[i], opsB[i], t);
-            snap.DecalOpacities[kv.Key] = lerped;
+            result.DecalOpacities[kv.Key] = lerped;
         }
 
-        return snap;
+        return result;
     }
 
     public static void ApplyDecalOpacities(this Room room, SettingsSnapshot lerped)
     {
         if (lerped.DecalOpacities.Count == 0) return;
 
-        var decalSnapIndices = new List<int>();
+        var decalIndices = new List<int>();
         for (int i = 0; i < lerped.PlacedObjectLines.Count; i++)
             if (lerped.PlacedObjectLines[i].StartsWith("CustomDecal><"))
-                decalSnapIndices.Add(i);
+                decalIndices.Add(i);
 
+        ApplyDecalOpacitiesCore(room, lerped.DecalOpacities, decalIndices);
+    }
+
+    public static void ApplyDecalOpacities(this Room room, DecalLerpResult lerped)
+    {
+        if (lerped.DecalOpacities.Count == 0) return;
+        ApplyDecalOpacitiesCore(room, lerped.DecalOpacities, lerped.DecalIndices);
+    }
+
+    private static void ApplyDecalOpacitiesCore(Room room, Dictionary<int, float[]> opacities, List<int> decalIndices)
+    {
         int decalCount = 0;
         for (int i = 0; i < room.updateList.Count; i++)
         {
             var decal = room.updateList[i] as CustomDecal;
             if (decal == null) continue;
 
-            if (decalCount < decalSnapIndices.Count)
+            if (decalCount < decalIndices.Count)
             {
-                int snapIdx = decalSnapIndices[decalCount];
-                if (lerped.DecalOpacities.TryGetValue(snapIdx, out float[] ops))
+                int snapIdx = decalIndices[decalCount];
+                if (opacities.TryGetValue(snapIdx, out float[] ops))
                 {
                     var data = decal.placedObject.data as PlacedObject.CustomDecalData;
                     if (data != null)
@@ -299,4 +282,10 @@ public static partial class RoomCameraExtensions
             decalCount++;
         }
     }
+}
+
+public struct DecalLerpResult
+{
+    public Dictionary<int, float[]> DecalOpacities;
+    public List<int> DecalIndices;
 }

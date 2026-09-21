@@ -23,38 +23,27 @@ public static partial class SettingsBlendController
         string nextRoomName = newRoom?.abstractRoom?.name;
         bool nextIsManaged = nextRoomName != null && IsBlendRoom(newRoom);
 
-        if (!string.IsNullOrEmpty(prevRoomName))
-            RoomCameraExtensions.InvalidateRoomCache(prevRoomName);
-        if (!string.IsNullOrEmpty(nextRoomName))
-            RoomCameraExtensions.InvalidateRoomCache(nextRoomName);
-
         if (prevWasManaged && !nextIsManaged)
         {
+            Detach();
+
             var blendData = self.GetBlendData();
             if (blendData != null)
             {
                 blendData.isBlendActive = false;
             }
 
-            if (!_active && _room != null)
+            var cam = self.game?.cameras?[0];
+            if (cam != null)
             {
-                _room = null;
-                _pathA = null;
-                _pathB = null;
-                _snapA = null;
-                _snapB = null;
-            }
-
-            if (newRoom?.roomSettings != null)
-            {
-                int correctPal = newRoom.roomSettings.Palette;
-                self.ChangeMainPalette(correctPal);
-                self.ApplyFade();
+                cam.paletteA = -1;
+                cam.paletteBlend = 0f;
             }
 
             _activeSnapshot = null;
             _psvScene = null;
             _acvScene = null;
+            _orvScene = null;
             ClearCachedVanillaFog();
 
             if (BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Idle && self.room != null)
@@ -78,6 +67,7 @@ public static partial class SettingsBlendController
             _activeSnapshot = null;
             _psvScene = null;
             _acvScene = null;
+            _orvScene = null;
             ClearCachedVanillaFog();
         }
 
@@ -106,11 +96,9 @@ public static partial class SettingsBlendController
                     float t = BlendClock.SubPhaseLocalT;
                     AttachWithExternalT(newRoom, pathA, pathB);
                     SetExternalT(t);
-                    _entryFrameT = t;
                 }
                 else
                 {
-                    _entryFrameT = BlendClock.SubPhaseLocalT;
                     SettingsSnapshot.GetCached(pathA, nextRoomName);
                     SettingsSnapshot.GetCached(pathB, nextRoomName);
                 }
@@ -133,22 +121,6 @@ public static partial class SettingsBlendController
             var rs = newRoom.roomSettings;
             if (rs != null)
             {
-                ForceLoadPalette(self, rs.Palette, ref self.fadeTexA);
-                
-                if (rs.fadePalette != null)
-                {
-                    ForceLoadPalette(self, rs.fadePalette.palette, ref self.fadeTexB);
-                    self.paletteB = rs.fadePalette.palette;
-                    self.paletteBlend = (self.currentCameraPosition < rs.fadePalette.fades.Length) 
-                        ? rs.fadePalette.fades[self.currentCameraPosition] 
-                        : 0f;
-                }
-                else
-                {
-                    self.paletteB = -1;
-                    self.paletteBlend = 0f;
-                }
-
                 var terrainBlendDataReset = self.GetBlendData();
                 if (terrainBlendDataReset != null)
                 {
@@ -171,6 +143,9 @@ public static partial class SettingsBlendController
                     sprite.RemoveFromContainer();
                     waterContainer.AddChildAtIndex(sprite, 3 - i);
                 }
+                else
+                {
+                }
             }
         }
 
@@ -185,7 +160,8 @@ public static partial class SettingsBlendController
         {
             _activeSnapshot = null;
             _psvScene = null;
-            _entryFrameT = -1f;
+            _acvScene = null;
+            _orvScene = null;
             ClearCachedVanillaFog();
         }
     }
@@ -207,35 +183,29 @@ public static partial class SettingsBlendController
         string roomName = self.room.abstractRoom?.name;
         if (roomName == null) return;
 
-        var snap = SettingsSnapshot.GetCached(self.room.roomSettings?.filePath, self.room.abstractRoom?.name);
-        bool hasView = snap != null && snap.HasView;
-
-        bool isBlendRoom = IsBlendRoom(self.room);
-        bool isStaticRoom = IsStaticViewRoom(self.room);
+        var rcState = RoomCameraExtensions.GetRoomBlendState(self.room);
+        bool hasView = rcState.HasView;
+        bool isBlendRoom = rcState.IsBlend;
+        bool isStaticRoom = rcState.IsStatic;
 
         if ((isBlendRoom || isStaticRoom) && hasView)
         {
             _lastManagedRoomName = roomName;
-            ForceHideVanillaSlots(self.room);
+            ForceHideVanillaSlots(self.room, rcState);
         }
 
-        // ═══════════════════════════════════════════════════════════════
-        // SINCRONIZAR POSICIÓN DEL FOG RC CON EL FOG VANILLA (PSV)
-        // SOLO SI ESTAMOS EN UNA SALA PSV Y TENEMOS SLOTS DE FOG
-        // ═══════════════════════════════════════════════════════════════
         if (_psvScene != null && _rcSlotsPSVFog != null && _rcSlotsPSVFog.Count > 0)
         {
             SyncFogSlotPosition(self);
         }
-        // Si estamos en una sala que NO es PSV, limpiar la cache del fog
         else if (_psvScene == null && _cachedVanillaFog != null)
         {
             ClearCachedVanillaFog();
         }
 
-        if (_lastRoomWasManaged && self.room != null && IsBlendRoom(self.room))
+        if (_lastRoomWasManaged && self.room != null && isBlendRoom)
         {
-            bool stillManaged = IsBlendRoom(self.room) || IsStaticViewRoom(self.room);
+            bool stillManaged = isBlendRoom || isStaticRoom;
 
             if (stillManaged && BlendClock.IsRunning &&
                 BlendClock.CurrentPhase == BlendClock.Phase.Idle)
@@ -263,22 +233,17 @@ public static partial class SettingsBlendController
     // ============================================================
     // FORCE HIDE VANILLA SLOTS - SOLO SI EL VIEW ESTÁ DECLARADO
     // ============================================================
-    private static void ForceHideVanillaSlots(Room room)
+    private static void ForceHideVanillaSlots(Room room, RoomCameraExtensions.RoomBlendState state)
     {
         if (room == null) return;
+        if (!state.HasView) return;
 
-        // Obtener el snapshot para verificar si tiene view declarado
-        var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
-        if (snap == null || !snap.HasView)
-            return;
-
-        ViewType view = snap.ViewType;
+        ViewType view = state.View;
 
         for (int i = 0; i < room.updateList.Count; i++)
         {
             if (room.updateList[i] is AboveCloudsView acv)
             {
-                // PSV: ocultar sky
                 if (view == ViewType.PSV || view == ViewType.ACV)
                 {
                     acv.daySky.alpha = 0f;
@@ -288,7 +253,6 @@ public static partial class SettingsBlendController
             }
             else if (room.updateList[i] is RoofTopView rtv)
             {
-                // RTV: ocultar sky
                 if (view == ViewType.RTV)
                 {
                     rtv.daySky.alpha = 0f;

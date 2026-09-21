@@ -29,9 +29,6 @@ public partial class SettingsSnapshot
             string key = line.Substring(0, sep);
             string val = line.Substring(sep + 2);
 
-            // ============================================================
-            // RAINCYCLES - NUEVO FORMATO MODULAR
-            // ============================================================
             if (key == "RainCycles")
             {
                 ParseRainCyclesContent(snap, val.Trim());
@@ -140,6 +137,8 @@ public partial class SettingsSnapshot
                                 "ACV" => ViewType.ACV,
                                 "RTV" => ViewType.RTV,
                                 "PSV" => ViewType.PSV,
+                                "AUV" => ViewType.AUV,
+                                "ORV" => ViewType.ORV,
                                 _ => ViewType.None
                             };
                         }
@@ -167,11 +166,16 @@ public partial class SettingsSnapshot
 
     private static void FillFromTemplate(SettingsSnapshot snap, string roomName, string settingsPath)
     {
-        if (snap.Template.ToUpperInvariant() == "NONE") return;
-
         string region = roomName.Contains("_")
             ? roomName.Split('_')[0].ToLower()
             : roomName.ToLower();
+
+        // Template: NONE → aplicar ancestor regional (fallback por estado)
+        if (snap.Template.ToUpperInvariant() == "NONE")
+        {
+            FillFromAncestor(snap, region, settingsPath);
+            return;
+        }
 
         string settingsModDir = GetSettingsModDirectory(settingsPath, region);
         string templateName;
@@ -181,10 +185,8 @@ public partial class SettingsSnapshot
             templateName = GetFirstTemplateFromProperties(region, settingsModDir);
             if (string.IsNullOrEmpty(templateName))
             {
-                RSPlugin.log.LogInfo($"[Template] {roomName}: sin template definido (sin línea en properties.txt)");
                 return;
             }
-            RSPlugin.log.LogInfo($"[Template] {roomName}: aplicando template por defecto '{templateName}'");
         }
         else
         {
@@ -192,7 +194,6 @@ public partial class SettingsSnapshot
             int lastUnderscore = templateName.LastIndexOf('_');
             if (lastUnderscore >= 0)
                 templateName = templateName.Substring(lastUnderscore + 1);
-            RSPlugin.log.LogInfo($"[Template] {roomName}: aplicando template específico '{templateName}'");
         }
 
         string templatePath = ResolveTemplatePath(region, templateName, settingsModDir);
@@ -201,8 +202,6 @@ public partial class SettingsSnapshot
             RSPlugin.log.LogWarning($"[Template] {roomName}: template '{templateName}' no encontrado en región {region}");
             return;
         }
-
-        RSPlugin.log.LogInfo($"[Template] {roomName}: cargando desde {Path.GetFileName(templatePath)}");
 
         SettingsSnapshot tmpl;
         if (!TryGetCached(templatePath, out tmpl))
@@ -235,6 +234,64 @@ public partial class SettingsSnapshot
         FillEffectFromTemplate(snap, tmpl);
     }
 
+    // ============================================================
+    // ANCESTOR REGIONAL — fallback para Template: NONE
+    // ============================================================
+    // Aplica los valores del ancestor regional (ancestor_X.txt) al snapshot
+    // cuando la sala no declara un campo. Misma lógica que FillFromTemplate
+    // pero usando el ancestor regional como fuente de defaults.
+    private static void FillFromAncestor(SettingsSnapshot snap, string region, string settingsPath)
+    {
+        int state = StateFileResolver.GetStateFromPath(settingsPath);
+        if (state < 1 || state > 4) return;
+
+        string ancestorPath = GetAncestorPath(region, state);
+        if (ancestorPath == null || !File.Exists(ancestorPath)) return;
+
+        SettingsSnapshot ancestor;
+        if (!TryGetCached(ancestorPath, out ancestor))
+        {
+            ancestor = FromFile(ancestorPath);
+            _snapshotCache[ancestorPath] = ancestor;
+        }
+
+        if (!snap._hasPalette) snap.Palette = ancestor.Palette;
+        if (!snap._hasGrime) snap.Grime = ancestor.Grime;
+        if (!snap._hasClouds) snap.Clouds = ancestor.Clouds;
+        if (!snap._hasCeilingDrips) snap.CeilingDrips = ancestor.CeilingDrips;
+        if (!snap._hasBkgDroneVolume) snap.BkgDroneVolume = ancestor.BkgDroneVolume;
+        if (!snap._hasRandomItemDensity) snap.RandomItemDensity = ancestor.RandomItemDensity;
+        if (!snap._hasRandomItemSpearChance) snap.RandomItemSpearChance = ancestor.RandomItemSpearChance;
+        if (!snap._hasEffectColorA) snap.EffectColorA = ancestor.EffectColorA;
+        if (!snap._hasEffectColorB) snap.EffectColorB = ancestor.EffectColorB;
+        if (!snap._hasTerrainPalette) snap.TerrainPaletteName = ancestor.TerrainPaletteName;
+
+        if (snap.TerrainWaves == null) snap.TerrainWaves = ancestor.TerrainWaves;
+        if (snap.TerrainLight == null) snap.TerrainLight = ancestor.TerrainLight;
+        if (snap.TerrainGrain == null) snap.TerrainGrain = ancestor.TerrainGrain;
+        if (snap.TerrainSkyFade == null) snap.TerrainSkyFade = ancestor.TerrainSkyFade;
+        if (snap.TerrainStainAmount == null) snap.TerrainStainAmount = ancestor.TerrainStainAmount;
+        if (snap.TerrainStainBrightness == null) snap.TerrainStainBrightness = ancestor.TerrainStainBrightness;
+        if (snap.TerrainStainHeight == null) snap.TerrainStainHeight = ancestor.TerrainStainHeight;
+
+        FillEffectFromTemplate(snap, ancestor);
+    }
+
+    private static string GetAncestorPath(string region, int state)
+    {
+        string regionCode = region.ToUpperInvariant();
+        string relativePath = Path.Combine("world", regionCode, "raincycles", $"ancestor_{state}.txt");
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, relativePath);
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        string basePath = Path.Combine(Application.streamingAssetsPath, relativePath);
+        return File.Exists(basePath) ? basePath : null;
+    }
+
     private static string GetFirstTemplateFromProperties(string region, string settingsModDir)
     {
         try
@@ -246,13 +303,12 @@ public partial class SettingsSnapshot
                 string modRoot = GetModRoot(settingsModDir);
                 if (!string.IsNullOrEmpty(modRoot))
                 {
-                    string candidate = Path.Combine(modRoot, "World", upperRegion, "properties.txt");
+                    string candidate = Path.Combine(modRoot, "world", upperRegion, "properties.txt");
                     if (File.Exists(candidate))
                     {
                         string first = ParseFirstTemplate(candidate);
                         if (first != null)
                         {
-                            RSPlugin.log.LogInfo($"[Template] {region}: primer template desde mod settings: {first}");
                             return first;
                         }
                     }
@@ -262,30 +318,27 @@ public partial class SettingsSnapshot
             for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
             {
                 if (ModManager.ActiveMods[i] == null) continue;
-                string candidate = Path.Combine(ModManager.ActiveMods[i].path, "World", upperRegion, "properties.txt");
+                string candidate = Path.Combine(ModManager.ActiveMods[i].path, "world", upperRegion, "properties.txt");
                 if (File.Exists(candidate))
                 {
                     string first = ParseFirstTemplate(candidate);
                     if (first != null)
                     {
-                        RSPlugin.log.LogInfo($"[Template] {region}: primer template desde mod {ModManager.ActiveMods[i].id}: {first}");
                         return first;
                     }
                 }
             }
 
-            string vanillaPath = Path.Combine(Application.streamingAssetsPath, "World", upperRegion, "properties.txt");
+            string vanillaPath = Path.Combine(Application.streamingAssetsPath, "world", upperRegion, "properties.txt");
             if (File.Exists(vanillaPath))
             {
                 string first = ParseFirstTemplate(vanillaPath);
                 if (first != null)
                 {
-                    RSPlugin.log.LogInfo($"[Template] {region}: primer template desde vanilla: {first}");
                     return first;
                 }
             }
 
-            RSPlugin.log.LogInfo($"[Template] {region}: sin línea 'Room Setting Templates:' en properties.txt");
             return null;
         }
         catch (Exception ex)
@@ -318,7 +371,6 @@ public partial class SettingsSnapshot
 
                 if (templateList.Count > 0)
                 {
-                    RSPlugin.log.LogInfo($"[Template] {Path.GetFileName(propertiesPath)}: templates disponibles = {string.Join(", ", templateList)}");
                     return templateList[0];
                 }
             }
@@ -346,14 +398,14 @@ public partial class SettingsSnapshot
             }
         }
 
-        string templateRelative = Path.Combine("World", region, templateFile);
+        string templateRelative = Path.Combine("world", region, templateFile);
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
             if (ModManager.ActiveMods[i] == null) continue;
             string candidate = Path.Combine(ModManager.ActiveMods[i].path, templateRelative);
             if (File.Exists(candidate)) return candidate;
 
-            string modDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region);
+            string modDir = Path.Combine(ModManager.ActiveMods[i].path, "world", region);
             if (Directory.Exists(modDir))
             {
                 foreach (string file in Directory.GetFiles(modDir, "*.txt"))
@@ -367,7 +419,7 @@ public partial class SettingsSnapshot
         string basePath = Path.Combine(Application.streamingAssetsPath, templateRelative);
         if (File.Exists(basePath)) return basePath;
 
-        string vanillaDir = Path.Combine(Application.streamingAssetsPath, "World", region);
+        string vanillaDir = Path.Combine(Application.streamingAssetsPath, "world", region);
         if (Directory.Exists(vanillaDir))
         {
             foreach (string file in Directory.GetFiles(vanillaDir, "*.txt"))
@@ -394,6 +446,8 @@ public partial class SettingsSnapshot
         if (snap.EffectLightBurn < 0f && tmpl.EffectLightBurn >= 0f) snap.EffectLightBurn = tmpl.EffectLightBurn;
         if (snap.EffectBloom < 0f && tmpl.EffectBloom >= 0f) snap.EffectBloom = tmpl.EffectBloom;
         if (snap.EffectSurfaceSandstorm < 0f && tmpl.EffectSurfaceSandstorm >= 0f) snap.EffectSurfaceSandstorm = tmpl.EffectSurfaceSandstorm;
+        if (snap.EffectSnowLight < 0f && tmpl.EffectSnowLight >= 0f) snap.EffectSnowLight = tmpl.EffectSnowLight;
+        if (snap.EffectSnowSparkle < 0f && tmpl.EffectSnowSparkle >= 0f) snap.EffectSnowSparkle = tmpl.EffectSnowSparkle;
 
         if (tmpl.ModifyEffectColorA_Hue.HasValue && !snap.ModifyEffectColorA_Hue.HasValue)
             snap.ModifyEffectColorA_Hue = tmpl.ModifyEffectColorA_Hue;
@@ -501,14 +555,10 @@ public partial class SettingsSnapshot
         string header = tildePos >= 0 ? obj.Substring(0, tildePos) : obj;
         string[] parts = header.Split('>');
 
-        // Extraer intensidad
         if (parts.Length > 3 && float.TryParse(parts[3].TrimStart('<').Trim(), NF, INV, out float v))
         {
             snap.LightIntensities[idx] = v;
         }
-
-        // NOTA: El modo de color (Environment, White, EffectColor1, EffectColor2)
-        // lo maneja vanilla automáticamente. No necesitamos extraerlo.
     }
 
     private static void ExtractLightBeam(SettingsSnapshot snap, int idx, string obj)
@@ -571,6 +621,8 @@ public partial class SettingsSnapshot
                 case "LightBurn": snap.EffectLightBurn = amount; break;
                 case "Bloom": snap.EffectBloom = amount; break;
                 case "SurfaceSandstorm": snap.EffectSurfaceSandstorm = amount; break;
+                case "SnowLight": snap.EffectSnowLight = amount; break;
+                case "SnowSparkle": snap.EffectSnowSparkle = amount; break;
             }
         }
     }
@@ -611,11 +663,11 @@ public partial class SettingsSnapshot
             string dir = Path.GetDirectoryName(settingsPath);
             while (!string.IsNullOrEmpty(dir))
             {
-                if (Path.GetFileName(dir).Equals("World", StringComparison.OrdinalIgnoreCase))
+                if (Path.GetFileName(dir).Equals("world", StringComparison.OrdinalIgnoreCase))
                 {
                     string regionDir = Path.Combine(dir, region);
                     if (Directory.Exists(regionDir)) return regionDir;
-                    string regionRoomsDir = Path.Combine(dir, region + "-Rooms");
+                    string regionRoomsDir = Path.Combine(dir, region + "-rooms");
                     if (Directory.Exists(regionRoomsDir)) return regionRoomsDir;
                     break;
                 }
@@ -626,10 +678,10 @@ public partial class SettingsSnapshot
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
             if (ModManager.ActiveMods[i] == null) continue;
-            string regionRoomsDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region + "-Rooms");
+            string regionRoomsDir = Path.Combine(ModManager.ActiveMods[i].path, "world", region + "-rooms");
             if (Directory.Exists(regionRoomsDir))
             {
-                string regionDir = Path.Combine(ModManager.ActiveMods[i].path, "World", region);
+                string regionDir = Path.Combine(ModManager.ActiveMods[i].path, "world", region);
                 return Directory.Exists(regionDir) ? regionDir : regionRoomsDir;
             }
         }

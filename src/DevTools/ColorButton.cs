@@ -27,6 +27,7 @@ public class SelectButton : Button
     public override void Clicked()
     {
         base.Clicked();
+        if (!BlendClock.EditMode) return;
         if (!isSelected)
         {
             if (parentNode != null)
@@ -68,8 +69,6 @@ public class SelectButton : Button
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-
 public class ModeButton : Button
 {
     private static readonly Color COLOR_ACTIVE   = new Color(0.2f, 0.7f, 0.3f);
@@ -110,11 +109,6 @@ public class ModeButton : Button
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-
-// ════════════════════════════════════════════════════════════════════════
-// EditModeButton - MODIFICADO
-// ════════════════════════════════════════════════════════════════════════
 public class EditModeButton : Button
 {
     private static readonly Color COLOR_ON  = new Color(0.2f, 0.7f, 0.3f);
@@ -135,9 +129,6 @@ public class EditModeButton : Button
 
         if (BlendClock.EditMode)
         {
-            // ════════════════════════════════════════════════════════════════
-            // DESACTIVAR EDIT MODE: restaurar al estado original del ciclo
-            // ════════════════════════════════════════════════════════════════
             if (panel != null)
             {
                 panel.ResetToCycleState();
@@ -146,19 +137,13 @@ public class EditModeButton : Button
         }
         else
         {
-            // ════════════════════════════════════════════════════════════════
-            // ACTIVAR EDIT MODE: activar modo edición y seleccionar estado actual
-            // ════════════════════════════════════════════════════════════════
             if (panel != null)
             {
-                // 1. Activar modo edición
                 BlendClock.SetEditMode(true);
-                
-                // 2. Obtener el estado actual del ciclo
+
                 int currentState = StateFileResolver.GetCurrentCycleState();
                 if (currentState < 1 || currentState > 4) currentState = 1;
-                
-                // 3. Buscar el botón correspondiente y simular click
+
                 foreach (var node in panel.subNodes)
                 {
                     if (node is SelectButton btn && btn.IDstring == $"RCA_{currentState}")
@@ -189,8 +174,6 @@ public class EditModeButton : Button
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-
 public class SkyTypeButton : Button
 {
     private static readonly Color COLOR_ACTIVE   = new Color(0.2f, 0.7f, 0.3f);
@@ -202,7 +185,7 @@ public class SkyTypeButton : Button
     public SkyTypeButton(DevUI owner, string IDstring, DevUINode parentNode,
                          Vector2 pos, float width, ViewType type, bool isActive)
         : base(owner, IDstring, parentNode, pos, width,
-               type == ViewType.ACV ? "ACV" : (type == ViewType.RTV ? "RTV" : "PSV"))
+               type == ViewType.ACV ? "ACV" : (type == ViewType.RTV ? "RTV" : (type == ViewType.PSV ? "PSV" : "ORV")))
     {
         Type = type;
         _isActive = isActive;
@@ -225,10 +208,6 @@ public class SkyTypeButton : Button
         this.colorA = _isActive ? COLOR_ACTIVE : COLOR_INACTIVE;
     }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// RC_TYPE Button - usa _isActive como fuente de verdad
-// ──────────────────────────────────────────────────────────────────────────
 
 public class RcTypeButton : Button
 {

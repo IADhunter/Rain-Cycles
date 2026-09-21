@@ -56,9 +56,6 @@ public static partial class RoomCameraExtensions
         string roomName = data.roomName ?? cam.room?.abstractRoom?.name;
         if (string.IsNullOrEmpty(roomName)) return;
 
-        // ============================================================
-        // DETECTAR MODO MANUAL (SLIDER)
-        // ============================================================
         bool isManualBlend = SettingsBlendController.IsActive && 
                              SettingsBlendController.IsExternalT &&
                              SettingsBlendController.ActiveRoom == cam.room;
@@ -99,11 +96,6 @@ public static partial class RoomCameraExtensions
             }
         }
 
-        data.lastStateA = stateA;
-        data.lastStateB = stateB;
-        data.lastBlendT = t;
-        data.lastUpdateFrame = Time.frameCount;
-        
         if (isIdle)
         {
             if (snapA != null)
@@ -272,9 +264,5 @@ public static partial class RoomCameraExtensions
         data.lastFadePaletteB = -1;
         data.fadePixelsA = null;
         data.fadePixelsB = null;
-
-        data.lastBlendT = -1f;
-        data.lastStateA = -1;
-        data.lastStateB = -1;
     }
 }

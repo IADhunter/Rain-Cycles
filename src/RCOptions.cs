@@ -1,40 +1,776 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using Menu;
 using Menu.Remix.MixedUI;
+using RWCustom;
 using UnityEngine;
 
 namespace RainCycles;
 
-// Interfaz Remix de Rain Cycles.
-// Registrada en Plugin.cs via MachineConnector.SetRegisteredOI.
 public class RCOptions : OptionInterface
 {
-    // El Configurable vive aquí — se crea en el ctor, antes de Initialize
-    public readonly Configurable<bool> randomCycles;
+    public const string ModeCycle     = "cycle";
+    public const string ModeProcedural = "procedural";
+    public const string ModeRandom    = "random";
+
+    public readonly Configurable<string> cycleMode;
+    public readonly Configurable<bool> proceduralNoCycle;
+    public readonly Configurable<string> customSeed;
+    public readonly Configurable<string> saveModId;
+
+    private OpTab _optionsTab;
+    private OpTab _devTab;
+
+    private OpSimpleButton _saveModStatusBtn;
+    private OpScrollBox _saveModScrollBox;
+    private OpSimpleButton _saveModClearBtn;
+    private readonly List<SaveModRow> _saveModRows = new List<SaveModRow>();
+
+    private class SaveModRow
+    {
+        public ModManager.Mod Mod;
+        public OpSimpleButton Btn;
+    }
+
+    private OpTextBox _regionSearchBox;
+    private OpSimpleButton _regionSearchModeBtn;
+    private OpScrollBox _regionScrollBox;
+    private OpLabel _batchStatusLabel;
+    private bool _searchByName;
+    private readonly Configurable<string> _regionSearch = new Configurable<string>("");
+    private readonly List<(string code, string name)> _allRegions = new List<(string, string)>();
+    private readonly List<UIelement> _regionRowItems = new List<UIelement>();
+
+    private OpTextBox _modSearchBox;
+    private OpSimpleButton _modSearchModeBtn;
+    private OpLabel _modSearchStatusLabel;
+    private bool _modSearchByName;
+    private readonly Configurable<string> _modSearch = new Configurable<string>("");
+    private readonly List<SaveModRow> _allMods = new List<SaveModRow>();
+    private readonly List<UIelement> _modRowItems = new List<UIelement>();
+
+    private OpSimpleButton _cycleBtn;
+    private OpSimpleButton _proceduralBtn;
+    private OpSimpleButton _randomBtn;
+    private OpCheckBox _noCycleCheck;
+    private OpLabel _noCycleCheckLabel;
+    private OpTextBox _seedBox;
+
+    private OpRect _infoRect;
+    private OpLabel _infoLabel;
+    private float _infoAlpha;
 
     public RCOptions()
     {
-        randomCycles = this.config.Bind(
-            "randomCycles",
+        cycleMode = this.config.Bind(
+            "cycleMode",
+            ModeCycle,
+            new ConfigurableInfo(
+                "How the day-time setting is chosen for each cycle.",
+                null, "",
+                "Cycle Mode"));
+
+        proceduralNoCycle = this.config.Bind(
+            "proceduralNoCycle",
             false,
             new ConfigurableInfo(
-                "Each cycle picks a random day-time setting instead of rotating in order. Same cycle number always loads the same setting.",
+                "Procedural mode ignores the cycle and anchors the chosen setting to the current cycle in a file.",
                 null, "",
-                "Random Cycles"));
+                "Don't Obey the Cycle"));
+
+        customSeed = this.config.Bind(
+            "customSeed",
+            "",
+            new ConfigurableInfo(
+                "Optional custom seed for Procedural and Random modes. Empty = built-in default.",
+                null, "",
+                "Custom Seed"));
+
+        saveModId = this.config.Bind(
+            "saveModId",
+            "",
+            new ConfigurableInfo(
+                "ID of the active mod where generated settings_N and blend_settings files are saved. Empty = default (write to the region's own mod, or vanilla).",
+                null, "",
+                "Destination Mod"));
     }
 
-    public override void Initialize()
+public override void Initialize()
     {
         base.Initialize();
 
-        var tab = new OpTab(this, "Main");
-        Tabs = new[] { tab };
+        // ============================================================
+        // TABS: "Options" (todo lo actual) y "Developer" (en desarrollo).
+        // ============================================================
+        _optionsTab = new OpTab(this, TabLabel(Tr("OPTIONS")));
+        _devTab = new OpTab(this, TabLabel(Tr("Developer")));
+        Tabs = new[] { _optionsTab, _devTab };
 
-        var chk  = new OpCheckBox(randomCycles, new Vector2(20f, 520f));
-        var lbl  = new OpLabel(55f, 524f, "Random Cycles", false);
-        var desc = new OpLabel(20f, 495f,
-            "Each cycle picks a random day-time setting instead of rotating in order.\nSame cycle number always loads the same setting.",
-            false);
-        desc.color = new Color(0.6f, 0.6f, 0.6f);
+        _devTab.colorButton = new Color(0.85f, 0.35f, 0.4f);
 
-        tab.AddItems(chk, lbl, desc);
+        // ============================================================
+        // LOGO DE TÍTULO (patrón OpImage desde PNG del mod).
+        // Esperado en RainCycles\ui\title.png
+        // ============================================================
+        OpImage titleLogo = LoadTitleLogo();
+        if (titleLogo != null)
+        {
+            _optionsTab.AddItems(titleLogo);
+        }
+
+        // ============================================================
+        // SECCIÓN - MODE - (recuadro único que incluye la seed).
+        // El recuadro crece 70px hacia abajo (y=65, alto 385) para dejar
+        // sitio al recuadro negro de información inferior.
+        // ============================================================
+        float modeBoxY = 119f;
+        const float MODE_BOX_X = 20f;
+        var modeRect = new OpRect(new Vector2(MODE_BOX_X, 49f), new Vector2(560f, 385f));
+        modeRect.colorFill = new Color(0.04f, 0.04f, 0.06f);
+
+        var modeTitle = new OpLabel(new Vector2(MODE_BOX_X, modeBoxY + 275f), new Vector2(560f, 20f), Tr("- MODE -"), FLabelAlignment.Center, true);
+        modeTitle.color = new Color(0.8f, 0.9f, 1f);
+
+        _cycleBtn     = MakeModeButton(new Vector2(MODE_BOX_X + 80f,  modeBoxY + 215f), "CYCLE",     ModeCycle);
+        _proceduralBtn = MakeModeButton(new Vector2(MODE_BOX_X + 220f, modeBoxY + 215f), "PROCEDURAL", ModeProcedural);
+        _randomBtn    = MakeModeButton(new Vector2(MODE_BOX_X + 360f, modeBoxY + 215f), "RANDOM",     ModeRandom);
+
+        _noCycleCheck = new OpCheckBox(proceduralNoCycle, new Vector2(MODE_BOX_X + 20f, modeBoxY + 165f));
+        _noCycleCheckLabel = new OpLabel(MODE_BOX_X + 48f, modeBoxY + 167f, Tr("Ignore the Cycle"), false);
+        _noCycleCheckLabel.color = new Color(0.8f, 0.8f, 0.8f);
+
+        _seedBox = new OpTextBox(customSeed, new Vector2(MODE_BOX_X + 20f, modeBoxY + 115f), 200f);
+        _seedBox.description = Tr("Write a number");
+
+        var seedLabel = new OpLabel(MODE_BOX_X + 228f, modeBoxY + 117f, "Seed", false);
+        seedLabel.color = new Color(0.8f, 0.8f, 0.8f);
+
+        // ============================================================
+        // RECUADRO NEGRO DE INFORMACIÓN (estilo tooltip con fade).
+        // Muestra una breve descripcion al pasar el cursor sobre los
+        // controles. Se funde (alpha) segun "MouseOver" en Update().
+        // ============================================================
+        _infoRect = new OpRect(new Vector2(MODE_BOX_X + 10f, 74f), new Vector2(540f, 130f));
+        _infoRect.colorFill = new Color(0f, 0f, 0f, 1f);
+        _infoRect.colorEdge = new Color(0.5f, 0.5f, 0.5f);
+
+        _infoLabel = new OpLabel(new Vector2(MODE_BOX_X + 24f, 80f), new Vector2(490f, 116f), "", FLabelAlignment.Left, false);
+        _infoLabel.color = new Color(0.85f, 0.9f, 1f);
+        _infoLabel.autoWrap = true;
+        _infoLabel.verticalAlignment = OpLabel.LabelVAlignment.Top;
+
+        _optionsTab.AddItems(modeRect, modeTitle,
+            _cycleBtn, _proceduralBtn, _randomBtn,
+            _noCycleCheck, _noCycleCheckLabel,
+            seedLabel, _seedBox,
+            _infoRect, _infoLabel);
+
+        // ============================================================
+        // PESTAÑA DEVELOPER - dos columnas: Mods (izq) / Regiones (der).
+        // Área útil ~560px (x=10..570), dos columnas de 270px con gap 15px.
+        // TODO bajado 10px global.
+        // ============================================================
+
+        float devTitleY = 569f;
+        var devTitle = new OpLabel(new Vector2(300f, devTitleY), new Vector2(), Tr("SAVE STATES TO"), FLabelAlignment.Center, true);
+        devTitle.color = new Color(0.5f, 0.5f, 0.5f);
+
+        _saveModStatusBtn = new OpSimpleButton(new Vector2(85f, 503f), new Vector2(360f, 36f), "");
+        _saveModStatusBtn.colorEdge = new Color(0.6f, 0.6f, 0.6f);
+
+        _saveModClearBtn = new OpSimpleButton(new Vector2(460f, 503f), new Vector2(80f, 36f), "X");
+        _saveModClearBtn.colorEdge = new Color(0.85f, 0.35f, 0.4f);
+        _saveModClearBtn.OnClick += _ =>
+        {
+            saveModId.Value = "";
+            RefreshDevUi();
+            SaveConfigNow();
+        };
+
+        _devTab.AddItems(devTitle, _saveModStatusBtn, _saveModClearBtn);
+
+        // ----- COLUMNA IZQUIERDA: DESTINATION MOD -----
+        const float COL_LEFT_X = 10f;
+        const float COL_RIGHT_X = 320f;
+        const float COL_W = 270f;
+        const float SEC_TITLE_Y = 448f;
+        const float SEARCH_Y = 413f;
+        const float SEARCH_W = 160f;
+        const float TOGGLE_W = 100f;
+        const float STATUS_Y = 3f;
+        const float SCROLL_Y = 28f;
+        const float SCROLL_H = 380f;
+        const float SCROLL_CONTENT_H = 400f;
+
+        // Título "DESTINATION MOD"
+        var modTitle = new OpLabel(new Vector2(COL_LEFT_X + COL_W / 2f, SEC_TITLE_Y), new Vector2(), Tr("DESTINATION MOD"), FLabelAlignment.Center, true);
+        modTitle.color = new Color(0.5f, 0.5f, 0.5f);
+
+        // Búsqueda mods
+        _modSearchBox = new OpTextBox(_modSearch, new Vector2(COL_LEFT_X, SEARCH_Y), SEARCH_W);
+        _modSearchBox.allowSpace = true;
+        _modSearchBox.description = Tr("Search mods by ID or by name.");
+        _modSearchBox.OnChange += () => RebuildModList();
+
+        _modSearchModeBtn = new OpSimpleButton(new Vector2(COL_LEFT_X + SEARCH_W + 5f, SEARCH_Y), new Vector2(TOGGLE_W, 24f), Tr("ID"));
+        _modSearchModeBtn.description = Tr("Switch search between mod ID and mod name.");
+        _modSearchModeBtn.OnClick += _ => ToggleModSearchMode();
+
+        _modSearchStatusLabel = new OpLabel(COL_LEFT_X, STATUS_Y, "", false);
+        _modSearchStatusLabel.color = new Color(0.65f, 0.65f, 0.65f);
+
+        _devTab.AddItems(modTitle, _modSearchBox, _modSearchModeBtn, _modSearchStatusLabel);
+
+        // ScrollBox mods
+        _saveModScrollBox = new OpScrollBox(
+            new Vector2(COL_LEFT_X, SCROLL_Y),
+            new Vector2(COL_W, SCROLL_H),
+            SCROLL_CONTENT_H,
+            false, true, true)
+        {
+            colorEdge = MenuColorEffect.rgbMediumGrey,
+            colorFill = MenuColorEffect.rgbBlack,
+            fillAlpha = 0.3f
+        };
+        _devTab.AddItems(_saveModScrollBox);
+
+        // ----- COLUMNA DERECHA: GENERATE STATES (regiones) -----
+        var regionTitle = new OpLabel(new Vector2(COL_RIGHT_X + COL_W / 2f, SEC_TITLE_Y), new Vector2(), Tr("GENERATE STATES"), FLabelAlignment.Center, true);
+        regionTitle.color = new Color(0.5f, 0.5f, 0.5f);
+
+        _regionSearchBox = new OpTextBox(_regionSearch, new Vector2(COL_RIGHT_X, SEARCH_Y), SEARCH_W);
+        _regionSearchBox.allowSpace = true;
+        _regionSearchBox.description = Tr("Search regions by ID or by name.");
+        _regionSearchBox.OnChange += () => RebuildRegionList();
+
+        _regionSearchModeBtn = new OpSimpleButton(new Vector2(COL_RIGHT_X + SEARCH_W + 5f, SEARCH_Y), new Vector2(TOGGLE_W, 24f), Tr("ID"));
+        _regionSearchModeBtn.description = Tr("Switch search between region ID and region name.");
+        _regionSearchModeBtn.OnClick += _ => ToggleSearchMode();
+
+        _batchStatusLabel = new OpLabel(COL_RIGHT_X, STATUS_Y, "", false);
+        _batchStatusLabel.color = new Color(0.65f, 0.65f, 0.65f);
+
+        _devTab.AddItems(regionTitle, _regionSearchBox, _regionSearchModeBtn, _batchStatusLabel);
+
+        _regionScrollBox = new OpScrollBox(
+            new Vector2(COL_RIGHT_X, SCROLL_Y),
+            new Vector2(COL_W, SCROLL_H),
+            SCROLL_CONTENT_H,
+            false, true, true)
+        {
+            colorEdge = MenuColorEffect.rgbMediumGrey,
+            colorFill = MenuColorEffect.rgbBlack,
+            fillAlpha = 0.3f
+        };
+        _devTab.AddItems(_regionScrollBox);
+
+        // Cargar datos
+        BuildSaveModList();
+        RefreshDevUi();
+        LoadAllRegions();
+        RebuildRegionList();
+        RefreshUi();
+
+        SaveConfigNow();
+    }
+
+    // ============================================================
+    // BUILD SAVE MOD LIST - una fila por mod activo (puebla _allMods y delega en RebuildModList)
+    // ============================================================
+    private void BuildSaveModList()
+    {
+        _saveModRows.Clear();
+        _allMods.Clear();
+
+        for (int i = 0; i < ModManager.ActiveMods.Count; i++)
+        {
+            ModManager.Mod mod = ModManager.ActiveMods[i];
+            var row = new SaveModRow { Mod = mod };
+            _saveModRows.Add(row);
+            _allMods.Add(row);
+        }
+
+        RebuildModList();
+    }
+
+    // ============================================================
+    // REFRESH DEV UI - resalta selección y actualiza el botón
+    // ============================================================
+    private void RefreshDevUi()
+    {
+        string selectedId = saveModId.Value ?? "";
+        ModManager.Mod selected = FindActiveMod(selectedId);
+
+        if (selected == null)
+        {
+            _saveModStatusBtn.text = Tr("None (default: region's own mod / vanilla)");
+            _saveModStatusBtn.colorEdge = new Color(0.6f, 0.6f, 0.6f);
+        }
+        else
+        {
+            _saveModStatusBtn.text = $"{selected.name}";
+            _saveModStatusBtn.colorEdge = new Color(0.15f, 0.85f, 0.15f);
+        }
+
+        foreach (var row in _saveModRows)
+        {
+            bool isSelected = row.Mod.id == selectedId;
+            if (row.Btn != null)
+            {
+                row.Btn.colorEdge = isSelected
+                    ? new Color(0.15f, 0.85f, 0.15f)
+                    : new Color(0.6f, 0.6f, 0.6f);
+            }
+        }
+
+    }
+
+    private static ModManager.Mod FindActiveMod(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+        foreach (var mod in ModManager.ActiveMods)
+            if (mod.id == id)
+                return mod;
+        return null;
+    }
+
+    // ============================================================
+    // CREADOR POR LOTES - carga la lista de regiones (id + nombre).
+    // Mismo origen que OpResourceSelector.SpecialEnum.Regions:
+    // World/regions.txt resuelto por AssetManager (vanilla + mods).
+    // ============================================================
+    private void LoadAllRegions()
+    {
+        _allRegions.Clear();
+        try
+        {
+            string path = AssetManager.ResolveFilePath("world" + Path.DirectorySeparatorChar + "regions.txt");
+            if (!File.Exists(path))
+            {
+                return;
+            }
+
+            foreach (string line in File.ReadAllLines(path))
+            {
+                string code = line.Trim();
+                if (code.Length == 0) continue;
+                string name = Tr(Region.GetRegionFullName(code, SlugcatStats.Name.White));
+                _allRegions.Add((code, name));
+            }
+            _allRegions.Sort((a, b) => string.CompareOrdinal(a.code, b.code));
+        }
+        catch
+        {
+        }
+    }
+
+    // ============================================================
+    // CREADOR POR LOTES - reconstruye las filas del scrollbox según
+    // la búsqueda actual (id o nombre). Patrón idéntico a
+    // BuildSaveModList (contentHeight -> filas -> SetContentSize).
+    // ============================================================
+    private void RebuildRegionList()
+    {
+        if (_regionRowItems.Count > 0)
+        {
+            var old = _regionRowItems.ToArray();
+            OpScrollBox.RemoveItemsFromScrollBox(old);
+            _devTab.RemoveItems(old);
+            _regionRowItems.Clear();
+        }
+
+        string query = (_regionSearchBox.value ?? "").Trim().ToLowerInvariant();
+
+        var filtered = new List<(string code, string name)>();
+        foreach (var region in _allRegions)
+        {
+            bool match = string.IsNullOrEmpty(query)
+                || (_searchByName
+                    ? region.name.ToLowerInvariant().Contains(query)
+                    : region.code.ToLowerInvariant().Contains(query));
+            if (match) filtered.Add(region);
+        }
+
+        float contentHeight = Math.Max(filtered.Count * 26f + 20f, _regionScrollBox.size.y);
+
+        // Fijamos el tamaño de contenido ANTES de añadir filas (la lista está
+        // vacía aquí, así SetContentSize no desplaza nada) para que las
+        // posiciones calculadas abajo coincidan 1:1 con las coordenadas.
+        _regionScrollBox.SetContentSize(contentHeight, true);
+        _regionScrollBox.ScrollToTop(true);
+
+float y = contentHeight - 26f - 10f;
+        foreach (var region in filtered)
+        {
+            float rowY = y;
+
+            string display = $"{region.code}    {region.name}";
+            float btnW = Math.Max(100f, display.Length * 7f + 16f);
+            var genBtn = new OpSimpleButton(new Vector2(0f, rowY - 3f), new Vector2(btnW, 22f), "  " + display);
+            genBtn.alignment = FLabelAlignment.Left;
+            genBtn.colorEdge = new Color(0.6f, 0.6f, 0.6f);
+            string code = region.code;
+            genBtn.OnClick += _ => GenerateRegionStates(code);
+            genBtn.description = Tr("Generate states for this region");
+
+            _regionScrollBox.AddItems(genBtn);
+            _regionRowItems.Add(genBtn);
+
+            y -= 26f;
+        }
+
+        _regionScrollBox.MarkDirty();
+    }
+
+    // ============================================================
+    // CREADOR POR LOTES - alterna búsqueda por ID / por NOMBRE.
+    // ============================================================
+    private void ToggleSearchMode()
+    {
+        _searchByName = !_searchByName;
+        _regionSearchModeBtn.text = Tr(_searchByName ? "NAME" : "ID");
+        RebuildRegionList();
+    }
+
+    // ============================================================
+    // BÚSQUEDA DE MODS - para destino de guardado.
+    // ============================================================
+    private void ToggleModSearchMode()
+    {
+        _modSearchByName = !_modSearchByName;
+        _modSearchModeBtn.text = Tr(_modSearchByName ? "NAME" : "ID");
+        RebuildModList();
+    }
+
+    private void RebuildModList()
+    {
+        if (_modRowItems.Count > 0)
+        {
+            var old = _modRowItems.ToArray();
+            OpScrollBox.RemoveItemsFromScrollBox(old);
+            _devTab.RemoveItems(old);
+            _modRowItems.Clear();
+        }
+
+        string query = (_modSearchBox.value ?? "").Trim().ToLowerInvariant();
+
+        var filtered = new List<SaveModRow>();
+        foreach (var row in _allMods)
+        {
+            bool match = string.IsNullOrEmpty(query)
+                || (_modSearchByName
+                    ? row.Mod.name.ToLowerInvariant().Contains(query)
+                    : row.Mod.id.ToLowerInvariant().Contains(query));
+            if (match) filtered.Add(row);
+        }
+
+        float contentHeight = Math.Max(filtered.Count * 26f + 20f, _saveModScrollBox.size.y);
+
+        _saveModScrollBox.SetContentSize(contentHeight, true);
+        _saveModScrollBox.ScrollToTop(true);
+
+        float y = contentHeight - 26f - 10f;
+        foreach (var row in filtered)
+        {
+            float rowY = y;
+
+            string display = row.Mod.name;
+            float btnW = Math.Max(100f, display.Length * 7f + 16f);
+            var selectBtn = new OpSimpleButton(new Vector2(0f, rowY - 3f), new Vector2(btnW, 22f), "  " + display);
+            selectBtn.alignment = FLabelAlignment.Left;
+            selectBtn.colorEdge = new Color(0.6f, 0.6f, 0.6f);
+            string modId = row.Mod.id;
+            selectBtn.OnClick += _ =>
+            {
+                saveModId.Value = modId;
+                RefreshDevUi();
+                SaveConfigNow();
+            };
+
+            _saveModScrollBox.AddItems(selectBtn);
+            _modRowItems.Add(selectBtn);
+            row.Btn = selectBtn;
+
+            y -= 26f;
+        }
+
+        _saveModScrollBox.MarkDirty();
+    }
+
+    // ============================================================
+    // CREADOR POR LOTES - genera los 4 estados de una región.
+    // Copia TODO archivo que contenga "settings" en su nombre,
+    // 4 veces, enumerado _1.._4, sobrescribiendo (overwrite:true).
+    // Destino: mod elegido (SaveModResolver) o fallback por región.
+    // ============================================================
+    private void GenerateRegionStates(string regionCode)
+    {
+        try
+        {
+            string upper = regionCode.ToUpperInvariant();
+            string srcDir = FindRegionRoomsWithSettings(upper);
+            if (srcDir == null)
+            {
+                _batchStatusLabel.text = Tr("Rooms folder not found for region ") + upper;
+                return;
+            }
+
+            string destDir = SaveModResolver.DirectoryForRegion(upper) ?? DefaultRegionDirectory(upper);
+
+            if (Directory.Exists(destDir) && Directory.GetFiles(destDir, "*.txt").Length > 0)
+            {
+                _batchStatusLabel.text = upper + Tr(" already has state files, skipping.");
+                return;
+            }
+
+            Directory.CreateDirectory(destDir);
+
+            int copied = 0;
+            foreach (string file in Directory.GetFiles(srcDir, "*.txt"))
+            {
+                string fileName = Path.GetFileName(file);
+                if (fileName.IndexOf("settings", StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                string baseName = Path.GetFileNameWithoutExtension(file);
+                for (int n = 1; n <= 4; n++)
+                {
+                    string dest = Path.Combine(destDir, $"{baseName}_{n}.txt");
+                    File.Copy(file, dest, true);
+                    copied++;
+                }
+            }
+
+            _batchStatusLabel.text = Tr("Generated ") + copied + Tr(" state files for ") + upper;
+        }
+        catch (Exception ex)
+        {
+            _batchStatusLabel.text = Tr("Error: ") + ex.Message;
+        }
+    }
+
+    // ============================================================
+    // CREADOR POR LOTES - carpeta World/{REGION}-Rooms de la región.
+    // Prioridad idéntica a AssetManager: mods activos en orden
+    // inverso y al final la instalación base.
+    // ============================================================
+    private static string FindRegionRoomsFolder(string regionCode)
+    {
+        string lower = regionCode.ToLowerInvariant();
+        string rel = Path.Combine("world", lower + "-rooms");
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, rel);
+            if (Directory.Exists(candidate)) return candidate;
+        }
+
+        string vanilla = Path.Combine(Application.streamingAssetsPath, rel);
+        return Directory.Exists(vanilla) ? vanilla : null;
+    }
+
+    // ============================================================
+    // CREADOR POR LOTES - origen con settings*.txt.
+    // Igual que FindRegionRoomsFolder pero solo acepta carpetas
+    // que contengan archivos de settings para copiar.
+    // ============================================================
+    private static string FindRegionRoomsWithSettings(string regionCode)
+    {
+        string lower = regionCode.ToLowerInvariant();
+        string rel = Path.Combine("world", lower + "-rooms");
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, rel);
+            if (Directory.Exists(candidate) && Directory.GetFiles(candidate, "*settings*").Length > 0)
+                return candidate;
+        }
+
+        string vanilla = Path.Combine(Application.streamingAssetsPath, rel);
+        if (Directory.Exists(vanilla) && Directory.GetFiles(vanilla, "*settings*").Length > 0)
+            return vanilla;
+
+        return null;
+    }
+
+    // ============================================================
+    // CREADOR POR LOTES - destino por defecto (sin mod elegido).
+    // Replica StateFileResolver.BuildDirectoryPath por región:
+    // primer mod activo que tenga la carpeta, si no la base.
+    // ============================================================
+    private static string DefaultRegionDirectory(string regionCode)
+    {
+        string lower = regionCode.ToLowerInvariant();
+        string rel = Path.Combine("world", lower + "-rooms", "raincycles");
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, rel);
+            if (Directory.Exists(candidate)) return candidate;
+        }
+
+        return Path.Combine(Application.streamingAssetsPath, rel);
+    }
+
+    // ============================================================
+    // SAVE CONFIG - fuerza la escritura del .txt de Remix
+    // ============================================================
+    // Remix guarda ModConfigs/{mod.id}.txt al CERRAR el menú del mod.
+    // Este helper garantiza la persistencia inmediata en cada cambio.
+    private void SaveConfigNow()
+    {
+        try { MachineConnector.SaveConfig(this); }
+        catch { }
+    }
+
+    // Ruta del logo dentro del mod compilado (RainCycles/ui/).
+    private const string TitleLogoPath = "ui\\title.png";
+
+    // ============================================================
+    // LOGO DE TÍTULO - carga un PNG del mod como banner del menú Remix.
+    // Mismo mecanismo (rainLogo.png):
+    // ResolveFilePath -> bytes -> Texture2D.LoadImage -> OpImage anclado.
+    // ============================================================
+    private static OpImage LoadTitleLogo()
+    {
+        try
+        {
+            string path = AssetManager.ResolveFilePath(TitleLogoPath);
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            byte[] bytes = File.ReadAllBytes(path);
+            var texture = new Texture2D(0, 0);
+            texture.filterMode = FilterMode.Point;
+            texture.LoadImage(bytes);
+
+            var logo = new OpImage(new Vector2(300f, 479f), texture);
+            logo.anchor = new Vector2(0.5f, 0f);
+
+            // Shader "MenuText": mismo destello que el título "Rain World" del menú
+            // principal (barrido diagonal animado por el global _RAIN, que ProcessManager
+            // actualiza cada frame). Se limita a lo visible: el shader usa el canal alfa
+            // del PNG y reemplaza su color por la rampa textGradient.
+            if (Custom.rainWorld != null
+                && Custom.rainWorld.Shaders.TryGetValue("MenuText", out var menuTextShader))
+            {
+                logo.sprite.shader = menuTextShader;
+            }
+            return logo;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private OpSimpleButton MakeModeButton(Vector2 pos, string text, string mode)
+    {
+        var btn = new OpSimpleButton(pos, new Vector2(120f, 40f), text);
+        btn.OnClick += _ =>
+        {
+            cycleMode.Value = mode;
+            RefreshUi();
+            SaveConfigNow();
+        };
+        return btn;
+    }
+
+    private void RefreshUi()
+    {
+        string mode = cycleMode.Value;
+
+        _cycleBtn.colorEdge     = ActiveButtonColor(mode == ModeCycle);
+        _proceduralBtn.colorEdge = ActiveButtonColor(mode == ModeProcedural);
+        _randomBtn.colorEdge    = ActiveButtonColor(mode == ModeRandom);
+
+        bool isProcedural = mode == ModeProcedural;
+        _noCycleCheck.greyedOut = !isProcedural;
+        _noCycleCheckLabel.color = isProcedural
+            ? new Color(0.8f, 0.8f, 0.8f)
+            : new Color(0.4f, 0.4f, 0.4f);
+
+        bool usesSeed = mode != ModeCycle;
+        _seedBox.greyedOut = !usesSeed;
+    }
+
+    private static Color ActiveButtonColor(bool active)
+        => active ? new Color(0.15f, 0.85f, 0.15f) : new Color(0.6f, 0.6f, 0.6f);
+
+    // ============================================================
+    // UPDATE - recuadro negro de información (estilo tooltip con fade).
+    // Al pasar el cursor sobre un control, se muestra un texto y la
+    // caja se funde a la vista; sin hover, se desvanece.
+    // ============================================================
+    public override void Update()
+    {
+        base.Update();
+        if (_infoLabel == null) return;
+
+        string txt = "";
+        if (_cycleBtn != null && _cycleBtn.MouseOver)
+        {
+            txt = Tr("Cycle Mode makes the states advance in a fixed, sequential order, following your save's cycle number. A new story starts at state 1, and if you are mid‑story it simply continues from the cycle you are on. The custom seed has no effect on this mode.");
+        }
+        else if (_proceduralBtn != null && _proceduralBtn.MouseOver)
+        {
+            txt = Tr("Procedural Mode changes the fixed sequence into something more dynamic, where each state is chosen by a calculation based on your cycle number and the seed. That means leaving and re‑entering the same cycle keeps that state, and advancing to another cycle produces a pseudo‑random state that will also be locked to that next cycle.");
+        }
+        else if (_randomBtn != null && _randomBtn.MouseOver)
+        {
+            txt = Tr("Random Mode is true randomness, with no rules or coherence. The state is picked unpredictably on each occasion, ignoring the cycle, your progress and previous plays.");
+        }
+        else if (_noCycleCheck != null && _noCycleCheck.MouseOver)
+        {
+            txt = Tr("This option stops the state from following the cycle-based calculation. The calculation becomes more flexible and less predictable, but coherence is kept, meaning that if a cycle starts with a specific state, the game keeps that same state until you advance to the next cycle.");
+        }
+        else if (_seedBox != null && _seedBox.MouseOver)
+        {
+            txt = Tr("Lets you customize the seed used for the calculation that picks the state.");
+        }
+
+        if (txt.Length > 0)
+        {
+            _infoLabel.text = txt;
+            _infoAlpha = Mathf.Min(1f, _infoAlpha + 0.1f);
+        }
+        else
+        {
+            _infoAlpha = Mathf.Max(0f, _infoAlpha - 0.025f);
+        }
+
+        _infoRect.fillAlpha = 0.85f * _infoAlpha;
+        _infoRect.colorEdge = new Color(0.5f, 0.5f, 0.5f, _infoAlpha);
+        _infoLabel.alpha = _infoAlpha;
+    }
+
+    // ============================================================
+    // TRADUCCIÓN - la clave es el texto en INGLÉS (fallback integral:
+    // si no hay archivo de idioma, Translate devuelve la clave).
+    // El juego reemplaza la clave por el idioma actual desde
+    // mods/<id>/Text/Text_<lang>/strings.txt (p.ej. serbe "eng", "spa").
+    // ============================================================
+    private static string Tr(string s)
+    {
+        return Custom.rainWorld?.inGameTranslator != null
+            ? Custom.rainWorld.inGameTranslator.Translate(s)
+            : s;
+    }
+
+    // ============================================================
+    // TITLE-CASE SOLO DE LA ETIQUETA - no toca el diccionario global.
+    // Si el texto traducido viene TODO en mayusculas (p.ej. "OPTIONS"
+    // o "OPCIONES" de la clave vanilla), lo convierte a solo la primera
+    // letra mayuscula. Si ya viene en otro caso (CJK, etc.), no lo toca.
+    // ============================================================
+    private static string TabLabel(string s)
+    {
+        if (string.IsNullOrEmpty(s) || s != s.ToUpperInvariant())
+        {
+            return s;
+        }
+        return char.ToUpperInvariant(s[0]) + s.Substring(1).ToLowerInvariant();
     }
 }

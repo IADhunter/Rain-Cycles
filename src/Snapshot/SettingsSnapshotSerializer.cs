@@ -5,7 +5,6 @@ using UnityEngine;
 
 namespace RainCycles.Snapshot;
 
-// Serialización a texto
 public partial class SettingsSnapshot
 {
     private static readonly CultureInfo SINV = CultureInfo.InvariantCulture;
@@ -17,20 +16,15 @@ public partial class SettingsSnapshot
         var sb = new StringBuilder();
         bool poWritten = false;
 
-        // ============================================================
-        // RAINCYCLES: - NUEVO FORMATO MODULAR
-        // ============================================================
         string rainCyclesLine = BuildRainCyclesLine();
         bool hasRainCycles = !string.IsNullOrEmpty(rainCyclesLine);
 
-        // Si hay RainCycles, se escribe al principio (después de Template)
         bool templateWritten = false;
 
         foreach (string rawLine in lines)
         {
             string line = rawLine.TrimEnd('\r');
 
-            // Saltar líneas antiguas RC_*
             if (line.StartsWith("RC_TYPE:") || line.StartsWith("RC_VIEW:") || line.StartsWith("RC_TINT:"))
                 continue;
 
@@ -41,7 +35,6 @@ public partial class SettingsSnapshot
                 continue;
             }
 
-            // Escribir RainCycles justo después de Template
             if (line.StartsWith("Template:") && hasRainCycles && !templateWritten)
             {
                 templateWritten = true;
@@ -80,7 +73,6 @@ public partial class SettingsSnapshot
             else                                                sb.AppendLine(line);
         }
 
-        // Si no había Template pero hay RainCycles, añadirlo al final
         if (hasRainCycles && !templateWritten)
         {
             sb.AppendLine(rainCyclesLine);

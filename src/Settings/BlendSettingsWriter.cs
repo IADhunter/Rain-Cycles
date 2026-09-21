@@ -12,10 +12,9 @@ public static partial class BlendSettingsWriter
     // ============================================================
     public static string EnsureFileExists(string roomName)
     {
-        string regionCode = ExtractRegionCode(roomName);
-        if (regionCode == null) return null;
-
-        string path = ResolveWritablePath(regionCode);
+        string path = BlendSettingsLoader.IsGateRoom(roomName)
+            ? ResolveWritablePath(null, roomName)
+            : ResolveWritablePath(ExtractRegionCode(roomName));
         if (path == null) return null;
 
         if (File.Exists(path)) return path;
@@ -120,6 +119,14 @@ Setting: 0";
                     sb.AppendLine($"{kv.Key}: {kv.Value}.png");
         }
 
+        if (s.BackgroundAliases.TryGetValue(ViewType.ORV, out var orvDict) && orvDict.Count > 0)
+        {
+            sb.AppendLine("\nOrv");
+            foreach (var kv in orvDict)
+                if (!kv.Key.EndsWith("_fog") && !kv.Key.EndsWith("_sun"))
+                    sb.AppendLine($"{kv.Key}: {kv.Value}.png");
+        }
+
         if (s.BackgroundAliases.TryGetValue(ViewType.PSV, out var psvDict) && psvDict.Count > 0)
         {
             sb.AppendLine("\nPsv");
@@ -149,20 +156,68 @@ Setting: 0";
     {
         if (string.IsNullOrEmpty(roomName)) return null;
         string[] parts = roomName.Split('_');
-        return parts.Length >= 2 ? parts[0].ToUpperInvariant() : null;
+        return parts.Length >= 2 ? parts[0].ToLowerInvariant() : null;
     }
 
-    private static string ResolveWritablePath(string regionCode)
+    private static string ResolveGateWritablePath(string roomName)
+    {
+        string lower = roomName.ToLowerInvariant();
+        string fileName = lower + "_blend_settings.txt";
+
+        // Si ya existe en algún mod, usar esa ruta
+        string existing = BlendSettingsLoader.ResolveGateBlendPath(roomName);
+        if (existing != null) return existing;
+
+        // Mod destino elegido en Developer
+        ModManager.Mod targetMod = SaveModResolver.GetTargetMod();
+        if (targetMod != null)
+        {
+            string dir = Path.Combine(targetMod.path, "world", "gate-rooms", "raincycles");
+            return Path.Combine(dir, fileName);
+        }
+
+        // Primer mod que tenga la carpeta gate-rooms/raincycles
+        foreach (var mod in ModManager.ActiveMods)
+        {
+            string candidate = Path.Combine(mod.path, "world", "gate-rooms", "raincycles", fileName);
+            if (Directory.Exists(Path.GetDirectoryName(candidate)))
+                return candidate;
+        }
+
+        // Fallback: RainCycles mod
+        foreach (var mod in ModManager.ActiveMods)
+        {
+            if (mod.id != RSPlugin.ID) continue;
+            return Path.Combine(mod.path, "world", "gate-rooms", "raincycles", fileName);
+        }
+
+        return null;
+    }
+
+    private static string ResolveWritablePath(string regionCode, string roomName = null)
     {
         try
         {
-            string upper = regionCode.ToUpperInvariant();
-            string existing = BlendSettingsLoader.ResolvePath(upper);
+            // Gate rooms: resolución específica por gate
+            if (BlendSettingsLoader.IsGateRoom(roomName))
+            {
+                return ResolveGateWritablePath(roomName);
+            }
+
+            if (string.IsNullOrEmpty(regionCode)) return null;
+            string lower = regionCode.ToLowerInvariant();
+
+            // Mod destino elegido en la pestaña Developer: escribe SIEMPRE ahí,
+            // sin buscar carpetas existentes (se crean al guardar).
+            string targetPath = SaveModResolver.PathForRegionBlend(lower);
+            if (targetPath != null) return targetPath;
+
+            string existing = BlendSettingsLoader.ResolvePath(lower);
             if (existing != null) return existing;
 
             foreach (var mod in ModManager.ActiveMods)
             {
-                string candidate = Path.Combine(mod.path, "World", upper + "-Rooms", "RainCycles", upper + "_blend_settings.txt");
+                string candidate = Path.Combine(mod.path, "world", lower + "-rooms", "raincycles", lower + "_blend_settings.txt");
                 if (Directory.Exists(Path.GetDirectoryName(candidate)))
                     return candidate;
             }
@@ -170,7 +225,7 @@ Setting: 0";
             foreach (var mod in ModManager.ActiveMods)
             {
                 if (mod.id != RSPlugin.ID) continue;
-                return Path.Combine(mod.path, "World", upper + "-Rooms", "RainCycles", upper + "_blend_settings.txt");
+                return Path.Combine(mod.path, "world", lower + "-rooms", "raincycles", lower + "_blend_settings.txt");
             }
 
             return null;

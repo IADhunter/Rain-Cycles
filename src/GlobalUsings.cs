@@ -5,5 +5,6 @@ global using RainCycles.Clock;
 global using RainCycles.Settings;
 global using RainCycles.Snapshot;
 global using RainCycles.Sky;
+global using RainCycles.Patches;
 global using RainCycles.API;
 global using FilesSetting;

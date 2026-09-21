@@ -27,12 +27,6 @@ public static partial class SettingsBlendController
             cam.SetBlendActive(room.abstractRoom.name);
             cam.UpdateBlendPalette(0f);
             cam.ApplyFade();
-
-            // ════════════════════════════════════════════════════════════════
-            // ⚠️ TERRAIN BLEND ELIMINADO - A LA ESPERA DE NUEVA IMPLEMENTACIÓN
-            // ════════════════════════════════════════════════════════════════
-            // cam.SetBlendTerrain(_snapA, _snapB);  ← ELIMINADO
-            // cam.UpdateBlendTerrain(0f, _snapA, _snapB);  ← ELIMINADO
         }
         RoomCameraExtensions.BuildLightIndex(room);
         ApplyBlend(0f);
@@ -73,19 +67,20 @@ public static partial class SettingsBlendController
         _pendingOrigin = null;
         _lastRoomWasManaged = false;
         if (_active) Detach();
-        _rtvScene = null; _acvScene = null; _psvScene = null;
+        _rtvScene = null; _acvScene = null; _psvScene = null; _orvScene = null;
         _forceSkyRefresh = false;
-        _entryFrameT = -1f;
         
         _rcSlotsStaticACV = null;
         _rcSlotsStaticRTV = null;
         _rcSlotsStaticPSV = null;
+        _rcSlotsStaticORV = null;
         
         _rcSlotsACV = null;
         _rcSlotsRTV = null;
         _rcSlotsPSV = null;
         _rcSlotsPSVFog = null;
         _rcSlotsPSVSun = null;
+        _rcSlotsORV = null;
     }
 
     public static void ResetFullSoft()

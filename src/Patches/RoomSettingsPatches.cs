@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
@@ -16,6 +17,17 @@ public static class RoomSettingsPatches
     {
         On.RoomSettings.Load_Timeline += OnLoad;
         On.RoomSettings.Save += OnSave;
+    }
+
+    // ============================================================
+    // FINDPARENT HELPER — recalcular template padre tras cambiar filePath
+    // ============================================================
+    private static readonly MethodInfo _findParentMI = typeof(RoomSettings)
+        .GetMethod("FindParent", BindingFlags.NonPublic | BindingFlags.Instance);
+
+    public static void RefreshParent(RoomSettings self, Region region)
+    {
+        _findParentMI?.Invoke(self, new object[] { region });
     }
 
     private static bool OnLoad(On.RoomSettings.orig_Load_Timeline orig, RoomSettings self, SlugcatStats.Timeline timelinePoint)
@@ -49,8 +61,30 @@ public static class RoomSettingsPatches
         {
             SettingsSnapshot.InvalidateCache(filePath);
 
+            // Un guardado puede apuntar a cualquier archivo de estado (el panel
+            // redirige roomSettings.filePath al estado seleccionado antes de guardar),
+            // no solo al que tiene la cámara. Derivamos la sala desde el nombre del
+            // archivo y limpiamos TODAS sus caches — incluida la de píxeles (_stateCache),
+            // que InvalidateRoomCache no toca — para que el blend reconstruya desde los
+            // archivos recién guardados (fix 08/2026: saves no reflejados en el blend).
             var rw = UnityEngine.Object.FindObjectOfType<RainWorld>();
             var game = rw?.processManager?.currentMainLoop as RainWorldGame;
+
+            string derivedRoom = DeriveRoomNameFromPath(filePath);
+            if (!string.IsNullOrEmpty(derivedRoom))
+            {
+                RoomCameraExtensions.UnloadRoomCache(derivedRoom);
+                RoomCameraExtensions.InvalidateRoomCache(derivedRoom);
+                RoomCameraExtensions.ReloadRoomTerrainCache(derivedRoom);
+
+                if (SettingsBlendController.IsActive &&
+                    string.Equals(SettingsBlendController.ActiveRoom?.abstractRoom?.name,
+                        derivedRoom, StringComparison.OrdinalIgnoreCase))
+                {
+                    SettingsBlendController.RefreshActiveSnapshots();
+                }
+            }
+
             if (game?.cameras != null)
             {
                 foreach (var cam in game.cameras)
@@ -59,19 +93,6 @@ public static class RoomSettingsPatches
                     {
                         string roomName = cam.room.abstractRoom?.name;
 
-                        // ============================================================
-                        // RECARGAR TERRAIN CACHE
-                        // RefreshActiveSnapshots() se encarga del blend
-                        // ============================================================
-                        if (!string.IsNullOrEmpty(roomName))
-                        {
-                            RSPlugin.log.LogDebug($"[TerrainBlend] Recargando cache terrain para sala: {roomName}");
-                            RoomCameraExtensions.ReloadRoomTerrainCache(roomName);
-                        }
-
-                        // ============================================================
-                        // RECARGA ROOM PALETTE (código existente)
-                        // ============================================================
                         var freshSnap = SettingsSnapshot.GetCached(filePath, cam.room.abstractRoom?.name);
 
                         if (freshSnap != null)
@@ -109,7 +130,6 @@ public static class RoomSettingsPatches
                                 if (SettingsBlendController.IsActive && SettingsBlendController.ActiveRoom == cam.room)
                                 {
                                     SettingsBlendController.RefreshActiveSnapshots();
-                                    RSPlugin.log.LogDebug($"[TerrainBlend] RefreshActiveSnapshots completado para sala: {roomName}");
                                 }
                                 else
                                 {
@@ -209,6 +229,8 @@ public static class RoomSettingsPatches
                                 "ACV" => ViewType.ACV,
                                 "RTV" => ViewType.RTV,
                                 "PSV" => ViewType.PSV,
+                                "AUV" => ViewType.AUV,
+                                "ORV" => ViewType.ORV,
                                 _ => ViewType.None
                             };
                         }
@@ -249,6 +271,15 @@ public static class RoomSettingsPatches
         {
             self.ClearExtendedData();
         }
+    }
+
+    private static string DeriveRoomNameFromPath(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath)) return null;
+        string name = Path.GetFileNameWithoutExtension(filePath);
+        int idx = name.IndexOf("_settings", StringComparison.OrdinalIgnoreCase);
+        if (idx <= 0) return null;
+        return name.Substring(0, idx);
     }
 
     private static void PreserveExtendedData(RoomSettings self)

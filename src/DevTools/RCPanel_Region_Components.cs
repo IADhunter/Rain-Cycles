@@ -9,6 +9,223 @@ using RWCustom;
 namespace FilesSetting;
 
 // ================================================================
+// RC STRING CONTROL
+// Port autocontenido del StringControl de RegionKit (que a su vez
+// usa ManagedStringControl de POM). Diferencias vs el original:
+//  - Sin signals: usa delegados OnSubmit/OnCancel/OnValueChanged
+//  - Escape cancela (RK no lo maneja)
+//  - Clipboard Ctrl+C/V preservado de nuestro campo anterior
+// Render: hereda de DevUILabel (anchor 0,0 + MoveLabel) -> texto nitido
+// ================================================================
+
+public class RCStringControl : DevUILabel
+{
+    /// <summary>Unico control con foco global (modelo POM/RK).</summary>
+    public static RCStringControl Active { get; private set; }
+
+    protected bool clickedLastUpdate;
+
+    /// <summary>Ultimo valor valido (el que se restaura al cancelar/commitar).</summary>
+    protected string actualValue;
+
+    /// <summary>Delegado de validacion en vivo. True/false colorea verde/rojo.</summary>
+    public Func<string, bool> isTextValid;
+
+    /// <summary>Disparado al hacer commit (Enter / click-fuera), con el ultimo valor valido.</summary>
+    public Action<string> OnSubmit;
+    /// <summary>Disparado al cancelar con Escape (el texto se revierte).</summary>
+    public Action OnCancel;
+    /// <summary>Disparado en vivo cuando el texto pasa a ser valido (newValue, oldValue).</summary>
+    public Action<string, string> OnValueChanged;
+
+    public RCStringControl(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos, float width, string text, Func<string, bool> validate)
+        : base(owner, IDstring, parentNode, pos, width, text)
+    {
+        isTextValid = validate;
+        actualValue = text;
+        Refresh();
+    }
+
+    public override void Refresh()
+    {
+        base.Refresh();
+    }
+
+    public override void Update()
+    {
+        base.Update();
+
+        if (owner.mouseClick && !clickedLastUpdate)
+        {
+            if (MouseOver && Active != this && CanTakeFocus())
+            {
+                // robar el foco: el control anterior commitea su edicion
+                // (mejora vs POM/RK, que la pierden silenciosamente)
+                Active?.TrySetValue(Active.Text, true);
+                Text = actualValue;
+                Active = this;
+                SetLabelColor(new Color(0.1f, 0.4f, 0.2f));
+            }
+            else if (Active == this)
+            {
+                // click sobre el mismo control -> commit y soltar foco
+                TrySetValue(Text, true);
+                Active = null;
+                SetLabelColor(Color.black);
+            }
+
+            clickedLastUpdate = true;
+        }
+        else if (!owner.mouseClick)
+        {
+            clickedLastUpdate = false;
+        }
+
+        if (Active == this)
+        {
+            // Clipboard (Ctrl+C copia, Ctrl+V reemplaza y valida en vivo)
+            if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+            {
+                if (Input.GetKeyDown(KeyCode.C))
+                {
+                    GUIUtility.systemCopyBuffer = Text;
+                }
+                else if (Input.GetKeyDown(KeyCode.V))
+                {
+                    string cb = GUIUtility.systemCopyBuffer;
+                    if (!string.IsNullOrEmpty(cb))
+                    {
+                        PasteText(cb);
+                    }
+                }
+            }
+
+            foreach (char c in Input.inputString)
+            {
+                if (c == '\b')
+                {
+                    if (Text.Length != 0 && CanDeleteChar())
+                    {
+                        Text = Text.Substring(0, Text.Length - 1);
+                        TrySetValue(Text, false);
+                    }
+                }
+                else if (c == '\n' || c == '\r')
+                {
+                    TrySetValue(Text, true);
+                    Active = null;
+                    SetLabelColor(Color.black);
+                }
+                else if (c == 27)
+                {
+                    CancelEditing();
+                }
+                else
+                {
+                    char sc = SanitizeChar(c);
+                    string newText = Text + sc;
+                    if (ShouldAppendChar(sc, newText))
+                    {
+                        Text = newText;
+                        TrySetValue(Text, false);
+                    }
+                }
+            }
+        }
+    }
+
+    private void CancelEditing()
+    {
+        Text = actualValue;
+        Active = null;
+        SetLabelColor(Color.black);
+        OnCancel?.Invoke();
+    }
+
+    private void SetLabelColor(Color c)
+    {
+        if (fLabels.Count > 0)
+            fLabels[0].color = c;
+    }
+
+    /// <summary>
+    /// Decide si un caracter puede anadirse al texto actual. El default
+    /// (fiel a RK/POM) permite todo y la validacion se muestra en rojo;
+    /// las subclases pueden restringirlo para bloquear entradas invalidas.
+    /// </summary>
+    protected virtual bool ShouldAppendChar(char c, string newText) => true;
+
+    /// <summary>
+    /// Transforma el caracter antes de anadirse al texto. Default: sin
+    /// cambios. Las subclases pueden normalizarlo (ej. mayusculas en hex).
+    /// </summary>
+    protected virtual char SanitizeChar(char c) => c;
+
+    /// <summary>
+    /// Decide si el control puede tomar el foco. Default: siempre.
+    /// Las subclases pueden restringirlo (ej. solo en EditMode).
+    /// </summary>
+    protected virtual bool CanTakeFocus() => true;
+
+    /// <summary>
+    /// Aplica un pegado de portapapeles. Default (RK/POM): reemplaza el
+    /// texto y lo valida (rojo si invalido). Las subclases pueden sanearlo.
+    /// </summary>
+    protected virtual void PasteText(string clipboard)
+    {
+        Text = clipboard;
+        TrySetValue(Text, false);
+    }
+
+    /// <summary>
+    /// Decide si puede borrarse el ultimo caracter. Default: siempre.
+    /// Las subclases pueden anclar prefijos (ej. '#' en el hex).
+    /// </summary>
+    protected virtual bool CanDeleteChar() => true;
+
+    /// <summary>
+    /// Valida el texto en vivo y actualiza colores. actualValue solo almacena
+    /// valores validos, por lo que al terminar la transaccion el texto se
+    /// restaura al ultimo valor valido (idem POM/RK).
+    /// </summary>
+    protected virtual void TrySetValue(string newValue, bool endTransaction)
+    {
+        if (isTextValid != null && isTextValid(newValue))
+        {
+            string oldValue = actualValue;
+            actualValue = newValue;
+            SetLabelColor(new Color(0.1f, 0.4f, 0.2f));
+            OnValueChanged?.Invoke(newValue, oldValue);
+        }
+        else
+        {
+            SetLabelColor(Color.red);
+        }
+
+        if (endTransaction)
+        {
+            Text = actualValue;
+            SetLabelColor(Color.black);
+            Refresh();
+            OnSubmit?.Invoke(actualValue);
+        }
+    }
+
+    /// <summary>Establece el valor commiteado sin disparar eventos (sincroniza con la logica externa).</summary>
+    public void SetCommittedValue(string value)
+    {
+        actualValue = value;
+        Text = value;
+        SetLabelColor(Color.black);
+    }
+
+    public static void ReleaseFocus()
+    {
+        Active = null;
+    }
+}
+
+// ================================================================
 // CLOCK TOGGLE BUTTON
 // ================================================================
 public class ClockToggleButton : Button
@@ -38,258 +255,79 @@ public class ClockToggleButton : Button
 
 // ================================================================
 // EDITABLE FLOAT FIELD
+// Campo numerico basado en el RCStringControl (port del StringControl
+// de RegionKit/POM). Misma API externa que el campo antiguo:
+// OnSubmit (float) / Value / SetValue. Solo editable en EditMode.
 // ================================================================
-public class EditableFloatField : PositionedDevUINode
+public class EditableFloatField : RCStringControl
 {
     private float _value;
     private float _minValue;
     private float _maxValue;
-    private bool _isEditing = false;
-    private FSprite _bgSprite;
-    private FLabel _label;
-    private FSprite _cursorSprite;
-    private float _cursorAlpha = 0f;
-    private string _editText;
-    private float _width;
-    private float _height = 20f;
-    private int _cursorPos = 0;
-    
+
     public float Value => _value;
-    public Action<float> OnSubmit { get; set; }
-    public Action OnCancel { get; set; }
-    
+
+    /// <summary>Disparado al commitar con un valor parseable (ya clampado).</summary>
+    public new Action<float> OnSubmit;
+
     public EditableFloatField(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos, float width, float defaultValue, float min = 0f, float max = 999f)
-        : base(owner, IDstring, parentNode, pos)
+        : base(owner, IDstring, parentNode, pos, width, Format(Mathf.Clamp(defaultValue, min, max)), IsValidFloatInput)
     {
-        _value = Mathf.Clamp(defaultValue, min, max);
         _minValue = min;
         _maxValue = max;
-        _width = width;
-        _editText = _value.ToString("F1");
-        
-        _bgSprite = new FSprite("pixel");
-        _bgSprite.scaleX = width;
-        _bgSprite.scaleY = _height;
-        _bgSprite.anchorX = 0f;
-        _bgSprite.anchorY = 0f;
-        _bgSprite.color = new Color(1f, 1f, 1f);
-        _bgSprite.alpha = 0.5f;
-        Futile.stage.AddChild(_bgSprite);
-        fSprites.Add(_bgSprite);
-        
-        _label = new FLabel(Custom.GetFont(), _value.ToString("F1"));
-        _label.anchorX = 0f;
-        _label.anchorY = 0.80f;
-        _label.color = Color.black;
-        Futile.stage.AddChild(_label);
-        fLabels.Add(_label);
-        
-        _cursorSprite = new FSprite("pixel");
-        _cursorSprite.scaleX = 2f;
-        _cursorSprite.scaleY = _height - 4f;
-        _cursorSprite.anchorX = 0f;
-        _cursorSprite.anchorY = 0f;
-        _cursorSprite.color = Color.black;
-        _cursorSprite.alpha = 0f;
-        Futile.stage.AddChild(_cursorSprite);
-        fSprites.Add(_cursorSprite);
-        
-        Refresh();
+        _value = Mathf.Clamp(defaultValue, min, max);
     }
-    
-    public void SetValue(float value)
+
+    private static string Format(float v) => v.ToString("F1");
+
+    private static bool IsValidFloatInput(string value)
+        => value.Length == 0 || float.TryParse(value, out _);
+
+    protected override bool CanTakeFocus() => BlendClock.EditMode;
+
+    /// <summary>
+    /// Solo digitos y un punto decimal; el resultado debe seguir siendo
+    /// un float parseable (o vacio). Bloquea letras, signos y puntos dobles.
+    /// </summary>
+    protected override bool ShouldAppendChar(char c, string newText)
     {
-        _value = Mathf.Clamp(value, _minValue, _maxValue);
-        _label.text = _value.ToString("F1");
-        _editText = _value.ToString("F1");
+        if (c != '.' && (c < '0' || c > '9'))
+            return false;
+        return IsValidFloatInput(newText);
     }
-    
-    private void StartEditing()
+
+    protected override void TrySetValue(string newValue, bool endTransaction)
     {
-        if (!BlendClock.EditMode) return;
-        
-        _isEditing = true;
-        _cursorAlpha = 1f;
-        _cursorPos = _editText.Length;
-        _label.color = Color.white;
-        _bgSprite.color = new Color(0.2f, 0.2f, 0.8f);
-        _cursorSprite.alpha = 1f;
-        
-        InputBlocker.Block();
-        UpdateCursorPosition();
-    }
-    
-    private void StopEditing(bool submit)
-    {
-        _isEditing = false;
-        _cursorAlpha = 0f;
-        _label.color = Color.black;
-        _bgSprite.color = new Color(1f, 1f, 1f);
-        _cursorSprite.alpha = 0f;
-        
-        InputBlocker.Unblock();
-        
-        if (submit)
+        base.TrySetValue(newValue, endTransaction);
+
+        if (endTransaction)
         {
-            if (float.TryParse(_editText, out float newVal))
+            if (float.TryParse(actualValue, out float parsed))
             {
-                _value = Mathf.Clamp(newVal, _minValue, _maxValue);
-                _label.text = _value.ToString("F1");
+                _value = Mathf.Clamp(parsed, _minValue, _maxValue);
+                Text = Format(_value);
+                actualValue = Format(_value);
                 OnSubmit?.Invoke(_value);
             }
             else
             {
-                _editText = _value.ToString("F1");
-                _label.text = _editText;
+                // texto vacio/invalido: revertir al ultimo valor
+                Text = Format(_value);
+                actualValue = Format(_value);
             }
         }
-        else
-        {
-            OnCancel?.Invoke();
-        }
     }
-    
-    private void InsertChar(char c)
+
+    public void SetValue(float value)
     {
-        _editText = _editText.Substring(0, _cursorPos) + c + _editText.Substring(_cursorPos);
-        _cursorPos++;
-        UpdateCursorPosition();
-        _label.text = _editText + "_";
-    }
-    
-    private void DeleteChar()
-    {
-        if (_cursorPos > 0)
-        {
-            _editText = _editText.Substring(0, _cursorPos - 1) + _editText.Substring(_cursorPos);
-            _cursorPos--;
-            UpdateCursorPosition();
-            _label.text = _editText + "_";
-        }
-    }
-    
-    private void UpdateCursorPosition()
-    {
-        float textWidth = _cursorPos * 8f;
-        _cursorSprite.x = absPos.x + 2f + textWidth;
-        _cursorSprite.y = absPos.y + 2f;
-    }
-    
-    public override void Update()
-    {
-        base.Update();
-        
-        if (_isEditing)
-        {
-            _cursorAlpha -= 0.05f;
-            if (_cursorAlpha < 0f) _cursorAlpha = 1f;
-            _cursorSprite.alpha = _cursorAlpha;
-            
-            if (Input.GetKeyDown(KeyCode.LeftArrow))
-            {
-                if (_cursorPos > 0) _cursorPos--;
-                UpdateCursorPosition();
-                _label.text = _editText + "_";
-            }
-            else if (Input.GetKeyDown(KeyCode.RightArrow))
-            {
-                if (_cursorPos < _editText.Length) _cursorPos++;
-                UpdateCursorPosition();
-                _label.text = _editText + "_";
-            }
-            
-            if (Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.C))
-            {
-                GUIUtility.systemCopyBuffer = _editText;
-            }
-            else if (Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.V))
-            {
-                string clipboard = GUIUtility.systemCopyBuffer;
-                if (!string.IsNullOrEmpty(clipboard))
-                {
-                    _editText = clipboard;
-                    _cursorPos = _editText.Length;
-                    UpdateCursorPosition();
-                    _label.text = _editText + "_";
-                }
-            }
-            
-            foreach (char c in Input.inputString)
-            {
-                if (c == '\b')
-                {
-                    DeleteChar();
-                }
-                else if (c == '\n' || c == '\r')
-                {
-                    StopEditing(true);
-                    return;
-                }
-                else if (c == 27)
-                {
-                    StopEditing(false);
-                    return;
-                }
-                else if ((c >= '0' && c <= '9') || c == '.')
-                {
-                    InsertChar(c);
-                }
-            }
-            
-            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
-            {
-                StopEditing(true);
-                return;
-            }
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                StopEditing(false);
-                return;
-            }
-            
-            if (owner.mouseClick &&
-                (owner.mousePos.x < absPos.x || owner.mousePos.x > absPos.x + _width ||
-                 owner.mousePos.y < absPos.y || owner.mousePos.y > absPos.y + _height))
-            {
-                StopEditing(true);
-                return;
-            }
-            
-            return;
-        }
-        
-        bool over = owner.mousePos.x >= absPos.x && owner.mousePos.x <= absPos.x + _width &&
-                    owner.mousePos.y >= absPos.y && owner.mousePos.y <= absPos.y + _height;
-        
-        _bgSprite.color = over ? new Color(0.8f, 0.8f, 1f) : new Color(1f, 1f, 1f);
-        
-        if (owner.mouseClick && over)
-        {
-            StartEditing();
-        }
-    }
-    
-    public override void Refresh()
-    {
-        base.Refresh();
-        _bgSprite.x = absPos.x;
-        _bgSprite.y = absPos.y;
-        _label.x = absPos.x + 2f;
-        _label.y = absPos.y + _height - 4f;
-        _cursorSprite.x = absPos.x + 2f;
-        _cursorSprite.y = absPos.y + 2f;
-    }
-    
-    public void Destroy()
-    {
-        if (_bgSprite != null) _bgSprite.RemoveFromContainer();
-        if (_label != null) _label.RemoveFromContainer();
-        if (_cursorSprite != null) _cursorSprite.RemoveFromContainer();
+        _value = Mathf.Clamp(value, _minValue, _maxValue);
+        actualValue = Format(_value);
+        Text = Format(_value);
     }
 }
 
 // ================================================================
-// MOD SELECT PANEL - Ahora muestra nombres de modinfo.json
+// MOD SELECT PANEL
 // ================================================================
 public class ModSelectPanel : Panel, IDevUISignals
 {
@@ -303,7 +341,6 @@ public class ModSelectPanel : Panel, IDevUISignals
     private int _visibleItems;
     private RCPanel_RegionPage _parentPage;
     
-    // Estructura para almacenar información del mod
     private struct ModInfo
     {
         public string Path;
@@ -319,7 +356,6 @@ public class ModSelectPanel : Panel, IDevUISignals
         _visibleItems = (int)((PANEL_HEIGHT - 40f) / ITEM_HEIGHT);
         _scrollOffset = 0;
         
-        // Convertir rutas a ModInfo
         var modList = new List<ModInfo>();
         foreach (string path in modPaths)
         {
@@ -384,7 +420,6 @@ public class ModSelectPanel : Panel, IDevUISignals
     
     private void PopulateItems()
     {
-        // Limpiar items existentes
         for (int i = subNodes.Count - 1; i >= 0; i--)
         {
             if (subNodes[i] is Button btn && (
@@ -398,7 +433,6 @@ public class ModSelectPanel : Panel, IDevUISignals
             }
         }
         
-        // Mostrar mods con su nombre real (de modinfo.json)
         for (int i = _scrollOffset; i < Math.Min(_scrollOffset + _visibleItems, _mods.Length); i++)
         {
             int idx = i;
@@ -466,7 +500,6 @@ public class ModSelectPanel : Panel, IDevUISignals
             int idx = int.Parse(sender.IDstring.Substring("RC_ModSelect_".Length));
             if (idx >= 0 && idx < _mods.Length)
             {
-                // Enviamos el nombre real del mod (de modinfo.json), no la ruta
                 _parentPage.Signal(DevUISignalType.ButtonClick, sender, _mods[idx].DisplayName);
             }
         }

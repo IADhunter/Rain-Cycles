@@ -16,11 +16,12 @@ public static partial class SettingsBlendController
         if (sky == SkyType.ACV) return _rcSlotsACV;
         if (sky == SkyType.RTV) return _rcSlotsRTV;
         if (sky == SkyType.PSV) return _rcSlotsPSV;
+        if (sky == SkyType.ORV) return _rcSlotsORV;
         return null;
     }
 
     // ============================================================
-    // FORCE SUN SHADER - Asegura que los slots Sun usen shader aditivo
+    // FORCE SUN SHADER
     // ============================================================
     private static void ForceSunShader(List<BackgroundScene.Simple2DBackgroundIllustration> sunSlots, RoomCamera cam)
     {
@@ -38,7 +39,6 @@ public static partial class SettingsBlendController
 
     // ============================================================
     // CREAR SLOTS - 4 slots en orden INVERSO
-    // slot3 (estado 4, detrás) → slot2 → slot1 → slot0 (estado 1, encima)
     // ============================================================
     private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateRcSlotsVanilla(
         BackgroundScene scene, Room room, SkyType sky)
@@ -53,6 +53,35 @@ public static partial class SettingsBlendController
             slots.Insert(0, slot);
         }
         return slots;
+    }
+
+    // ============================================================
+    // DESTRUIR SLOTS - limpia escena, sprite y referencia
+    // ============================================================
+    private static void DestroyRcSlots(
+        List<BackgroundScene.Simple2DBackgroundIllustration> slots, BackgroundScene scene)
+    {
+        if (slots == null) return;
+        var cam = scene?.room?.game?.cameras?[0];
+        for (int i = 0; i < slots.Count; i++)
+        {
+            var slot = slots[i];
+            if (slot == null) continue;
+            if (cam != null && cam.spriteLeasers != null)
+            {
+                for (int j = 0; j < cam.spriteLeasers.Count; j++)
+                {
+                    var sl = cam.spriteLeasers[j];
+                    if (sl.drawableObject == slot && sl.sprites != null && sl.sprites.Length > 0)
+                    {
+                        sl.sprites[0]?.RemoveFromContainer();
+                        break;
+                    }
+                }
+            }
+            scene?.elements?.Remove(slot);
+            slot.Destroy();
+        }
     }
 
     private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateStaticSlotsVanilla(
@@ -111,9 +140,9 @@ public static partial class SettingsBlendController
         if (cam == null || (_room != null && cam.room != _room && (targetRoom == null || cam.room != targetRoom))) return;
 
         ViewType view = sky == SkyType.ACV ? ViewType.ACV :
-                        sky == SkyType.RTV ? ViewType.RTV : ViewType.PSV;
+                        sky == SkyType.RTV ? ViewType.RTV :
+                        sky == SkyType.PSV ? ViewType.PSV : ViewType.ORV;
 
-        // Asignar imágenes a los 4 slots según estado
         for (int state = 1; state <= 4; state++)
         {
             string file = effectiveSettings.GetBkgFileForState(state, view);
@@ -125,13 +154,11 @@ public static partial class SettingsBlendController
             }
         }
 
-        // Aplicar alphas según fase actual
         bool isBlending = BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending;
         float t = isBlending ? BlendClock.SubPhaseLocalT : 0f;
         
         ApplyRcSlotsAlpha(sky, t, isBlending, stateA, stateB);
 
-        // Actualizar PSV (fog y sun)
         if (sky == SkyType.PSV)
         {
             UpdatePsvSlots(stateA, stateB, cam);
@@ -355,7 +382,7 @@ public static partial class SettingsBlendController
         string oldName = slot.illustrationName;
         
         string finalName = newName;
-        
+
         if (!Futile.atlasManager.DoesContainElementWithName(newName))
         {
             string modName = BlendSettingsLoader.ActiveModName;
@@ -505,8 +532,7 @@ public static partial class SettingsBlendController
                 break;
             }
         }
-        if (vanillaSprite == null)
-            return;
+        if (vanillaSprite == null) return;
 
         for (int j = 0; j < _rcSlotsPSVFog.Count; j++)
         {
@@ -546,9 +572,13 @@ public static partial class SettingsBlendController
         _rcSlotsPSVSun = null;
         _psvScene = null;
 
+        _rcSlotsORV = null;
+        _orvScene = null;
+
         _rcSlotsStaticACV = null;
         _rcSlotsStaticRTV = null;
         _rcSlotsStaticPSV = null;
+        _rcSlotsStaticORV = null;
 
         _forceSkyRefresh = false;
         ClearCachedVanillaFog();
@@ -556,7 +586,6 @@ public static partial class SettingsBlendController
 
     // ============================================================
     // HOOK: Sincronizar fog RC durante DrawSprites del vanilla
-    // (se ejecuta DESPUÉS de que el vanilla calcule su posición final)
     // ============================================================
     private static void OnHorizonFogDrawSprites(
         On.AboveCloudsView.HorizonFog.orig_DrawSprites orig,
@@ -566,11 +595,8 @@ public static partial class SettingsBlendController
         float timeStacker,
         Vector2 camPos)
     {
-        // 1. Llamar al original para que el vanilla calcule su posición
         orig(self, sLeaser, rCam, timeStacker, camPos);
 
-        // 2. Ahora el sprite del vanilla tiene su posición final
-        //    Sincronizar el fog RC inmediatamente
         if (_psvScene != null && _rcSlotsPSVFog != null && _rcSlotsPSVFog.Count > 0)
         {
             const float Y_OFFSET = 68f;

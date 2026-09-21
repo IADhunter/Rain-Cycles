@@ -100,7 +100,7 @@ public class RCPanel : Panel, IDevUISignals
 
         if (_activeFileLabel == null)
         {
-            string active = Path.GetFileName(owner.room.roomSettings.filePath ?? "");
+            string active = Path.GetFileName(owner.room.roomSettings.filePath ?? "").ToLowerInvariant();
             _activeFileLabel = new DevUILabel(owner, "RC_ActiveFile", this,
                 new Vector2(ACTIVE_FILE_X, TOP_ROW_Y), ACTIVE_FILE_WIDTH, active);
             subNodes.Add(_activeFileLabel);
@@ -253,7 +253,10 @@ public class RCPanel : Panel, IDevUISignals
 
     private void UpdateTitle()
     {
-        string tabName = _currentTab == 0 ? "Room" : (_currentTab == 1 ? "View" : "Region");
+        // El flag de arena lo gestiona ArenaBlendController (StateFileResolver.IsArenaMode).
+        string tabName = _currentTab == 0 ? "Room"
+            : (_currentTab == 1 ? "View"
+            : (StateFileResolver.IsArenaMode ? "Arena" : "Region"));
         Title = $"Rain Cycles: {tabName}";
     }
 
@@ -297,13 +300,9 @@ public class RCPanel : Panel, IDevUISignals
         Refresh();
     }
 
-    // ============================================================
-    // ⭐ CAMBIO PRINCIPAL: Ahora usa StateFileResolver.ResolveSettingsPath()
-    // ============================================================
     public string ResolveSettingsFile(int n)
     {
-        if (owner.room?.game?.IsArenaSession == true)
-            return ArenaStateResolver.GetSettingsPath(CurrentRoomName, n);
+        // StateFileResolver delega a ArenaBlendController en modo arena.
         return StateFileResolver.ResolveSettingsPath(CurrentRoomName, n);
     }
 
@@ -350,7 +349,9 @@ public class RCPanel : Panel, IDevUISignals
         if (path == null) return;
 
         owner.room.roomSettings.filePath = path;
+        RoomSettingsPatches.RefreshParent(owner.room.roomSettings, owner.room.world.region);
         owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
+        AncestorResolver.ApplyAncestor(owner.room.roomSettings, owner.room.world.region, ButtonSelectedA);
 
         var snapCheck = SettingsSnapshot.FromFile(path);
         if (!snapCheck._hasTerrainFadePalette)
@@ -369,7 +370,7 @@ public class RCPanel : Panel, IDevUISignals
         ApplyTintsFromSnapshot(snapCheck);
 
         owner.room.ApplyDecalOpacities(SettingsSnapshot.GetCached(path, CurrentRoomName));
-        RoomCameraExtensions.ApplyLightSourcesFromSnapshot(owner.room, path);
+        ApplyLightSourcesDirectly(snapCheck);
         RoomCameraExtensions.ApplyLightBeamsFromSnapshot(owner.room, path);
         Shader.SetGlobalFloat(RainWorld.ShadPropGrime, owner.room.roomSettings.Grime);
         SettingsBlendController.ApplySkyForState(ButtonSelectedA, owner.room);
@@ -377,13 +378,19 @@ public class RCPanel : Panel, IDevUISignals
         SettingsBlendController.UpdateManualStates(ButtonSelectedA, ButtonSelectedA);
 
         if (_activeFileLabel != null)
-            _activeFileLabel.Text = Path.GetFileName(path ?? "");
+            _activeFileLabel.Text = Path.GetFileName(path ?? "").ToLowerInvariant();
 
         RefreshViewPage();
 
         if (_currentContent is RCPanel_RoomPage roomPage)
         {
             roomPage.RefreshButtons();
+        }
+
+        if (owner.activePage is RoomSettingsPage rsp)
+        {
+            rsp.Refresh();
+            foreach (var node in rsp.subNodes) node.Refresh();
         }
     }
 
@@ -515,7 +522,7 @@ public class RCPanel : Panel, IDevUISignals
     }
 
     // ============================================================
-    // CLEAR BLEND ONLY - Mantiene el estado actual (para Clear manual)
+    // CLEAR BLEND ONLY
     // ============================================================
     public void ClearBlendOnly()
     {
@@ -528,7 +535,7 @@ public class RCPanel : Panel, IDevUISignals
     }
 
     // ============================================================
-    // RESET TO CYCLE STATE - Restaura al estado original del ciclo
+    // RESET TO CYCLE STATE
     // ============================================================
     public void ResetToCycleState()
     {
@@ -558,7 +565,7 @@ public class RCPanel : Panel, IDevUISignals
 
         if (sender.IDstring.StartsWith("RCA_"))
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
 
             int sel = int.Parse(sender.IDstring.Split('_')[1]);
 
@@ -571,10 +578,16 @@ public class RCPanel : Panel, IDevUISignals
             string path = ResolveSettingsFile(sel);
             if (path == null) return;
 
+            ButtonSelectedA = sel;
+
             ClearBlendOnly();
 
             owner.room.roomSettings.filePath = path;
+            RoomSettingsPatches.RefreshParent(owner.room.roomSettings, owner.room.world.region);
             owner.room.roomSettings.Load((SlugcatStats.Timeline)null);
+            AncestorResolver.ApplyAncestor(owner.room.roomSettings, owner.room.world.region, sel);
+
+            RefreshRoomObjects();
 
             var snapTerrain = SettingsSnapshot.FromFile(path);
             if (!snapTerrain._hasTerrainFadePalette)
@@ -594,7 +607,7 @@ public class RCPanel : Panel, IDevUISignals
             ApplyTintsFromSnapshot(snapTint);
 
             owner.room.ApplyDecalOpacities(SettingsSnapshot.GetCached(path, CurrentRoomName));
-            RoomCameraExtensions.ApplyLightSourcesFromSnapshot(owner.room, path);
+            ApplyLightSourcesDirectly(snapTint);
             RoomCameraExtensions.ApplyLightBeamsFromSnapshot(owner.room, path);
             Shader.SetGlobalFloat(RainWorld.ShadPropGrime, owner.room.roomSettings.Grime);
             SettingsBlendController.ApplySkyForState(sel, owner.room);
@@ -602,8 +615,11 @@ public class RCPanel : Panel, IDevUISignals
             SettingsBlendController.UpdateManualStates(sel, sel);
 
             if (_activeFileLabel != null)
-                _activeFileLabel.Text = Path.GetFileName(path ?? "");
-            ButtonSelectedA = sel;
+                _activeFileLabel.Text = Path.GetFileName(path ?? "").ToLowerInvariant();
+
+            var c0Final = owner.room.game.cameras[0];
+            c0Final.ApplyEffectColorsToAllPaletteTextures(
+                owner.room.roomSettings.EffectColorA, owner.room.roomSettings.EffectColorB);
 
             if (snapTint != null && !snapTint.HasTint)
             {
@@ -617,14 +633,19 @@ public class RCPanel : Panel, IDevUISignals
                 roomPage.RefreshButtons();
             }
 
+            if (owner.activePage is RoomSettingsPage rsp)
+            {
+                rsp.Refresh();
+                foreach (var node in rsp.subNodes) node.Refresh();
+            }
+
             foreach (var node in subNodes) node.Refresh();
-            parentNode?.Refresh();
             return;
         }
 
         if (sender.IDstring == "RC_Plus")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
 
             var activeStates = StateFileResolver.GetActiveStates(CurrentRoomName);
             int nextState = activeStates.Count + 1;
@@ -653,7 +674,7 @@ public class RCPanel : Panel, IDevUISignals
 
         if (sender.IDstring == "RC_Minus")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
 
             var activeStates = StateFileResolver.GetActiveStates(CurrentRoomName);
             if (activeStates.Count == 0) return;
@@ -701,6 +722,169 @@ public class RCPanel : Panel, IDevUISignals
             }
 
             return;
+        }
+    }
+
+    // ============================================================
+    // REFRESH ROOM OBJECTS (LightBeams + CustomDecals)
+    // Destruye los existentes y recrea desde placedObjects actuales.
+    // Solo para preview de devtools — no toca blend.
+    // ============================================================
+    private void RefreshRoomObjects()
+    {
+        var room = owner.room;
+        if (room == null) return;
+
+        var rCam = room.game.cameras[0];
+
+        // ── FASE 1: Destruir LightBeams y CustomDecals existentes ──
+        for (int i = room.updateList.Count - 1; i >= 0; i--)
+        {
+            var obj = room.updateList[i];
+            if (obj is not LightBeam && obj is not CustomDecal) continue;
+
+            obj.Destroy();
+
+            if (rCam != null)
+            {
+                for (int s = rCam.spriteLeasers.Count - 1; s >= 0; s--)
+                {
+                    if (rCam.spriteLeasers[s].drawableObject == obj)
+                    {
+                        rCam.spriteLeasers[s].CleanSpritesAndRemove();
+                        break;
+                    }
+                }
+            }
+
+            room.updateList.Remove(obj);
+            if (obj is IDrawable d)
+                room.drawableObjects.Remove(d);
+        }
+
+        // ── FASE 2: Recrear desde placedObjects actuales ──
+        var placedObjects = room.roomSettings?.placedObjects;
+        if (placedObjects == null) return;
+
+        for (int i = 0; i < placedObjects.Count; i++)
+        {
+            var po = placedObjects[i];
+            if (po.type == PlacedObject.Type.LightBeam)
+            {
+                var beam = new LightBeam(po);
+                room.SetLightBeamBlink(beam, i);
+                room.AddObject(beam);
+            }
+            else if (po.type == PlacedObject.Type.CustomDecal)
+            {
+                room.AddObject(new CustomDecal(po));
+            }
+        }
+    }
+
+    // ============================================================
+    // APLICAR LIGHT SOURCES DIRECTAMENTE POR ORDEN
+    // ============================================================
+    private void ApplyLightSourcesDirectly(SettingsSnapshot snap)
+    {
+        if (snap == null || owner.room == null) return;
+        if (owner.room.lightSources == null) return;
+        if (owner.room.roomSettings == null) return;
+
+        var room = owner.room;
+        var placedObjects = room.roomSettings.placedObjects;
+        var lightSources = room.lightSources;
+
+        // ── FASE 1: Destruir light sources huérfanos ──
+        // Un light source es huérfano si no tiene placed object correspondiente
+        // en el estado actual (su placed object fue eliminado al cambiar de estado).
+        var orphans = new List<LightSource>();
+        for (int i = lightSources.Count - 1; i >= 0; i--)
+        {
+            var light = lightSources[i];
+            if (light == null || light.slatedForDeletetion) continue;
+
+            bool hasPlacedObject = false;
+            for (int j = 0; j < placedObjects.Count; j++)
+            {
+                if (placedObjects[j].type != PlacedObject.Type.LightSource) continue;
+                if (placedObjects[j].pos == light.pos)
+                {
+                    hasPlacedObject = true;
+                    break;
+                }
+            }
+
+            if (!hasPlacedObject)
+            {
+                orphans.Add(light);
+                light.Destroy();
+
+                // Limpiar sprites inmediatamente
+                var rCam = room.game.cameras[0];
+                if (rCam != null)
+                {
+                    for (int s = rCam.spriteLeasers.Count - 1; s >= 0; s--)
+                    {
+                        if (rCam.spriteLeasers[s].drawableObject == light)
+                        {
+                            rCam.spriteLeasers[s].CleanSpritesAndRemove();
+                            break;
+                        }
+                    }
+                }
+
+                // Remover de todas las listas de la sala
+                room.updateList.Remove(light);
+                room.drawableObjects.Remove(light);
+                room.lightSources.Remove(light);
+                room.cosmeticLightSources.Remove(light);
+            }
+        }
+
+        // ── FASE 2: Aplicar intensidades del snapshot ──
+        var validLights = new List<LightSource>();
+        for (int i = 0; i < lightSources.Count; i++)
+        {
+            var light = lightSources[i];
+            if (light != null && !light.slatedForDeletetion)
+                validLights.Add(light);
+        }
+
+        int lightIdx = 0;
+        for (int i = 0; i < placedObjects.Count; i++)
+        {
+            if (placedObjects[i].type != PlacedObject.Type.LightSource) continue;
+
+            if (lightIdx < validLights.Count)
+            {
+                var light = validLights[lightIdx];
+
+                if (snap.LightIntensities.TryGetValue(i, out float intensity))
+                {
+                    light.alpha = intensity;
+                    light.lastAlpha = intensity;
+                    light.setAlpha = null;
+
+                    var data = placedObjects[i].data as PlacedObject.LightSourceData;
+                    if (data != null)
+                    {
+                        data.strength = intensity;
+                    }
+                }
+
+                lightIdx++;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        // Forzar refresh de la página de objetos para sincronizar sliders
+        if (owner?.activePage is ObjectsPage objectsPage)
+        {
+            objectsPage.Refresh();
         }
     }
 

@@ -4,6 +4,7 @@ using RainCycles.Settings;
 using RainCycles.Snapshot;
 using RainCycles.Clock;
 using RainCycles.Blend;
+using Watcher;
 
 namespace RainCycles.Core;
 
@@ -36,6 +37,7 @@ public static partial class SettingsBlendController
     private static RoofTopView     _rtvScene = null;
     private static AboveCloudsView _acvScene = null;
     private static AboveCloudsView _psvScene = null;
+    private static OuterRimView    _orvScene = null;
 
     private static AboveCloudsView.HorizonFog _cachedVanillaFog = null;
 
@@ -47,14 +49,14 @@ public static partial class SettingsBlendController
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsPSV = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsPSVFog = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsPSVSun = null;
+    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsORV = null;
 
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticACV = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticRTV = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticPSV = null;
+    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticORV = null;
 
-    private static float _entryFrameT = -1f;
-
-    private static SettingsSnapshot _activeSnapshot = null;
+    private static TintLerpResult? _activeSnapshot = null;
 
     private static bool _forceSkyRefresh = false;
 
@@ -72,15 +74,17 @@ public static partial class SettingsBlendController
     public static string           CurrentPathB        => _pathB;
     public static Room             ActiveRoom          => _room;
     public static float            ForcedT             => _forcedT;
-    public static SettingsSnapshot ActiveSnapshot      => _activeSnapshot;
-    public static void SetActiveSnapshot(SettingsSnapshot snap) => _activeSnapshot = snap;
+    public static TintLerpResult? ActiveSnapshot       => _activeSnapshot;
+    public static void SetActiveSnapshot(TintLerpResult snap) => _activeSnapshot = snap;
+    public static void SetActiveSnapshot(SettingsSnapshot snap) => _activeSnapshot = snap == null
+        ? (TintLerpResult?)null
+        : new TintLerpResult { TintMultiply = snap.TintMultiply, TintAtmosphere = snap.TintAtmosphere };
     public static void ClearActiveSnapshot() => _activeSnapshot = null;
 
     public static void ClearFrameFlag()
     {
         _detachedThisFrame   = false;
         _moveCameraThisFrame = false;
-        _entryFrameT         = -1f;
     }
 
     public static void Init()
@@ -95,19 +99,14 @@ public static partial class SettingsBlendController
         On.AboveCloudsView.Update           += OnAboveCloudsViewUpdate;
         On.AboveCloudsView.ctor             += OnAboveCloudsViewCtor;
         On.Watcher.OuterRimView.ctor        += OnOuterRimViewCtor;
+        On.Watcher.OuterRimView.Update      += OnOuterRimViewUpdate;
         On.Watcher.AncientUrbanView.ctor    += OnAncientUrbanViewCtor;
         On.RoomCamera.ChangeRoom            += OnChangeRoom;
         On.RoomCamera.Update                += OnRoomCameraUpdate;
         On.RoomCamera.LoadPalette           += OnLoadPalette;
 
-        // ═══════════════════════════════════════════════════════════════
-        // NUEVO HOOK: Sincronizar fog RC durante DrawSprites del vanilla
-        // ═══════════════════════════════════════════════════════════════
         On.AboveCloudsView.HorizonFog.DrawSprites += OnHorizonFogDrawSprites;
 
-        // ═══════════════════════════════════════════════════════════════
-        // HOOK: Ocultar DistantCloud con depth >= 195f en PSV
-        // ═══════════════════════════════════════════════════════════════
         On.AboveCloudsView.DistantCloud.InitiateSprites += OnDistantCloudInitiateSprites;
     }
 
@@ -117,8 +116,7 @@ public static partial class SettingsBlendController
     public static bool IsStaticViewRoom(Room room)
     {
         if (room == null) return false;
-        var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
-        return snap != null && snap.HasRcType && snap.RcType == RcType.Static;
+        return RoomCameraExtensions.GetRoomBlendState(room).IsStatic;
     }
 
     // ============================================================
@@ -127,14 +125,6 @@ public static partial class SettingsBlendController
     private static void OnLoadPalette(On.RoomCamera.orig_LoadPalette orig, RoomCamera self, int pal, ref Texture2D texture)
     {
         orig(self, pal, ref texture);
-    }
-
-    // ============================================================
-    // FORCE LOAD PALETTE
-    // ============================================================
-    public static void ForceLoadPalette(RoomCamera cam, int palId, ref Texture2D texture)
-    {
-        cam.LoadPalette(palId, ref texture);
     }
 
     // ============================================================
@@ -285,8 +275,7 @@ public static partial class SettingsBlendController
     public static bool IsBlendRoom(Room room)
     {
         if (room?.roomSettings?.filePath == null) return false;
-        var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
-        return snap != null && snap.HasRcType && snap.RcType == RcType.Blend;
+        return RoomCameraExtensions.GetRoomBlendState(room).IsBlend;
     }
 
     // ============================================================
@@ -295,13 +284,7 @@ public static partial class SettingsBlendController
     private static SkyType GetViewFromLoadedSettings(Room room)
     {
         if (room?.roomSettings?.filePath == null) return SkyType.None;
-        var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
-        if (snap == null) return SkyType.None;
-        
-        return snap.ViewType == ViewType.ACV ? SkyType.ACV
-            : snap.ViewType == ViewType.RTV ? SkyType.RTV
-            : snap.ViewType == ViewType.PSV ? SkyType.PSV
-            : SkyType.None;
+        return RoomCameraExtensions.GetRoomBlendState(room).Sky;
     }
 
     // ============================================================

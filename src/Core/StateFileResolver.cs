@@ -7,13 +7,19 @@ using RainCycles.Blend;
 
 namespace RainCycles.Core;
 
-// Resuelve rutas de settings_N.txt y rota el archivo cargado según el ciclo.
 public static class StateFileResolver
 {
     private static int  _frozenCycle    = 0;
     private static bool _hasFrozenCycle = false;
     
     private static int _currentCycleState = 1;
+
+    // Modo arena: la resolución de rutas delega en ArenaBlendController (levels/raincycles).
+    // ModResetter lo resetea a false en cada partida; ArenaBlendController lo activa en su ctor hook.
+    private static bool _arenaMode = false;
+
+    public static bool IsArenaMode => _arenaMode;
+    public static void SetArenaMode(bool value) => _arenaMode = value;
     
     private static readonly Dictionary<(string roomName, int state, string slugcat, string dlcs), string> _resolutionCache
         = new Dictionary<(string, int, string, string), string>();
@@ -31,7 +37,6 @@ public static class StateFileResolver
         string key = GetPendingKey(roomName, state);
         _pendingDeletes.Add(key);
         RoomCameraExtensions.InvalidateRoomCache(roomName);
-        RSPlugin.log.LogInfo($"[StateFileResolver] Marcado para eliminar: {roomName} estado {state}");
     }
     
     public static void UnmarkPendingDelete(string roomName, int state)
@@ -39,7 +44,6 @@ public static class StateFileResolver
         string key = GetPendingKey(roomName, state);
         _pendingDeletes.Remove(key);
         RoomCameraExtensions.InvalidateRoomCache(roomName);
-        RSPlugin.log.LogInfo($"[StateFileResolver] Desmarcado: {roomName} estado {state}");
     }
     
     public static bool IsPendingDelete(string roomName, int state)
@@ -50,6 +54,16 @@ public static class StateFileResolver
     
     public static List<int> GetActiveStates(string roomName)
     {
+        if (_arenaMode)
+        {
+            // El sistema de estados es 1-4; arena puede tener menos archivos.
+            var arenaStates = new List<int>();
+            int arenaCount = ArenaBlendController.CountSettingsFiles(roomName);
+            for (int i = 1; i <= Math.Min(arenaCount, 4); i++)
+                arenaStates.Add(i);
+            return arenaStates;
+        }
+
         var result = new List<int>();
         int maxState = CountRainStateFiles(roomName);
         for (int i = 1; i <= maxState; i++)
@@ -57,6 +71,17 @@ public static class StateFileResolver
             if (!IsPendingDelete(roomName, i))
                 result.Add(i);
         }
+
+        // Setting vanilla: si el estado mapeado no está en la lista, agregarlo
+        int vanillaMapping = BlendSettingsLoader.Active?.Setting ?? 0;
+        if (vanillaMapping >= 1 && vanillaMapping <= 4 && !result.Contains(vanillaMapping))
+        {
+            string vanillaPath = BuildVanillaSettingsPath(roomName);
+            if (vanillaPath != null && File.Exists(vanillaPath) && !IsPendingDelete(roomName, vanillaMapping))
+                result.Add(vanillaMapping);
+        }
+
+        result.Sort();
         return result;
     }
     
@@ -68,9 +93,7 @@ public static class StateFileResolver
     public static void ExecutePendingDeletes()
     {
         if (_pendingDeletes.Count == 0) return;
-        
-        RSPlugin.log.LogInfo($"[StateFileResolver] Ejecutando {_pendingDeletes.Count} eliminaciones pendientes");
-        
+
         var affectedRooms = new HashSet<string>();
         
         foreach (string key in _pendingDeletes.ToList())
@@ -89,7 +112,6 @@ public static class StateFileResolver
                 try
                 {
                     File.Delete(path);
-                    RSPlugin.log.LogInfo($"[StateFileResolver] Eliminado: {path}");
                 }
                 catch (Exception ex)
                 {
@@ -104,7 +126,6 @@ public static class StateFileResolver
         }
         
         _pendingDeletes.Clear();
-        RSPlugin.log.LogInfo("[StateFileResolver] Eliminaciones pendientes completadas");
     }
     
     public static void ClearAllPendingDeletes()
@@ -132,6 +153,16 @@ public static class StateFileResolver
         _cachedActiveDLCs = ComputeActiveDLCSuffixes();
     }
 
+    // Slugcat actual SIN el guion inicial del sufijo (p.ej. "yellow", "red", "").
+    // Se usa como clave en el archivo de anclaje de estado (modo coherente).
+    public static string GetCurrentSlugcatName()
+    {
+        string suffix = GetCurrentSlugcatSuffix();
+        return !string.IsNullOrEmpty(suffix) && suffix[0] == '-'
+            ? suffix.Substring(1)
+            : "";
+    }
+
     private static string ComputeSlugcatSuffix(RainWorldGame game)
     {
         try
@@ -149,9 +180,8 @@ public static class StateFileResolver
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            RSPlugin.log.LogDebug($"[StateFileResolver] Error obteniendo slugcat: {ex.Message}");
         }
         return "";
     }
@@ -175,9 +205,13 @@ public static class StateFileResolver
     {
         if (string.IsNullOrEmpty(roomName) || state < 1 || state > 4)
             return null;
+
+        if (_arenaMode)
+            return ArenaBlendController.ResolveSettingsPath(roomName, state);
         
         string slugcatSuffix = GetCurrentSlugcatSuffix();
         var activeDLCs = GetActiveDLCSuffixes();
+        if (activeDLCs == null) activeDLCs = new List<string>();
         string dlcKey = string.Join(",", activeDLCs);
         
         var cacheKey = (roomName, state, slugcatSuffix, dlcKey);
@@ -187,12 +221,9 @@ public static class StateFileResolver
             _resolutionCache.Remove(cacheKey);
         }
         
-        RSPlugin.log.LogDebug($"[StateFileResolver] Resolviendo {roomName} estado {state} | Slugcat: '{slugcatSuffix}' | DLCs activos: [{string.Join(", ", activeDLCs)}]");
-        
         string dir = BuildDirectoryPath(roomName);
         if (!Directory.Exists(dir))
         {
-            RSPlugin.log.LogDebug($"[StateFileResolver] Directorio no existe: {dir}");
             return null;
         }
         
@@ -202,13 +233,63 @@ public static class StateFileResolver
         {
             if (File.Exists(candidate))
             {
-                RSPlugin.log.LogDebug($"[StateFileResolver] Encontrado: {candidate}");
                 _resolutionCache[cacheKey] = candidate;
                 return candidate;
             }
         }
         
-        RSPlugin.log.LogDebug($"[StateFileResolver] No se encontró ningún archivo para {roomName} estado {state}");
+        // Fallback: buscar recursivamente en subcarpetas
+        string foundRecursive = SearchRecursiveForState(dir, roomName, state);
+        if (foundRecursive != null)
+        {
+            _resolutionCache[cacheKey] = foundRecursive;
+            return foundRecursive;
+        }
+
+        // Fallback Setting: si state == blendSetting.Setting, usar el archivo vanilla
+        int vanillaMapping = BlendSettingsLoader.Active?.Setting ?? 0;
+        if (vanillaMapping >= 1 && vanillaMapping <= 4 && state == vanillaMapping)
+        {
+            string vanillaPath = BuildVanillaSettingsPath(roomName);
+            if (vanillaPath != null && File.Exists(vanillaPath))
+            {
+                _resolutionCache[cacheKey] = vanillaPath;
+                return vanillaPath;
+            }
+        }
+
+        return null;
+    }
+    
+    private static string SearchRecursiveForState(string baseDir, string roomName, int state)
+    {
+        bool isDashTwo = roomName.EndsWith("-2");
+        string baseName = isDashTwo ? roomName.Substring(0, roomName.Length - 2) : roomName;
+        string dashTwoName = isDashTwo ? baseName + "-2" : null;
+        
+        string pattern = $"*_settings*_{state}.txt";
+        
+        try
+        {
+            var files = Directory.GetFiles(baseDir, pattern, SearchOption.AllDirectories);
+            
+            foreach (string file in files)
+            {
+                string fileName = Path.GetFileNameWithoutExtension(file);
+                if (isDashTwo)
+                {
+                    if (fileName.StartsWith(dashTwoName, StringComparison.OrdinalIgnoreCase))
+                        return file;
+                }
+                else
+                {
+                    if (fileName.StartsWith(baseName, StringComparison.OrdinalIgnoreCase))
+                        return file;
+                }
+            }
+        }
+        catch (Exception) { }
+        
         return null;
     }
     
@@ -222,11 +303,7 @@ public static class StateFileResolver
         string dashTwoName = isDashTwo ? baseName + "-2" : null;
         
         // ============================================================
-        // NUEVO ORDEN: slugcat tiene prioridad sobre DLC
-        // 1. DLC + slugcat (más específico)
-        // 2. Solo slugcat
-        // 3. Solo DLC
-        // 4. Base
+        // ORDEN DE PRIORIDAD: slugcat tiene prioridad sobre DLC
         // ============================================================
         
         // 1. DLC + slugcat
@@ -273,6 +350,9 @@ public static class StateFileResolver
     
     public static int CountRainStateFiles(string roomName)
     {
+        if (_arenaMode)
+            return ArenaBlendController.CountSettingsFiles(roomName);
+
         string dir = BuildDirectoryPath(roomName);
         if (!Directory.Exists(dir)) return 0;
         
@@ -280,8 +360,8 @@ public static class StateFileResolver
         string baseName = roomName.EndsWith("-2") ? roomName.Substring(0, roomName.Length - 2) : roomName;
         string patternDashTwo = $"{baseName}-2_settings*_*.txt";
         
-        var files = Directory.GetFiles(dir, pattern)
-            .Concat(Directory.GetFiles(dir, patternDashTwo))
+        var files = Directory.GetFiles(dir, pattern, SearchOption.AllDirectories)
+            .Concat(Directory.GetFiles(dir, patternDashTwo, SearchOption.AllDirectories))
             .Distinct()
             .ToList();
         
@@ -294,6 +374,15 @@ public static class StateFileResolver
             {
                 states.Add(state);
             }
+        }
+
+        // Setting vanilla: si el estado mapeado no tiene archivo numerado, contar el vanilla
+        int vanillaMapping = BlendSettingsLoader.Active?.Setting ?? 0;
+        if (vanillaMapping >= 1 && vanillaMapping <= 4 && !states.Contains(vanillaMapping))
+        {
+            string vanillaPath = BuildVanillaSettingsPath(roomName);
+            if (vanillaPath != null && File.Exists(vanillaPath))
+                states.Add(vanillaMapping);
         }
         
         return states.Count;
@@ -310,11 +399,23 @@ public static class StateFileResolver
     
     internal static string CreateNewRainStateFile(string name, int buttonCount, Room room)
     {
-        string dir = BuildDirectoryPath(name);
+        // En arena el archivo vive en levels/raincycles del mod dueño del level
+        // (historia lo escribe en World/{REGION}-Rooms/RainCycles).
+        if (_arenaMode)
+            return ArenaBlendController.CreateSettingsFile(name, buttonCount, room);
+
+        // Si el usuario eligió un mod destino en la pestaña Developer, la
+        // escritura va SIEMPRE a ese mod (creando carpetas si faltan).
+        string dir = SaveModResolver.DirectoryForRoom(name) ?? BuildDirectoryPath(name);
         if (!Directory.Exists(dir))
             Directory.CreateDirectory(dir);
 
-        string filePath = Path.Combine(dir, $"{name}_settings_{buttonCount}.txt");
+        // El nombre de sala llega en mayúsculas (definición del world file),
+        // pero los archivos vanilla en disco están en minúsculas: normaliza
+        // el case para que el generado coincida con la convención del juego.
+        string fileName = name.ToLowerInvariant();
+
+        string filePath = Path.Combine(dir, $"{fileName}_settings_{buttonCount}.txt");
         room.roomSettings.filePath = filePath;
         room.roomSettings.Save();
         
@@ -330,8 +431,8 @@ public static class StateFileResolver
     
     private static string BuildDirectoryPath(string roomName)
     {
-        string regionCode   = roomName.Split('_')[0].ToUpperInvariant();
-        string regionFolder = Path.Combine("World", regionCode + "-Rooms", "RainCycles");
+        string regionCode   = roomName.Split('_')[0].ToLowerInvariant();
+        string regionFolder = Path.Combine("world", regionCode + "-rooms", "raincycles");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
@@ -341,6 +442,24 @@ public static class StateFileResolver
         }
 
         return Path.Combine(Application.streamingAssetsPath, regionFolder);
+    }
+
+    // Ruta al archivo vanilla {room}_settings.txt (sin número).
+    // El vanilla vive en world/{region}-rooms/ (directamente, sin subcarpeta RainCycles).
+    private static string BuildVanillaSettingsPath(string roomName)
+    {
+        string regionCode = roomName.Split('_')[0].ToLowerInvariant();
+        string fileName   = roomName.ToLowerInvariant() + "_settings.txt";
+        string vanillaDir = Path.Combine("world", regionCode + "-rooms");
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, vanillaDir, fileName);
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        string basePath = Path.Combine(Application.streamingAssetsPath, vanillaDir, fileName);
+        return File.Exists(basePath) ? basePath : null;
     }
     
     // ============================================================
@@ -392,17 +511,54 @@ public static class StateFileResolver
         orig(self, room, name, region, template, firstTemplate, timelinePoint, game);
 
         if (room == null || room.game == null) return;
-        var session = room.game.GetStorySession;
-        if (session?.saveState == null) return;
         if (_blockLoad) return;
+
+        var session = room.game.GetStorySession;
+        if (session?.saveState == null)
+        {
+            // Arena: sin StorySession, el estado lo resuelve ArenaBlendController.
+            // En el ctor de la sala (dentro del ctor del juego) el estado aún es 0
+            // (ModResetter lo resetea antes del orig) -> mínimo 1; el blend runtime
+            // re-aplica el estado real de la ronda per-frame.
+            if (!_arenaMode) return;
+
+            int arenaState = Math.Max(1, _currentCycleState);
+            string arenaPath = ResolveSettingsPath(name, arenaState);
+            if (arenaPath == null) return;
+
+            self.filePath = arenaPath;
+            RoomSettingsPatches.RefreshParent(self, region);
+            self.Load((SlugcatStats.Timeline)null);
+            AncestorResolver.ApplyAncestor(self, region, arenaState);
+
+            var snapArena = SettingsSnapshot.GetCached(arenaPath, name);
+            if (!snapArena._hasTerrainFadePalette)
+                self.terrainFadePalette = null;
+            return;
+        }
 
         int cycle = _hasFrozenCycle ? _frozenCycle : session.saveState.cycleNumber;
         int stateNumber = _currentCycleState;
+        if (stateNumber < 1 || stateNumber > 4)
+        {
+            // Las salas construidas DENTRO del ctor del juego (durante orig) se crean
+            // con _currentCycleState recién reseteado a 0 por ModResetter. Si nos
+            // quedamos sin redirigir, el filePath queda vanilla y el blend nunca aplica.
+            // Resolvemos el estado aquí mismo para que la sala cargue un estado real.
+            // OJO: ModResetter también anuló el contexto DLC/slugcat por reflexión
+            // (los deja en null), así que lo reconstruimos antes de resolver rutas.
+            if (_cachedActiveDLCs == null || _cachedSlugcatSuffix == null)
+                RebuildContextCache(game);
+            stateNumber = CycleStateResolver.ResolveState(cycle);
+            _currentCycleState = stateNumber;
+        }
         string rainStatePath = ResolveSettingsPath(name, stateNumber);
         if (rainStatePath == null) return;
 
         self.filePath = rainStatePath;
+        RoomSettingsPatches.RefreshParent(self, region);
         self.Load((SlugcatStats.Timeline)null);
+        AncestorResolver.ApplyAncestor(self, region, stateNumber);
 
         var snap = SettingsSnapshot.GetCached(rainStatePath, name);
         if (!snap._hasTerrainFadePalette)
@@ -424,6 +580,5 @@ public static class StateFileResolver
     public static void InvalidatePathCache()
     {
         _resolutionCache.Clear();
-        RSPlugin.log.LogDebug("[StateFileResolver] Caché de rutas invalidada");
     }
 }

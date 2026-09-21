@@ -26,7 +26,10 @@ public class RSPlugin : BaseUnityPlugin
 
     public static ManualLogSource log;
 
-    public static Configurable<bool> randomCycles => _options?.randomCycles;
+    public static Configurable<string> cycleMode => _options?.cycleMode;
+    public static Configurable<string> customSeed => _options?.customSeed;
+    public static Configurable<bool> proceduralNoCycle => _options?.proceduralNoCycle;
+    public static Configurable<string> saveModId => _options?.saveModId;
     private static RCOptions _options;
 
     private void OnEnable()
@@ -46,8 +49,7 @@ public class RSPlugin : BaseUnityPlugin
             IsInit = true;
 
             _options = new RCOptions();
-            bool ok = MachineConnector.SetRegisteredOI(ID, _options);
-            Logger.LogDebug($"[RC] SetRegisteredOI result: {ok}");
+            MachineConnector.SetRegisteredOI(ID, _options);
 
             CreateTransparentPlaceholder();
 
@@ -65,9 +67,8 @@ public class RSPlugin : BaseUnityPlugin
             TintManager.Init();
             RoomCameraExtensions.InitLights();
             DayNightBlocker.Init();
+            PlateTreeRotPatch.Init();
             RainCyclesEventDispatcher.Init();
-
-            Logger.LogInfo($"[{NAME}] {VER} loaded successfully!");
         }
         catch (Exception ex)
         {

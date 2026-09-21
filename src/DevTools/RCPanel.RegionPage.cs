@@ -31,6 +31,11 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private const float TRIGGER_LABEL_X = 121f;
     private const float TRIGGER_ARROW2_X = 156f;
     
+    private const float SETTING_ARROW_X = 100f;
+    private const float SETTING_LABEL_X = 121f;
+    private const float SETTING_ARROW2_X = 156f;
+    private const float SETTING_Y = 103f;
+    
     private const float WAITTIME_X = 100f;
     
     private const float ROW_CLOCK_Y = 180f;
@@ -71,6 +76,12 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private DevUILabel _triggerLabel;
     private EditableFloatField _waitTimeField;
     
+    private ArrowButton _settingPrevArrow;
+    private ArrowButton _settingNextArrow;
+    private DevUILabel _settingLabel;
+    
+    private DevUILabel _activeBlendFileLabel;
+    
     private ModSelectPanel _modSelectPanel;
     private ImageSelectPanel _imageSelectPanel;
     private int _editingBkgIndex = -1;
@@ -85,6 +96,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     {
         ParentPanel = parent;
         _logic = new RegionLogic(this);
+        _logic.OnSaved = UpdateBlendFileLabel;
         _bkgButtons = new Button[4];
         
         _logic.LoadFromBlendSettings();
@@ -101,6 +113,11 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         _editModeButton = new EditModeButton(owner, "RC_EditMode", this,
             new Vector2(5f, 5f), 30f);
         subNodes.Add(_editModeButton);
+
+        string blendFileName = Path.GetFileName(_logic.BlendSettingsPath ?? "").ToLowerInvariant();
+        _activeBlendFileLabel = new DevUILabel(owner, "RC_ActiveBlendFile", this,
+            new Vector2(40f, 5f), 170f, blendFileName);
+        subNodes.Add(_activeBlendFileLabel);
         
         _modePrevArrow = new ArrowButton(owner, "RC_Mode_Prev", this,
             new Vector2(MARGIN, ROW_MODE_Y), 270f);
@@ -149,6 +166,16 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         subNodes.Add(_triggerNextArrow);
         subNodes.Add(_triggerLabel);
         
+        _settingPrevArrow = new ArrowButton(owner, "RC_Setting_Prev", this,
+            new Vector2(SETTING_ARROW_X, SETTING_Y), 270f);
+        _settingNextArrow = new ArrowButton(owner, "RC_Setting_Next", this,
+            new Vector2(SETTING_ARROW2_X, SETTING_Y), 90f);
+        _settingLabel = new DevUILabel(owner, "RC_Setting_Label", this,
+            new Vector2(SETTING_LABEL_X, SETTING_Y), 30f, "St:" + _logic.SettingValue);
+        subNodes.Add(_settingPrevArrow);
+        subNodes.Add(_settingNextArrow);
+        subNodes.Add(_settingLabel);
+        
         _viewTypePrevArrow = new ArrowButton(owner, "RC_ViewType_Prev", this,
             new Vector2(VIEWTYPE_ARROW_X, VIEWTYPE_Y), 270f);
         _viewTypeNextArrow = new ArrowButton(owner, "RC_ViewType_Next", this,
@@ -188,7 +215,8 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private string GetViewTypeDisplay()
     {
         return _logic.CurrentViewType == ViewType.ACV ? "ACV" :
-               _logic.CurrentViewType == ViewType.RTV ? "RTV" : "PSV";
+               _logic.CurrentViewType == ViewType.RTV ? "RTV" :
+               _logic.CurrentViewType == ViewType.PSV ? "PSV" : "ORV";
     }
     
     private void UpdateViewLabel()
@@ -215,6 +243,26 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private void UpdateTriggerLabel()
     {
         _triggerLabel.Text = _logic.GetTriggerDisplay();
+    }
+    
+    private void UpdateSettingLabel()
+    {
+        _settingLabel.Text = "St:" + _logic.SettingValue;
+    }
+
+    private void UpdateBlendFileLabel()
+    {
+        if (_activeBlendFileLabel != null)
+            _activeBlendFileLabel.Text = Path.GetFileName(_logic.BlendSettingsPath ?? "").ToLowerInvariant();
+    }
+    
+    private void CycleSetting(int delta)
+    {
+        _logic.SettingValue += delta;
+        if (_logic.SettingValue < 0) _logic.SettingValue = 4;
+        if (_logic.SettingValue > 4) _logic.SettingValue = 0;
+        UpdateSettingLabel();
+        _logic.SaveToBlendSettings();
     }
     
     private void CycleSlot(int delta)
@@ -278,7 +326,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         
         if (sender.IDstring == "RC_Mode_Prev")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             _logic.CycleMode(-1);
             UpdateModeLabel();
             UpdateTriggerLabel();
@@ -290,7 +338,7 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         
         if (sender.IDstring == "RC_Mode_Next")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             _logic.CycleMode(1);
             UpdateModeLabel();
             UpdateTriggerLabel();
@@ -343,6 +391,20 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
         {
             _logic.CycleTrigger(1);
             UpdateTriggerLabel();
+            return;
+        }
+        
+        if (sender.IDstring == "RC_Setting_Prev")
+        {
+            if (!BlendClock.EditMode) return;
+            CycleSetting(-1);
+            return;
+        }
+        
+        if (sender.IDstring == "RC_Setting_Next")
+        {
+            if (!BlendClock.EditMode) return;
+            CycleSetting(1);
             return;
         }
         
@@ -468,7 +530,6 @@ public class RCPanel_RegionPage : RectangularDevUINode, IDevUISignals
     private string[] GetModsWithIllustrations()
     {
         var mods = new List<string>();
-        // Entrada sintética para las ilustraciones del propio juego (no es un mod real)
         mods.Add(DEFAULT_MOD_SENTINEL);
         
         foreach (var mod in ModManager.ActiveMods)

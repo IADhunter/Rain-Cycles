@@ -11,13 +11,12 @@ public static class BlendSettingsLoader
 
     private static string       _activeRegion   = null;
     private static BlendSettings _activeSettings = null;
+    private static bool         _isGateActive   = false;
 
     public static BlendSettings Active => _activeSettings;
     public static string ActiveRegion => _activeRegion;
+    public static bool IsGateActive => _isGateActive;
     
-    /// <summary>
-    /// Devuelve el nombre del mod seleccionado en el blend settings activo.
-    /// </summary>
     public static string ActiveModName => _activeSettings?.SelectedModName ?? "";
 
     public static void Init()
@@ -28,20 +27,15 @@ public static class BlendSettingsLoader
     private static void OnShutDown(On.RainWorldGame.orig_ShutDownProcess orig, RainWorldGame self)
     {
         orig(self);
+        _isGateActive = false;
     }
 
-    /// <summary>
-    /// Invalida la caché para una región, forzando recarga desde disco en la próxima LoadRegion.
-    /// </summary>
     public static void InvalidateCache(string regionCode)
     {
         if (string.IsNullOrEmpty(regionCode)) return;
         regionCode = regionCode.ToUpperInvariant();
-        if (_cache.Remove(regionCode))
-        {
-            RSPlugin.log.LogDebug($"[BlendSettingsLoader] Caché invalidada para región {regionCode}");
-        }
-        // Si la región activa es la que se invalida, también la recargamos inmediatamente para mantener coherencia.
+        _cache.Remove(regionCode);
+
         if (_activeRegion == regionCode)
         {
             _activeSettings = null;
@@ -52,7 +46,6 @@ public static class BlendSettingsLoader
     {
         regionCode = regionCode.ToUpperInvariant();
 
-        // Si la caché no tiene la región o se ha invalidado, se carga de disco.
         if (!_cache.TryGetValue(regionCode, out var settings))
         {
             settings = LoadFromDisk(regionCode);
@@ -61,28 +54,13 @@ public static class BlendSettingsLoader
 
         _activeRegion   = regionCode;
         _activeSettings = settings;
-        
-        if (settings != null && !string.IsNullOrEmpty(settings.SelectedModName))
-        {
-            RSPlugin.log.LogInfo($"[BlendSettingsLoader] Mod seleccionado para región {regionCode}: {settings.SelectedModName}");
-        }
+        _isGateActive   = false;
         
         int cycle = GetCurrentCycleNumber();
         
-        int state;
-        if (RSPlugin.randomCycles != null && RSPlugin.randomCycles.Value)
-        {
-            int seed = unchecked(cycle * 1000003);
-            state = new System.Random(seed).Next(1, 5);
-        }
-        else
-        {
-            state = (cycle % 4) + 1;
-            if (cycle == 0) state = 1;
-        }
+        int state = Core.CycleStateResolver.ResolveState(cycle);
         
         Core.StateFileResolver.SetCurrentCycleState(state);
-        RSPlugin.log.LogInfo($"[BlendSettingsLoader] Estado calculado para región {regionCode}: {state} (ciclo {cycle})");
     }
 
     public static BlendSettings GetForRegion(string regionCode)
@@ -100,10 +78,82 @@ public static class BlendSettingsLoader
     {
         string path = ResolvePath(regionCode);
         if (path == null || !File.Exists(path)) return null;
-        
+        return LoadFile(path);
+    }
+
+    // Parseo de un archivo de blend settings (reutilizable por ruta arbitraria,
+    // p. ej. los blend settings per-level de Arena).
+    public static BlendSettings LoadFile(string path)
+    {
+        if (path == null || !File.Exists(path)) return null;
+        return ParseContent(File.ReadAllText(path, System.Text.Encoding.UTF8));
+    }
+
+    // Establece el blend activo desde una fuente externa (Arena).
+    // key = identificador (para arena, el nombre del level).
+    public static void SetActiveBlend(BlendSettings settings, string key)
+    {
+        _activeRegion = key ?? _activeRegion;
+        _activeSettings = settings;
+    }
+
+    // ============================================================
+    // GATE-SPECIFIC BLEND SETTINGS
+    // ============================================================
+
+    public static bool IsGateRoom(string roomName)
+    {
+        return !string.IsNullOrEmpty(roomName)
+            && roomName.StartsWith("GATE_", System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Resuelve la ruta del blend settings para una gate room.
+    /// Busca: gate_{roomLower}_blend_settings.txt (específico de esta gate).
+    /// </summary>
+    public static string ResolveGateBlendPath(string roomName)
+    {
+        if (!IsGateRoom(roomName)) return null;
+
+        string lower = roomName.ToLowerInvariant();
+        string fileName = lower + "_blend_settings.txt";
+        string dir = Path.Combine("world", "gate-rooms", "raincycles");
+
+        for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+        {
+            string candidate = Path.Combine(ModManager.ActiveMods[i].path, dir, fileName);
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        string basePath = Path.Combine(Application.streamingAssetsPath, dir, fileName);
+        return File.Exists(basePath) ? basePath : null;
+    }
+
+    /// <summary>
+    /// Carga el blend settings específico de una gate room y lo establece como Active.
+    /// Cachea bajo la key "GATE:{roomName}" para no colisionar con settings de región.
+    /// </summary>
+    public static void LoadGateSettings(string roomName)
+    {
+        if (string.IsNullOrEmpty(roomName)) return;
+
+        string cacheKey = "GATE:" + roomName.ToUpperInvariant();
+
+        if (!_cache.TryGetValue(cacheKey, out var settings))
+        {
+            string path = ResolveGateBlendPath(roomName);
+            settings = path != null ? LoadFile(path) : null;
+            _cache[cacheKey] = settings;
+        }
+
+        _activeRegion = cacheKey;
+        _activeSettings = settings;
+        _isGateActive = true;
+    }
+
+    private static BlendSettings ParseContent(string content)
+    {
         var settings = new BlendSettings();
-        string content = File.ReadAllText(path, System.Text.Encoding.UTF8);
-        
         ViewType currentView = ViewType.None;
         
         foreach (string line in content.Split('\n'))
@@ -114,6 +164,8 @@ public static class BlendSettingsLoader
             if (trimmed == "Acv") { currentView = ViewType.ACV; continue; }
             if (trimmed == "Rtv") { currentView = ViewType.RTV; continue; }
             if (trimmed == "Psv") { currentView = ViewType.PSV; continue; }
+            if (trimmed == "Auv") { currentView = ViewType.AUV; continue; }
+            if (trimmed == "Orv") { currentView = ViewType.ORV; continue; }
             
             int sep = trimmed.IndexOf(':');
             if (sep > 0)
@@ -154,7 +206,6 @@ public static class BlendSettingsLoader
                         break;
                     case "mod":
                         settings.SelectedModName = val.Trim();
-                        RSPlugin.log.LogDebug($"[BlendSettingsLoader] Mod seleccionado: {settings.SelectedModName}");
                         break;
                     default:
                         if (key.StartsWith("bkg") && currentView != ViewType.None)
@@ -218,9 +269,9 @@ public static class BlendSettingsLoader
 
     public static string ResolvePath(string regionCode)
     {
-        string upper    = regionCode.ToUpperInvariant();
-        string relative = Path.Combine("World", upper + "-Rooms", "RainCycles",
-            upper + "_blend_settings.txt");
+        string lower    = regionCode.ToLowerInvariant();
+        string relative = Path.Combine("world", lower + "-rooms", "raincycles",
+            lower + "_blend_settings.txt");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
@@ -230,6 +281,17 @@ public static class BlendSettingsLoader
 
         string basePath = Path.Combine(Application.streamingAssetsPath, relative);
         return File.Exists(basePath) ? basePath : null;
+    }
+
+    /// <summary>
+    /// Resolución de blend settings que soporta gate rooms.
+    /// Si roomName es una gate, busca el blend settings específico de esa gate.
+    /// </summary>
+    public static string ResolvePath(string regionCode, string roomName)
+    {
+        if (IsGateRoom(roomName))
+            return ResolveGateBlendPath(roomName);
+        return ResolvePath(regionCode);
     }
     
     private static int GetCurrentCycleNumber()

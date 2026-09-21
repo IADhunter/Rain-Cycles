@@ -44,27 +44,13 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
         subNodes.Add(_vanillaTypeBtn);
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    // GetRcTypeFromCurrentFile lee roomSettings.GetRcType() primero. Esto
-    // ya queda correctamente sincronizado por RoomSettingsPatches.OnLoad
-    // (hookeado a RoomSettings.Load_Timeline) cada vez que ApplyStateA()
-    // o Signal() llaman a owner.room.roomSettings.Load(...) — ese hook
-    // hace ClearExtendedData() + reparsea "RainCycles:" del archivo que
-    // se acaba de asignar a self.filePath. No hace falta releer el disco
-    // aquí para "confirmar".
-    //
-    // IsRcStateLoaded() (RoomSettingsExtensions) distingue "sala vanilla
-    // (None en memoria)" de "aún no cargado": el None explícito (click en
-    // Vanilla o archivo con <Type:None>) se respeta sin caer al disco, que
-    // aún contendría la línea vieja sin guardar. El fallback de disco solo
-    // cubre el caso raro de que roomSettings no haya sido cargado nunca.
-    // ════════════════════════════════════════════════════════════════════
     private RcType GetRcTypeFromCurrentFile()
     {
         var room = ParentPanel.CurrentRoom;
         if (room == null) return RcType.None;
 
         var roomSettings = room.roomSettings;
+
         if (roomSettings != null && roomSettings.IsRcStateLoaded())
             return roomSettings.GetRcType();
 
@@ -78,11 +64,6 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
         return snap.HasRcType ? snap.RcType : RcType.None;
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    // FIX: público para que RCPanel pueda llamarlo tras ApplyStateA()/
-    // Signal() (RCA_), y así la UI se actualice al valor real ya
-    // sincronizado en memoria por el hook OnLoad.
-    // ════════════════════════════════════════════════════════════════════
     public void RefreshButtons()
     {
         RcType current = GetRcTypeFromCurrentFile();
@@ -101,7 +82,7 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
 
         if (sender.IDstring == "RC_Type_Static")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             var roomSettings = ParentPanel.CurrentRoom.roomSettings;
             roomSettings.SetRcType(RcType.Static);
             var snap = SettingsSnapshot.FromFile(roomSettings.filePath);
@@ -113,7 +94,7 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
 
         if (sender.IDstring == "RC_Type_Blend")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             var roomSettings = ParentPanel.CurrentRoom.roomSettings;
             roomSettings.SetRcType(RcType.Blend);
             var snap = SettingsSnapshot.FromFile(roomSettings.filePath);
@@ -125,7 +106,7 @@ public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
 
         if (sender.IDstring == "RC_Type_Vanilla")
         {
-            if (!BlendClock.EditMode && BlendClock.IsRunning) return;
+            if (!BlendClock.EditMode) return;
             var roomSettings = ParentPanel.CurrentRoom.roomSettings;
             roomSettings.ClearExtendedData();
             var snap = SettingsSnapshot.FromFile(roomSettings.filePath);

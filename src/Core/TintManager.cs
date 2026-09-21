@@ -4,9 +4,16 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 using MonoMod.RuntimeDetour;
-using Watcher; // <-- NUEVO: para OuterRimView y AncientUrbanView
+using Watcher;
+using RainCycles.Blend;
 
 namespace RainCycles.Core;
+
+public struct TintLerpResult
+{
+    public Color? TintMultiply;
+    public Color? TintAtmosphere;
+}
 
 public class ViewOriginalState
 {
@@ -33,10 +40,7 @@ public class ViewOriginalState
 public static class TintManager
 {
     private static bool _initialized = false;
-    
-    // Los Hook se conservan en campos para mantenerlos vivos (MonoMod exige
-    // referencia activa). El mod no se deshabilita en caliente, por lo que
-    // nunca se leen fuera de Init() — CS0414 esperado.
+
 #pragma warning disable CS0414
     private static Hook _setGlobalVectorHook;
     private static Hook _aboveCloudsViewUpdateHook;
@@ -117,15 +121,9 @@ public static class TintManager
         }
         
         On.OverWorld.Update += OnOverWorldUpdate;
-        
-        // ============================================================
-        // OUTERRIMVIEW (Watcher) - captura incondicional
-        // ============================================================
+
         On.Watcher.OuterRimView.ctor += OnOuterRimViewCtor;
-        
-        // ============================================================
-        // ANCIENTURBANVIEW (Watcher) - captura incondicional
-        // ============================================================
+
         On.Watcher.AncientUrbanView.ctor += OnAncientUrbanViewCtor;
         
         _initialized = true;
@@ -393,31 +391,24 @@ public static class TintManager
         if (self?.room == null) return;
         
         string roomName = self.room.abstractRoom?.name;
-        bool isStatic = SettingsBlendController.IsStaticViewRoom(self.room);
-        bool isBlend = SettingsBlendController.IsBlendRoom(self.room);
+        var state = RoomCameraExtensions.GetRoomBlendState(self.room);
+        bool isStatic = state.IsStatic;
+        bool isBlend = state.IsBlend;
+        bool hasTint = state.HasTint;
         bool roomChanged = (roomName != _lastRoomName);
         _lastRoomName = roomName;
-        
-        var snap = SettingsSnapshot.GetCached(self.room.roomSettings?.filePath, self.room.abstractRoom?.name);
-        bool hasTint = snap != null && snap.HasTint;
-        
-        // ============================================================
-        // ENTRADA A SALA ESTÁTICA (solo cuando cambia la sala)
-        // ============================================================
+
         if (isStatic && !_inStaticRoom && roomChanged)
         {
             _inStaticRoom = true;
             _currentStaticRoom = roomName;
             _hasLockedAtmosphere = false;
             
-            if (snap != null && snap.HasTint)
+            if (hasTint)
             {
                 SettingsBlendController.ApplyStaticTints(self.room);
             }
         }
-        // ============================================================
-        // SALIDA DE SALA ESTÁTICA (solo cuando cambia la sala)
-        // ============================================================
         else if (!isStatic && _inStaticRoom && roomChanged)
         {
             _inStaticRoom = false;
@@ -425,10 +416,6 @@ public static class TintManager
             _currentStaticRoom = null;
         }
         
-        // ============================================================
-        // SALA VANILLA O BLEND SIN TINT - RESTAURAR VANILLA
-        // SOLO CUANDO LA SALA CAMBIA
-        // ============================================================
         if (roomChanged)
         {
             if (!isStatic && !isBlend)
@@ -441,9 +428,6 @@ public static class TintManager
             }
         }
         
-        // ============================================================
-        // DETECTAR CUANDO SE DEJA DE ESTAR EN UNA SALA ESTÁTICA
-        // ============================================================
         if (!isStatic && _wasStaticRoom && roomChanged)
         {
             _wasStaticRoom = false;
@@ -454,19 +438,19 @@ public static class TintManager
     // ================================================================
     // INTERPOLACIÓN DE TINTES (migrado desde SettingsSnapshotLerp)
     // ================================================================
-    public static SettingsSnapshot InterpolateTints(SettingsSnapshot a, SettingsSnapshot b, float t, Color? vanillaMultiply = null, Color? vanillaAtmosphere = null)
+    public static TintLerpResult InterpolateTints(SettingsSnapshot a, SettingsSnapshot b, float t, Color? vanillaMultiply = null, Color? vanillaAtmosphere = null)
     {
         t = Mathf.Clamp01(t);
-        var snap = new SettingsSnapshot();
 
         Color aMultiply = a.TintMultiply ?? vanillaMultiply ?? Color.white;
         Color bMultiply = b.TintMultiply ?? vanillaMultiply ?? Color.white;
         Color aAtmosphere = a.TintAtmosphere ?? vanillaAtmosphere ?? Color.white;
         Color bAtmosphere = b.TintAtmosphere ?? vanillaAtmosphere ?? Color.white;
 
-        snap.TintMultiply = Color.Lerp(aMultiply, bMultiply, t);
-        snap.TintAtmosphere = Color.Lerp(aAtmosphere, bAtmosphere, t);
+        var result = new TintLerpResult();
+        result.TintMultiply = Color.Lerp(aMultiply, bMultiply, t);
+        result.TintAtmosphere = Color.Lerp(aAtmosphere, bAtmosphere, t);
 
-        return snap;
+        return result;
     }
 }
