@@ -278,6 +278,7 @@ public static class TintManager
         if (isStatic && isOriginalColor && _hasLockedAtmosphere)
         {
             Color lockedColor = new Color(_lockedAtmosphere.x, _lockedAtmosphere.y, _lockedAtmosphere.z);
+            RSPlugin.log.LogDebug($"[RC][TintManager] REDIRECT atmosphere: room={roomName} orig=({value.r:F2},{value.g:F2},{value.b:F2}) -> locked=({lockedColor.r:F2},{lockedColor.g:F2},{lockedColor.b:F2})");
             orig(self, lockedColor);
             return;
         }
@@ -286,6 +287,7 @@ public static class TintManager
         {
             _lockedAtmosphere = new Vector4(value.r, value.g, value.b, 1f);
             _hasLockedAtmosphere = true;
+            RSPlugin.log.LogDebug($"[RC][TintManager] LOCK atmosphere: room={roomName} value=({value.r:F2},{value.g:F2},{value.b:F2})");
         }
         
         orig(self, value);
@@ -298,6 +300,7 @@ public static class TintManager
     {
         if (_inStaticRoom && nameID == _atmosphereColorID && _hasLockedAtmosphere)
         {
+            RSPlugin.log.LogDebug($"[RC][TintManager] REDIRECT global atmosphere: locked=({_lockedAtmosphere.x:F2},{_lockedAtmosphere.y:F2},{_lockedAtmosphere.z:F2}) was=({value.x:F2},{value.y:F2},{value.z:F2})");
             orig(nameID, _lockedAtmosphere);
             return;
         }
@@ -398,11 +401,18 @@ public static class TintManager
         bool roomChanged = (roomName != _lastRoomName);
         _lastRoomName = roomName;
 
+        if (roomChanged)
+        {
+            RSPlugin.log.LogDebug($"[RC][TintManager] RoomCameraUpdate: room={roomName} isStatic={isStatic} isBlend={isBlend} hasTint={hasTint} prevRoom={_lastRoomName}");
+        }
+
         if (isStatic && !_inStaticRoom && roomChanged)
         {
             _inStaticRoom = true;
             _currentStaticRoom = roomName;
             _hasLockedAtmosphere = false;
+            
+            RSPlugin.log.LogDebug($"[RC][TintManager] ENTERING STATIC ROOM: {roomName} hasTint={hasTint}");
             
             if (hasTint)
             {
@@ -411,6 +421,7 @@ public static class TintManager
         }
         else if (!isStatic && _inStaticRoom && roomChanged)
         {
+            RSPlugin.log.LogDebug($"[RC][TintManager] LEAVING STATIC ROOM: {roomName}");
             _inStaticRoom = false;
             _hasLockedAtmosphere = false;
             _currentStaticRoom = null;

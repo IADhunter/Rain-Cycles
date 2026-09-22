@@ -37,6 +37,7 @@ public static partial class SettingsBlendController
         if (_room != null)
         {
             string roomName = _room.abstractRoom?.name;
+            RSPlugin.log.LogDebug($"[RC][Lifecycle] Detach: room={roomName} pathA={System.IO.Path.GetFileName(_pathA)} pathB={System.IO.Path.GetFileName(_pathB)} active={_active}");
             if (!string.IsNullOrEmpty(roomName))
             {
                 RoomCameraExtensions.InvalidateRoomCache(roomName);
@@ -70,17 +71,13 @@ public static partial class SettingsBlendController
         _rtvScene = null; _acvScene = null; _psvScene = null; _orvScene = null;
         _forceSkyRefresh = false;
         
+        _sceneSlots.Clear();
+        _activeSlots = null;
+
         _rcSlotsStaticACV = null;
         _rcSlotsStaticRTV = null;
         _rcSlotsStaticPSV = null;
         _rcSlotsStaticORV = null;
-        
-        _rcSlotsACV = null;
-        _rcSlotsRTV = null;
-        _rcSlotsPSV = null;
-        _rcSlotsPSVFog = null;
-        _rcSlotsPSVSun = null;
-        _rcSlotsORV = null;
     }
 
     public static void ResetFullSoft()

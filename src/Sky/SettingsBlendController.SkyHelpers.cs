@@ -3,6 +3,7 @@ using System.IO;
 using UnityEngine;
 using RainCycles.Settings;
 using RainCycles.Clock;
+using Watcher;
 
 namespace RainCycles.Core;
 
@@ -13,11 +14,25 @@ public static partial class SettingsBlendController
     // ============================================================
     private static List<BackgroundScene.Simple2DBackgroundIllustration> GetSlotsForSky(SkyType sky)
     {
-        if (sky == SkyType.ACV) return _rcSlotsACV;
-        if (sky == SkyType.RTV) return _rcSlotsRTV;
-        if (sky == SkyType.PSV) return _rcSlotsPSV;
-        if (sky == SkyType.ORV) return _rcSlotsORV;
-        return null;
+        if (_activeSlots == null) return null;
+        return sky switch
+        {
+            SkyType.ACV => _activeSlots.blend,
+            SkyType.RTV => _activeSlots.blend,
+            SkyType.PSV => _activeSlots.blend,
+            SkyType.ORV => _activeSlots.blend,
+            _ => null
+        };
+    }
+
+    private static List<BackgroundScene.Simple2DBackgroundIllustration> GetFogSlotsForSky()
+    {
+        return _activeSlots?.fog;
+    }
+
+    private static List<BackgroundScene.Simple2DBackgroundIllustration> GetSunSlotsForSky()
+    {
+        return _activeSlots?.sun;
     }
 
     // ============================================================
@@ -131,13 +146,19 @@ public static partial class SettingsBlendController
         if (effectiveSettings == null && !string.IsNullOrEmpty(regionCode))
             effectiveSettings = BlendSettingsLoader.GetForRegion(regionCode);
         
-        if (effectiveSettings == null) return;
+        if (effectiveSettings == null)
+        {
+            return;
+        }
 
         var cam = forcedCam ?? _room?.game?.cameras?[0];
         if (cam == null && targetRoom != null)
             cam = targetRoom.game?.cameras?[0];
 
-        if (cam == null || (_room != null && cam.room != _room && (targetRoom == null || cam.room != targetRoom))) return;
+        if (cam == null || (_room != null && cam.room != _room && (targetRoom == null || cam.room != targetRoom)))
+        {
+            return;
+        }
 
         ViewType view = sky == SkyType.ACV ? ViewType.ACV :
                         sky == SkyType.RTV ? ViewType.RTV :
@@ -150,7 +171,8 @@ public static partial class SettingsBlendController
             
             if (!string.IsNullOrEmpty(file) && slots[slotIndex].illustrationName != Path.GetFileNameWithoutExtension(file))
             {
-                RefreshSlotSprite(slots[slotIndex], Path.GetFileNameWithoutExtension(file), cam);
+                string imgName = Path.GetFileNameWithoutExtension(file);
+                RefreshSlotSprite(slots[slotIndex], imgName, cam);
             }
         }
 
@@ -249,30 +271,32 @@ public static partial class SettingsBlendController
         var settings = BlendSettingsLoader.Active;
         if (settings == null) return;
 
-        if (_rcSlotsPSVFog != null && _rcSlotsPSVFog.Count >= 4)
+        var fogSlots = GetFogSlotsForSky();
+        if (fogSlots != null && fogSlots.Count >= 4)
         {
             for (int state = 1; state <= 4; state++)
             {
                 string fog = settings.GetBkgFogForState(state);
                 int idx = state - 1;
-                if (!string.IsNullOrEmpty(fog) && _rcSlotsPSVFog[idx].illustrationName != Path.GetFileNameWithoutExtension(fog))
+                if (!string.IsNullOrEmpty(fog) && fogSlots[idx].illustrationName != Path.GetFileNameWithoutExtension(fog))
                 {
-                    RefreshSlotSprite(_rcSlotsPSVFog[idx], Path.GetFileNameWithoutExtension(fog), cam);
-                    _rcSlotsPSVFog[idx].depth = 195f;
+                    RefreshSlotSprite(fogSlots[idx], Path.GetFileNameWithoutExtension(fog), cam);
+                    fogSlots[idx].depth = 195f;
                 }
             }
         }
 
-        if (_rcSlotsPSVSun != null && _rcSlotsPSVSun.Count >= 4)
+        var sunSlots = GetSunSlotsForSky();
+        if (sunSlots != null && sunSlots.Count >= 4)
         {
             for (int state = 1; state <= 4; state++)
             {
                 string sun = settings.GetBkgSunForState(state);
                 int idx = state - 1;
-                if (!string.IsNullOrEmpty(sun) && _rcSlotsPSVSun[idx].illustrationName != Path.GetFileNameWithoutExtension(sun))
-                    RefreshSlotSprite(_rcSlotsPSVSun[idx], Path.GetFileNameWithoutExtension(sun), cam);
+                if (!string.IsNullOrEmpty(sun) && sunSlots[idx].illustrationName != Path.GetFileNameWithoutExtension(sun))
+                    RefreshSlotSprite(sunSlots[idx], Path.GetFileNameWithoutExtension(sun), cam);
             }
-            ForceSunShader(_rcSlotsPSVSun, cam);
+            ForceSunShader(sunSlots, cam);
         }
     }
 
@@ -281,7 +305,9 @@ public static partial class SettingsBlendController
     // ============================================================
     public static void ApplyPsvAlphas(float t, bool isBlending, int? overrideStateA = null, int? overrideStateB = null)
     {
-        var allSlots = new[] { _rcSlotsPSVFog, _rcSlotsPSVSun };
+        var fogSlots = GetFogSlotsForSky();
+        var sunSlots = GetSunSlotsForSky();
+        var allSlots = new[] { fogSlots, sunSlots };
         
         foreach (var slots in allSlots)
         {
@@ -335,6 +361,40 @@ public static partial class SettingsBlendController
     }
 
     // ============================================================
+    // RESOLVE ACTIVE SLOTS FOR ROOM — finds the scene in the room and sets _activeSlots
+    // ============================================================
+    private static void ResolveActiveSlotsForRoom(Room room)
+    {
+        if (room?.updateList == null) return;
+
+        for (int i = 0; i < room.updateList.Count; i++)
+        {
+            var scene = room.updateList[i] as BackgroundScene;
+            if (scene != null && _sceneSlots.TryGetValue(scene, out var slotSet))
+            {
+                _activeSlots = slotSet;
+
+                if (scene is AboveCloudsView acv)
+                {
+                    _acvScene = acv;
+                    var snap = SettingsSnapshot.GetCached(room.roomSettings?.filePath, room.abstractRoom?.name);
+                    if (snap?.HasView == true && snap.ViewType == ViewType.PSV)
+                        _psvScene = acv;
+                }
+                else if (scene is RoofTopView rtv)
+                {
+                    _rtvScene = rtv;
+                }
+                else if (scene is OuterRimView orv)
+                {
+                    _orvScene = orv;
+                }
+                return;
+            }
+        }
+    }
+
+    // ============================================================
     // SYNC SKY SLOTS - Punto de entrada unificado para todos los casos
     // ============================================================
     public static void SyncSkySlots(Room room, int stateA, int stateB)
@@ -349,6 +409,7 @@ public static partial class SettingsBlendController
         var skyType = GetViewFromLoadedSettings(room);
         if (skyType == SkyType.None) return;
 
+        ResolveActiveSlotsForRoom(room);
         UpdateRcSlots(skyType, stateA, stateB, null, room);
     }
 
@@ -363,6 +424,7 @@ public static partial class SettingsBlendController
         string roomName = room.abstractRoom?.name;
         if (roomName == null) return;
 
+        ResolveActiveSlotsForRoom(room);
         var skyType = GetViewFromLoadedSettings(room);
         if (skyType == SkyType.None) return;
 
@@ -395,11 +457,20 @@ public static partial class SettingsBlendController
                     AssetManager.SafeWWWLoadTexture(ref tex, "file:///" + path, true, true);
                     HeavyTexturesCache.LoadAndCacheAtlasFromTexture(newName, tex, false);
                 }
+                else
+                {
+                    RSPlugin.log.LogWarning($"[RC][SkyHelpers] RefreshSlotSprite: IMAGE NOT FOUND \"{newName}\" mod={modName} path={path ?? "null"}");
+                }
+            }
+            else
+            {
+                RSPlugin.log.LogWarning($"[RC][SkyHelpers] RefreshSlotSprite: NO MOD NAME for \"{newName}\"");
             }
         }
         
         if (!Futile.atlasManager.DoesContainElementWithName(finalName))
         {
+            RSPlugin.log.LogWarning($"[RC][SkyHelpers] RefreshSlotSprite: FALLBACK to RC_Transparent for \"{newName}\" (atlas not loaded)");
             finalName = "RC_Transparent";
         }
         
@@ -429,7 +500,7 @@ public static partial class SettingsBlendController
                 var newSprite = new FSprite(finalName, true);
                 newSprite.x = oldSprite.x;
                 newSprite.y = oldSprite.y;
-                bool isSunSlot = (_rcSlotsPSVSun != null && _rcSlotsPSVSun.Contains(slot));
+                bool isSunSlot = (GetSunSlotsForSky()?.Contains(slot) == true);
                 newSprite.shader = isSunSlot
                     ? cam.game.rainWorld.Shaders["BackgroundAdditive"]
                     : oldSprite.shader;
@@ -502,7 +573,11 @@ public static partial class SettingsBlendController
     // ============================================================
     private static void SyncFogSlotPosition(RoomCamera cam)
     {
-        if (_psvScene == null || _rcSlotsPSVFog == null || _rcSlotsPSVFog.Count == 0)
+        if (_psvScene == null)
+            return;
+
+        var fogSlots = GetFogSlotsForSky();
+        if (fogSlots == null || fogSlots.Count == 0)
             return;
 
         const float Y_OFFSET = 68f;
@@ -534,9 +609,9 @@ public static partial class SettingsBlendController
         }
         if (vanillaSprite == null) return;
 
-        for (int j = 0; j < _rcSlotsPSVFog.Count; j++)
+        for (int j = 0; j < fogSlots.Count; j++)
         {
-            var slot = _rcSlotsPSVFog[j];
+            var slot = fogSlots[j];
             if (slot.alpha <= 0.01f)
                 continue;
 
@@ -561,18 +636,11 @@ public static partial class SettingsBlendController
     // ============================================================
     public static void ClearAllSlots()
     {
-        _rcSlotsACV = null;
+        _sceneSlots.Clear();
+        _activeSlots = null;
         _acvScene = null;
-
-        _rcSlotsRTV = null;
         _rtvScene = null;
-
-        _rcSlotsPSV = null;
-        _rcSlotsPSVFog = null;
-        _rcSlotsPSVSun = null;
         _psvScene = null;
-
-        _rcSlotsORV = null;
         _orvScene = null;
 
         _rcSlotsStaticACV = null;
@@ -597,34 +665,38 @@ public static partial class SettingsBlendController
     {
         orig(self, sLeaser, rCam, timeStacker, camPos);
 
-        if (_psvScene != null && _rcSlotsPSVFog != null && _rcSlotsPSVFog.Count > 0)
+        if (_psvScene != null)
         {
-            const float Y_OFFSET = 68f;
-            const float X_OFFSET = 0f;
-
-            if (sLeaser.sprites != null && sLeaser.sprites.Length > 0)
+            var fogSlots = GetFogSlotsForSky();
+            if (fogSlots != null && fogSlots.Count > 0)
             {
-                float vanillaX = sLeaser.sprites[0].x;
-                float vanillaY = sLeaser.sprites[0].y;
-                _cachedVanillaFog = self;
+                const float Y_OFFSET = 68f;
+                const float X_OFFSET = 0f;
 
-                for (int j = 0; j < _rcSlotsPSVFog.Count; j++)
+                if (sLeaser.sprites != null && sLeaser.sprites.Length > 0)
                 {
-                    var slot = _rcSlotsPSVFog[j];
-                    if (slot.alpha <= 0.01f)
-                        continue;
+                    float vanillaX = sLeaser.sprites[0].x;
+                    float vanillaY = sLeaser.sprites[0].y;
+                    _cachedVanillaFog = self;
 
-                    for (int k = 0; k < rCam.spriteLeasers.Count; k++)
+                    for (int j = 0; j < fogSlots.Count; j++)
                     {
-                        if (rCam.spriteLeasers[k].drawableObject == slot)
+                        var slot = fogSlots[j];
+                        if (slot.alpha <= 0.01f)
+                            continue;
+
+                        for (int k = 0; k < rCam.spriteLeasers.Count; k++)
                         {
-                            var sprites = rCam.spriteLeasers[k].sprites;
-                            if (sprites != null && sprites.Length > 0)
+                            if (rCam.spriteLeasers[k].drawableObject == slot)
                             {
-                                sprites[0].x = vanillaX + X_OFFSET;
-                                sprites[0].y = vanillaY + Y_OFFSET;
+                                var sprites = rCam.spriteLeasers[k].sprites;
+                                if (sprites != null && sprites.Length > 0)
+                                {
+                                    sprites[0].x = vanillaX + X_OFFSET;
+                                    sprites[0].y = vanillaY + Y_OFFSET;
+                                }
+                                break;
                             }
-                            break;
                         }
                     }
                 }

@@ -26,8 +26,6 @@ public static partial class SettingsBlendController
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
         bool isStaticManaged = hasRcType && snap.RcType == RcType.Static;
 
-
-
         if (!hasRcType)
         {
             orig(self, room, effect);
@@ -66,8 +64,12 @@ public static partial class SettingsBlendController
 
         if (shouldCreateRTV && isBlendManaged)
         {
-            DestroyRcSlots(_rcSlotsRTV, _rtvScene);
-            _rcSlotsRTV = CreateRcSlotsVanilla(self, room, SkyType.RTV);
+            if (!_sceneSlots.TryGetValue(self, out var existing))
+            {
+                existing = new SkySlotSet { blend = CreateRcSlotsVanilla(self, room, SkyType.RTV) };
+                _sceneSlots[self] = existing;
+            }
+            _activeSlots = existing;
             _rtvScene = self;
 
             int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
@@ -113,9 +115,11 @@ public static partial class SettingsBlendController
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
         bool isStaticManaged = hasRcType && snap.RcType == RcType.Static;
 
-        if (isBlendManaged && snap.ViewType == ViewType.RTV && (_rcSlotsRTV == null || _rcSlotsRTV.Count == 0))
+        if (isBlendManaged && snap.ViewType == ViewType.RTV && !_sceneSlots.TryGetValue(self, out _))
         {
-            _rcSlotsRTV = CreateRcSlotsVanilla(self, self.room, SkyType.RTV);
+            var slotSet = new SkySlotSet { blend = CreateRcSlotsVanilla(self, self.room, SkyType.RTV) };
+            _sceneSlots[self] = slotSet;
+            _activeSlots = slotSet;
             _rtvScene = self;
             
             int state = BlendClock.StateA;
@@ -159,8 +163,6 @@ public static partial class SettingsBlendController
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
         bool isStaticManaged = hasRcType && snap.RcType == RcType.Static;
 
-
-
         if (!hasRcType)
         {
             orig(self, room, effect);
@@ -203,8 +205,12 @@ public static partial class SettingsBlendController
         {
             if (targetSky == SkyType.ACV)
             {
-                DestroyRcSlots(_rcSlotsACV, _acvScene);
-                _rcSlotsACV = CreateRcSlotsVanilla(self, room, SkyType.ACV);
+                if (!_sceneSlots.TryGetValue(self, out var existing))
+                {
+                    existing = new SkySlotSet { blend = CreateRcSlotsVanilla(self, room, SkyType.ACV) };
+                    _sceneSlots[self] = existing;
+                }
+                _activeSlots = existing;
                 _acvScene = self;
                 
                 int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
@@ -219,12 +225,17 @@ public static partial class SettingsBlendController
             }
             else if (targetSky == SkyType.PSV)
             {
-                DestroyRcSlots(_rcSlotsPSV, _psvScene);
-                DestroyRcSlots(_rcSlotsPSVFog, _psvScene);
-                DestroyRcSlots(_rcSlotsPSVSun, _psvScene);
-                _rcSlotsPSV = CreateRcSlotsVanilla(self, room, SkyType.PSV);
-                _rcSlotsPSVFog = CreateRcSlotsVanilla(self, room, SkyType.PSV);
-                _rcSlotsPSVSun = CreateSunSlots(self, room, SkyType.PSV, false);
+                if (!_sceneSlots.TryGetValue(self, out var existing))
+                {
+                    existing = new SkySlotSet
+                    {
+                        blend = CreateRcSlotsVanilla(self, room, SkyType.PSV),
+                        fog = CreateRcSlotsVanilla(self, room, SkyType.PSV),
+                        sun = CreateSunSlots(self, room, SkyType.PSV, false)
+                    };
+                    _sceneSlots[self] = existing;
+                }
+                _activeSlots = existing;
                 _psvScene = self;
 
                 int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
@@ -287,9 +298,11 @@ public static partial class SettingsBlendController
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
         bool isStaticManaged = hasRcType && snap.RcType == RcType.Static;
 
-        if (isBlendManaged && snap.ViewType == ViewType.ACV && (_rcSlotsACV == null || _rcSlotsACV.Count == 0))
+        if (isBlendManaged && snap.ViewType == ViewType.ACV && !_sceneSlots.TryGetValue(self, out _))
         {
-            _rcSlotsACV = CreateRcSlotsVanilla(self, self.room, SkyType.ACV);
+            var slotSet = new SkySlotSet { blend = CreateRcSlotsVanilla(self, self.room, SkyType.ACV) };
+            _sceneSlots[self] = slotSet;
+            _activeSlots = slotSet;
             _acvScene = self;
             
             int state = BlendClock.StateA;
@@ -302,11 +315,16 @@ public static partial class SettingsBlendController
             UpdateRcSlots(SkyType.ACV, state, state, cam, self.room);
         }
 
-        if (isBlendManaged && snap.ViewType == ViewType.PSV && (_rcSlotsPSV == null || _rcSlotsPSV.Count == 0))
+        if (isBlendManaged && snap.ViewType == ViewType.PSV && !_sceneSlots.TryGetValue(self, out _))
         {
-            _rcSlotsPSV = CreateRcSlotsVanilla(self, self.room, SkyType.PSV);
-            _rcSlotsPSVFog = CreateRcSlotsVanilla(self, self.room, SkyType.PSV);
-            _rcSlotsPSVSun = CreateSunSlots(self, self.room, SkyType.PSV, false);
+            var slotSet = new SkySlotSet
+            {
+                blend = CreateRcSlotsVanilla(self, self.room, SkyType.PSV),
+                fog = CreateRcSlotsVanilla(self, self.room, SkyType.PSV),
+                sun = CreateSunSlots(self, self.room, SkyType.PSV, false)
+            };
+            _sceneSlots[self] = slotSet;
+            _activeSlots = slotSet;
             _psvScene = self;
             
             int state = BlendClock.StateA;
@@ -431,8 +449,6 @@ public static partial class SettingsBlendController
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
         bool isStaticManaged = hasRcType && snap.RcType == RcType.Static;
 
-
-
         if (!hasRcType)
         {
             orig(self, room, effect);
@@ -471,10 +487,14 @@ public static partial class SettingsBlendController
         if (roomView == ViewType.ORV && isBlendManaged)
         {
             HideVanillaOuterRimSky(self);
-            DestroyRcSlots(_rcSlotsORV, _orvScene);
-            _rcSlotsORV = CreateRcSlotsVanilla(self, room, SkyType.ORV);
+            if (!_sceneSlots.TryGetValue(self, out var existing))
+            {
+                existing = new SkySlotSet { blend = CreateRcSlotsVanilla(self, room, SkyType.ORV) };
+                _sceneSlots[self] = existing;
+                DefaultOrvSlotsToVanillaSky(existing.blend);
+            }
+            _activeSlots = existing;
             _orvScene = self;
-            DefaultOrvSlotsToVanillaSky(_rcSlotsORV);
 
             int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
             if (state < 1)
@@ -517,12 +537,14 @@ public static partial class SettingsBlendController
         bool hasRcType = snap != null && snap.HasRcType;
         bool isBlendManaged = hasRcType && snap.RcType == RcType.Blend;
 
-        if (isBlendManaged && snap.ViewType == ViewType.ORV && (_rcSlotsORV == null || _rcSlotsORV.Count == 0))
+        if (isBlendManaged && snap.ViewType == ViewType.ORV && !_sceneSlots.TryGetValue(self, out _))
         {
             HideVanillaOuterRimSky(self);
-            _rcSlotsORV = CreateRcSlotsVanilla(self, self.room, SkyType.ORV);
+            var slotSet = new SkySlotSet { blend = CreateRcSlotsVanilla(self, self.room, SkyType.ORV) };
+            _sceneSlots[self] = slotSet;
+            _activeSlots = slotSet;
             _orvScene = self;
-            DefaultOrvSlotsToVanillaSky(_rcSlotsORV);
+            DefaultOrvSlotsToVanillaSky(slotSet.blend);
 
             int state = BlendClock.StateA;
             if (state < 1)

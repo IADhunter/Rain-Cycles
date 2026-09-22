@@ -202,12 +202,8 @@ public static class ModResetter
         SetFieldValue(type, "_orvScene", null);
         
         ClearCollectionField(type, "_rcViewInjected");
-        ClearCollectionField(type, "_rcSlotsACV");
-        ClearCollectionField(type, "_rcSlotsRTV");
-        ClearCollectionField(type, "_rcSlotsPSV");
-        ClearCollectionField(type, "_rcSlotsPSVFog");
-        ClearCollectionField(type, "_rcSlotsPSVSun");
-        ClearCollectionField(type, "_rcSlotsORV");
+        ClearCollectionField(type, "_sceneSlots");
+        SetFieldValue(type, "_activeSlots", null);
         ClearCollectionField(type, "_rcSlotsStaticACV");
         ClearCollectionField(type, "_rcSlotsStaticRTV");
         ClearCollectionField(type, "_rcSlotsStaticPSV");

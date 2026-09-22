@@ -142,8 +142,13 @@ public override void Initialize()
 
         _seedBox = new OpTextBox(customSeed, new Vector2(MODE_BOX_X + 20f, modeBoxY + 115f), 200f);
         _seedBox.description = Tr("Write a number");
+        _seedBox.OnValueUpdate += (sender, newValue, _) =>
+        {
+            string filtered = System.Text.RegularExpressions.Regex.Replace(newValue, "[^0-9-]", "");
+            if (filtered != newValue) sender.value = filtered;
+        };
 
-        var seedLabel = new OpLabel(MODE_BOX_X + 228f, modeBoxY + 117f, "Seed", false);
+        var seedLabel = new OpLabel(MODE_BOX_X + 228f, modeBoxY + 117f, Tr("Seed"), false);
         seedLabel.color = new Color(0.8f, 0.8f, 0.8f);
 
         // ============================================================
@@ -668,7 +673,7 @@ float y = contentHeight - 26f - 10f;
 
     private OpSimpleButton MakeModeButton(Vector2 pos, string text, string mode)
     {
-        var btn = new OpSimpleButton(pos, new Vector2(120f, 40f), text);
+        var btn = new OpSimpleButton(pos, new Vector2(120f, 40f), Tr(text));
         btn.OnClick += _ =>
         {
             cycleMode.Value = mode;
@@ -692,7 +697,7 @@ float y = contentHeight - 26f - 10f;
             ? new Color(0.8f, 0.8f, 0.8f)
             : new Color(0.4f, 0.4f, 0.4f);
 
-        bool usesSeed = mode != ModeCycle;
+        bool usesSeed = mode == ModeProcedural;
         _seedBox.greyedOut = !usesSeed;
     }
 
@@ -728,7 +733,7 @@ float y = contentHeight - 26f - 10f;
         }
         else if (_seedBox != null && _seedBox.MouseOver)
         {
-            txt = Tr("Lets you customize the seed used for the calculation that picks the state.");
+            txt = Tr("Lets you customize the seed used by Procedural Mode to pick the state. Has no effect on Cycle or Random modes.");
         }
 
         if (txt.Length > 0)

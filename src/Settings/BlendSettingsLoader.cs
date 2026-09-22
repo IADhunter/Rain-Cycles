@@ -240,6 +240,10 @@ public static class BlendSettingsLoader
                                             settings.BackgroundAliases[currentView][alias] = parts[0];
                                     }
                                 }
+                                else
+                                {
+                                    RSPlugin.log.LogWarning($"[RC][BlendSettings] ParseContent: INVALID BKG FORMAT key={key} val=\"{val}\" (expected <...>)");
+                                }
                             }
                         }
                         break;

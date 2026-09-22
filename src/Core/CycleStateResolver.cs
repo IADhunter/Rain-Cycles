@@ -22,6 +22,7 @@ public static class CycleStateResolver
         = new Dictionary<(int, string), int>();
 
     private static string _anchorPath = null;
+    private static int    _cachedRandomFree = -1;
 
     // ============================================================
     // RESOLUCIÓN PRINCIPAL
@@ -95,15 +96,17 @@ public static class CycleStateResolver
     }
 
     // ============================================================
-    // RANDOM - ALEATORIO COMPLETO (ignora el archivo)
+    // RANDOM - ALEATORIO COMPLETO (ignora archivo y semilla)
     // ============================================================
     private static int RandomFree()
     {
-        // RNG real por arranque de partida: sin ancla, cualquier estado.
-        int seed = GetCustomSeed(out int custom)
-            ? custom
-            : unchecked(Environment.TickCount * 7 + 13);
-        return new System.Random(seed).Next(1, 5);
+        // Un solo valor aleatorio por sesión (arranque de partida).
+        // Sin cache, cada llamada a LoadRegion generaba un estado distinto,
+        // causando gates con estado incorrecto (fix 08/2026).
+        if (_cachedRandomFree >= 1 && _cachedRandomFree <= 4)
+            return _cachedRandomFree;
+        _cachedRandomFree = new System.Random().Next(1, 5);
+        return _cachedRandomFree;
     }
 
     // ============================================================
@@ -200,5 +203,6 @@ public static class CycleStateResolver
     {
         _anchors.Clear();
         _anchorPath = null;
+        _cachedRandomFree = -1;
     }
 }

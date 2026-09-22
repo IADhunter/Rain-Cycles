@@ -42,14 +42,18 @@ public static partial class SettingsBlendController
     private static AboveCloudsView.HorizonFog _cachedVanillaFog = null;
 
     // ============================================================
-    // SLOTS DE BACKGROUND
+    // SLOTS DE BACKGROUND — per-scene (vanilla pattern)
     // ============================================================
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsACV = null;
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsRTV = null;
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsPSV = null;
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsPSVFog = null;
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsPSVSun = null;
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsORV = null;
+    private class SkySlotSet
+    {
+        public List<BackgroundScene.Simple2DBackgroundIllustration> blend;
+        public List<BackgroundScene.Simple2DBackgroundIllustration> fog;
+        public List<BackgroundScene.Simple2DBackgroundIllustration> sun;
+        public List<BackgroundScene.Simple2DBackgroundIllustration> staticSlot = null;
+    }
+
+    private static readonly Dictionary<BackgroundScene, SkySlotSet> _sceneSlots = new();
+    private static SkySlotSet _activeSlots = null;
 
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticACV = null;
     private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticRTV = null;
@@ -108,6 +112,7 @@ public static partial class SettingsBlendController
         On.AboveCloudsView.HorizonFog.DrawSprites += OnHorizonFogDrawSprites;
 
         On.AboveCloudsView.DistantCloud.InitiateSprites += OnDistantCloudInitiateSprites;
+        On.BackgroundScene.Destroy += OnBackgroundSceneDestroy;
     }
 
     // ============================================================
@@ -133,6 +138,10 @@ public static partial class SettingsBlendController
     public static void ApplyIdleTintsAndEffects(Room room, SettingsSnapshot snap)
     {
         if (room == null || snap == null) return;
+
+        string multStr = snap.TintMultiply.HasValue ? $"({snap.TintMultiply.Value.r:F2},{snap.TintMultiply.Value.g:F2},{snap.TintMultiply.Value.b:F2})" : "null";
+        string atmoStr = snap.TintAtmosphere.HasValue ? $"({snap.TintAtmosphere.Value.r:F2},{snap.TintAtmosphere.Value.g:F2},{snap.TintAtmosphere.Value.b:F2})" : "null";
+        RSPlugin.log.LogDebug($"[RC][State] ApplyIdleTints: room={room.abstractRoom?.name} mult={multStr} atmo={atmoStr}");
 
         if (snap.TintMultiply.HasValue)
         {
@@ -241,11 +250,21 @@ public static partial class SettingsBlendController
         
         string path = StateFileResolver.GetRainStateSettingsFile(roomName, state);
         if (string.IsNullOrEmpty(path))
+        {
+            RSPlugin.log.LogDebug($"[RC][State] ApplyStaticTints: NO PATH room={roomName} state={state}");
             return;
+        }
         
         var snap = SettingsSnapshot.GetCached(path, roomName);
         if (snap == null)
+        {
+            RSPlugin.log.LogDebug($"[RC][State] ApplyStaticTints: NO SNAPSHOT room={roomName} state={state} path={System.IO.Path.GetFileName(path)}");
             return;
+        }
+        
+        string multStr = snap.TintMultiply.HasValue ? $"({snap.TintMultiply.Value.r:F2},{snap.TintMultiply.Value.g:F2},{snap.TintMultiply.Value.b:F2})" : "null";
+        string atmoStr = snap.TintAtmosphere.HasValue ? $"({snap.TintAtmosphere.Value.r:F2},{snap.TintAtmosphere.Value.g:F2},{snap.TintAtmosphere.Value.b:F2})" : "null";
+        RSPlugin.log.LogDebug($"[RC][State] ApplyStaticTints: room={roomName} state={state} mult={multStr} atmo={atmoStr}");
         
         if (snap.TintMultiply.HasValue)
         {
@@ -293,5 +312,31 @@ public static partial class SettingsBlendController
     public static void ClearCachedVanillaFog()
     {
         _cachedVanillaFog = null;
+    }
+
+    // ============================================================
+    // BACKGROUNDSCENE DESTROY — limpiar slots de escena descargada
+    // ============================================================
+    private static void OnBackgroundSceneDestroy(
+        On.BackgroundScene.orig_Destroy orig, BackgroundScene self)
+    {
+        _sceneSlots.Remove(self);
+
+        if (_activeSlots != null && self.elements != null)
+        {
+            for (int i = 0; i < self.elements.Count; i++)
+            {
+                if (self.elements[i] is BackgroundScene.Simple2DBackgroundIllustration ill)
+                {
+                    if (_activeSlots.blend != null && _activeSlots.blend.Contains(ill))
+                    {
+                        _activeSlots = null;
+                        break;
+                    }
+                }
+            }
+        }
+
+        orig(self);
     }
 }

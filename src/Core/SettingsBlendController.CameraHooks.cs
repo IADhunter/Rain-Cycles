@@ -65,9 +65,11 @@ public static partial class SettingsBlendController
         if (prevWasManaged && !nextIsManaged)
         {
             _activeSnapshot = null;
+            _activeSlots = null;
             _psvScene = null;
             _acvScene = null;
             _orvScene = null;
+            _lastRoomWasManaged = false;
             ClearCachedVanillaFog();
         }
 
@@ -145,6 +147,7 @@ public static partial class SettingsBlendController
                 }
                 else
                 {
+                    RSPlugin.log.LogWarning($"[RC][CameraHooks] ChangeRoom: slot[{i}] has NO spriteLeaser! slot={slot.illustrationName} alpha={slot.alpha}");
                 }
             }
         }
@@ -158,6 +161,7 @@ public static partial class SettingsBlendController
         bool newRoomManaged = newRoomNameClean != null && IsBlendRoom(newRoom);
         if (!newRoomManaged)
         {
+            if (_psvScene != null || _acvScene != null || _orvScene != null)
             _activeSnapshot = null;
             _psvScene = null;
             _acvScene = null;
@@ -194,7 +198,7 @@ public static partial class SettingsBlendController
             ForceHideVanillaSlots(self.room, rcState);
         }
 
-        if (_psvScene != null && _rcSlotsPSVFog != null && _rcSlotsPSVFog.Count > 0)
+        if (_psvScene != null && _activeSlots?.fog != null && _activeSlots.fog.Count > 0)
         {
             SyncFogSlotPosition(self);
         }
@@ -219,11 +223,15 @@ public static partial class SettingsBlendController
                     {
                         var snap2 = SettingsSnapshot.GetCached(path, _lastManagedRoomName);
                         if (snap2?.TintMultiply != null)
+                        {
                             Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor,
                                 new Vector4(snap2.TintMultiply.Value.r, snap2.TintMultiply.Value.g, snap2.TintMultiply.Value.b, 1f));
+                        }
                         if (snap2?.TintAtmosphere != null)
+                        {
                             Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor,
                                 new Vector4(snap2.TintAtmosphere.Value.r, snap2.TintAtmosphere.Value.g, snap2.TintAtmosphere.Value.b, 1f));
+                        }
                     }
                 }
             }
@@ -268,15 +276,11 @@ public static partial class SettingsBlendController
         if (room == null) return null;
         for (int i = 0; i < room.updateList.Count; i++)
         {
-            if (room.updateList[i] is AboveCloudsView)
-            {
-                var skyType = GetViewFromLoadedSettings(room);
-                if (skyType == SkyType.ACV) return _rcSlotsACV;
-                if (skyType == SkyType.PSV) return _rcSlotsPSV;
-            }
-            if (room.updateList[i] is RoofTopView)
-                return _rcSlotsRTV;
+            if (room.updateList[i] is AboveCloudsView acv && _sceneSlots.TryGetValue(acv, out var set))
+                return set.blend;
+            if (room.updateList[i] is RoofTopView rtv && _sceneSlots.TryGetValue(rtv, out var rtvSet))
+                return rtvSet.blend;
         }
-        return null;
+        return _activeSlots?.blend;
     }
 }

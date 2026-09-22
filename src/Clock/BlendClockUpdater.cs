@@ -257,9 +257,11 @@ public static class BlendClockUpdater
 
                 if (pA != null && pB != null && BlendClock.StateA != BlendClock.StateB)
                 {
-                    if (!SettingsBlendController.IsActive ||
+                    bool needsAttach = !SettingsBlendController.IsActive ||
                         SettingsBlendController.CurrentPathA != pA ||
-                        SettingsBlendController.CurrentPathB != pB)
+                        SettingsBlendController.CurrentPathB != pB;
+
+                    if (needsAttach)
                     {
                         SettingsBlendController.AttachWithExternalT(cam.room, pA, pB, isAuto: true);
                     }
@@ -306,7 +308,9 @@ public static class BlendClockUpdater
                 if (path != null)
                 {
                     if (!SettingsBlendController.IsActive || SettingsBlendController.CurrentPathA != path)
+                    {
                         SettingsBlendController.AttachWithExternalT(cam.room, path, path, isAuto: true);
+                    }
                     SettingsBlendController.SetExternalT(0f);
                     
                     SettingsBlendController.SyncSkySlots(cam.room, finalState, finalState);
