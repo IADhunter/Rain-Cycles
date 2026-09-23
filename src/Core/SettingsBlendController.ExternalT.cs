@@ -39,6 +39,11 @@ public static partial class SettingsBlendController
             }
 
             int stA = StateFileResolver.GetStateFromPath(pathA, roomName);
+            if (stA > 0)
+            {
+                _manualStateA = stA;
+                _manualStateB = stA;
+            }
             return;
         }
 

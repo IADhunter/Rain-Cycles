@@ -81,7 +81,7 @@ public static partial class RoomCameraExtensions
             stateB = BlendClock.StateB;
             t = forcedT >= 0f ? forcedT : BlendClock.SubPhaseLocalT;
             isIdle = (BlendClock.CurrentPhase == BlendClock.Phase.Idle);
-            
+
             if (isIdle)
             {
                 string idlePath = StateFileResolver.GetRainStateSettingsFile(roomName, stateA);

@@ -52,6 +52,9 @@ public static class BlendSettingsLoader
             _cache[regionCode] = settings;
         }
 
+        bool wasGate = _isGateActive;
+        string prevActive = _activeRegion;
+
         _activeRegion   = regionCode;
         _activeSettings = settings;
         _isGateActive   = false;
@@ -61,6 +64,12 @@ public static class BlendSettingsLoader
         int state = Core.CycleStateResolver.ResolveState(cycle);
         
         Core.StateFileResolver.SetCurrentCycleState(state);
+
+        RSPlugin.log.LogInfo($"[RC][Loader.LoadRegion] {regionCode} " +
+            $"(prev={prevActive} wasGate={wasGate}) → " +
+            $"settingsNull={settings == null} mode={(settings != null ? settings.Mode.ToString() : "n/a")} " +
+            $"clock={(settings != null ? settings.Clock.ToString() : "n/a")} " +
+            $"resolvedState={state} cycle={cycle}");
     }
 
     public static BlendSettings GetForRegion(string regionCode)
@@ -138,17 +147,27 @@ public static class BlendSettingsLoader
         if (string.IsNullOrEmpty(roomName)) return;
 
         string cacheKey = "GATE:" + roomName.ToUpperInvariant();
+        string prevActive = _activeRegion;
 
         if (!_cache.TryGetValue(cacheKey, out var settings))
         {
             string path = ResolveGateBlendPath(roomName);
             settings = path != null ? LoadFile(path) : null;
             _cache[cacheKey] = settings;
+            RSPlugin.log.LogInfo($"[RC][Loader.LoadGateSettings] {roomName} cargado de disco " +
+                $"path={(path ?? "(no encontrado)")}");
         }
 
         _activeRegion = cacheKey;
         _activeSettings = settings;
         _isGateActive = true;
+
+        RSPlugin.log.LogInfo($"[RC][Loader.LoadGateSettings] {roomName} " +
+            $"(prev={prevActive}) → settingsNull={settings == null} " +
+            $"mode={(settings != null ? settings.Mode.ToString() : "n/a")} " +
+            $"clock={(settings != null ? settings.Clock.ToString() : "n/a")} " +
+            $"idleTime={(settings != null ? settings.IdleTime.ToString() : "n/a")} " +
+            $"duration={(settings != null ? settings.Duration.ToString() : "n/a")}");
     }
 
     private static BlendSettings ParseContent(string content)
