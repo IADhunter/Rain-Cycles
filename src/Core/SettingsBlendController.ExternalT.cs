@@ -25,8 +25,6 @@ public static partial class SettingsBlendController
             _room = room;
             _pathA = pathA;
             _pathB = pathB;
-            _active = true;
-            _externalT = true;
             _snapA = SettingsSnapshot.GetCached(pathA, room.abstractRoom.name);
             _snapB = _snapA;
             _isAutoBlend = isAuto;
@@ -36,13 +34,6 @@ public static partial class SettingsBlendController
             {
                 currentCam.SetBlendActive(room.abstractRoom.name);
                 ApplyIdleTintsAndEffects(room, _snapA);
-            }
-
-            int stA = StateFileResolver.GetStateFromPath(pathA, roomName);
-            if (stA > 0)
-            {
-                _manualStateA = stA;
-                _manualStateB = stA;
             }
             return;
         }

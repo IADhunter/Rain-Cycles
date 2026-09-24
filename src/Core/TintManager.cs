@@ -444,6 +444,134 @@ public static class TintManager
             _wasStaticRoom = false;
         }
         _wasStaticRoom = isStatic;
+
+        // Última defensa: si attach/reloj/flags no escribieron el tinte,
+        // re-aplicarlo aquí cada frame (patrón Region Kit / PausedUpdate).
+        EnforceManagedTints(self.room);
+    }
+
+    // ============================================================
+    // ENFORCE — ÚLTIMA DEFENSA DE TINTES MANAGED
+    // ============================================================
+    // Independiente de: _inStaticRoom, _lastRoomWasManaged, fase del
+    // reloj, ni attach. Solo se retira si el blend engine ya gestiona
+    // ESTA sala (ApplyBlend es el dueño legítimo en ese caso).
+    // ============================================================
+    private static string _lastEnforceLogKey = null;
+
+    public static void EnforceManagedTints(Room room)
+    {
+        if (room == null) return;
+
+        string roomName = room.abstractRoom?.name;
+        if (string.IsNullOrEmpty(roomName)) return;
+
+        var state = RoomCameraExtensions.GetRoomBlendState(room);
+        if (!state.IsBlend && !state.IsStatic) return;
+        if (!state.HasTint) return;
+
+        // Anti-pelea: attach OK para esta sala → ApplyIdleTints/ApplyBlend ya escribe.
+        if (SettingsBlendController.IsActive && SettingsBlendController.ActiveRoom == room)
+            return;
+
+        // EditMode: el RCPanel es dueño de los tintes (botón/slider).
+        // Enforce aquí pisaría el estado seleccionado con el del ciclo.
+        if (BlendClock.EditMode) return;
+
+        int cycleState = StateFileResolver.GetCurrentCycleState();
+        if (cycleState < 1 || cycleState > 4) cycleState = 1;
+
+        int resolveState;
+        if (state.IsStatic)
+        {
+            resolveState = cycleState;
+        }
+        else
+        {
+            resolveState = (BlendClock.IsRunning && BlendClock.StateA >= 1 && BlendClock.StateA <= 4)
+                ? BlendClock.StateA
+                : cycleState;
+        }
+
+        string path = StateFileResolver.ResolveSettingsPath(roomName, resolveState);
+        if (string.IsNullOrEmpty(path)) return;
+
+        var snap = SettingsSnapshot.GetCached(path, roomName);
+        if (snap == null) return;
+        if (!snap.TintMultiply.HasValue && !snap.TintAtmosphere.HasValue) return;
+
+        // Static: refrescar el lock ANTES de escribir el global, o
+        // OnSetGlobalVector redirigiría al color bloqueado viejo.
+        if (state.IsStatic)
+        {
+            _inStaticRoom = true;
+            _currentStaticRoom = roomName;
+        }
+
+        if (snap.TintMultiply.HasValue)
+        {
+            var c = snap.TintMultiply.Value;
+            var desired = new Vector4(c.r, c.g, c.b, 1f);
+            if (!Vector4Approx(Shader.GetGlobalVector(RainWorld.ShadPropMultiplyColor), desired))
+            {
+                Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, desired);
+                LogEnforce(roomName, "mult", c, resolveState, state.IsStatic);
+            }
+        }
+
+        if (snap.TintAtmosphere.HasValue)
+        {
+            var c = snap.TintAtmosphere.Value;
+            var desired = new Vector4(c.r, c.g, c.b, 1f);
+
+            if (state.IsStatic)
+            {
+                _lockedAtmosphere = desired;
+                _hasLockedAtmosphere = true;
+            }
+
+            bool changed = false;
+
+            // Campo de la vista PRIMERO (setter pasa por OnSetAtmosphereColor
+            // y puede actualizar el lock), luego el global.
+            for (int i = 0; i < room.updateList.Count; i++)
+            {
+                if (room.updateList[i] is AboveCloudsView acv)
+                {
+                    if (!Vector4Approx((Vector4)acv.atmosphereColor, desired))
+                    {
+                        acv.atmosphereColor = c;
+                        changed = true;
+                    }
+                    break;
+                }
+            }
+
+            if (!Vector4Approx(Shader.GetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor), desired))
+            {
+                Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, desired);
+                changed = true;
+            }
+
+            if (changed)
+                LogEnforce(roomName, "atmo", c, resolveState, state.IsStatic);
+        }
+    }
+
+    private static bool Vector4Approx(Vector4 a, Vector4 b)
+    {
+        return (a - b).sqrMagnitude < 1e-6f;
+    }
+
+    private static void LogEnforce(string roomName, string which, Color c, int state, bool isStatic)
+    {
+        // Solo loguea cuando (sala, canal, color, estado) cambia — sin spam por frame.
+        string key = $"{roomName}|{which}|{c.r:F3}|{c.g:F3}|{c.b:F3}|{state}";
+        if (key == _lastEnforceLogKey) return;
+        _lastEnforceLogKey = key;
+        RSPlugin.log.LogDebug(
+            $"[RC][TintManager] ENFORCE {which}: room={roomName} state={state} " +
+            $"static={isStatic} color=({c.r:F2},{c.g:F2},{c.b:F2})");
     }
 
     // ================================================================
