@@ -139,10 +139,6 @@ public static partial class SettingsBlendController
     {
         if (room == null || snap == null) return;
 
-        string multStr = snap.TintMultiply.HasValue ? $"({snap.TintMultiply.Value.r:F2},{snap.TintMultiply.Value.g:F2},{snap.TintMultiply.Value.b:F2})" : "null";
-        string atmoStr = snap.TintAtmosphere.HasValue ? $"({snap.TintAtmosphere.Value.r:F2},{snap.TintAtmosphere.Value.g:F2},{snap.TintAtmosphere.Value.b:F2})" : "null";
-        RSPlugin.log.LogDebug($"[RC][State] ApplyIdleTints: room={room.abstractRoom?.name} mult={multStr} atmo={atmoStr}");
-
         if (snap.TintMultiply.HasValue)
         {
             var c = snap.TintMultiply.Value;
@@ -251,21 +247,15 @@ public static partial class SettingsBlendController
         string path = StateFileResolver.GetRainStateSettingsFile(roomName, state);
         if (string.IsNullOrEmpty(path))
         {
-            RSPlugin.log.LogDebug($"[RC][State] ApplyStaticTints: NO PATH room={roomName} state={state}");
             return;
         }
-        
+
         var snap = SettingsSnapshot.GetCached(path, roomName);
         if (snap == null)
         {
-            RSPlugin.log.LogDebug($"[RC][State] ApplyStaticTints: NO SNAPSHOT room={roomName} state={state} path={System.IO.Path.GetFileName(path)}");
             return;
         }
-        
-        string multStr = snap.TintMultiply.HasValue ? $"({snap.TintMultiply.Value.r:F2},{snap.TintMultiply.Value.g:F2},{snap.TintMultiply.Value.b:F2})" : "null";
-        string atmoStr = snap.TintAtmosphere.HasValue ? $"({snap.TintAtmosphere.Value.r:F2},{snap.TintAtmosphere.Value.g:F2},{snap.TintAtmosphere.Value.b:F2})" : "null";
-        RSPlugin.log.LogDebug($"[RC][State] ApplyStaticTints: room={roomName} state={state} mult={multStr} atmo={atmoStr}");
-        
+
         if (snap.TintMultiply.HasValue)
         {
             var c = snap.TintMultiply.Value;

@@ -37,7 +37,6 @@ public static partial class SettingsBlendController
         if (_room != null)
         {
             string roomName = _room.abstractRoom?.name;
-            RSPlugin.log.LogDebug($"[RC][Lifecycle] Detach: room={roomName} pathA={System.IO.Path.GetFileName(_pathA)} pathB={System.IO.Path.GetFileName(_pathB)} active={_active}");
             if (!string.IsNullOrEmpty(roomName))
             {
                 RoomCameraExtensions.InvalidateRoomCache(roomName);

@@ -110,9 +110,6 @@ public static class BlendClock
             IdleDuration = _idleDuration,
             BlendDuration = _blendDuration,
         };
-        RSPlugin.log.LogInfo($"[RC][BlendClock.SaveState] T={st.T:F3} phase={st.CurrentPhase} " +
-            $"stateA={st.StateA} stateB={st.StateB} mode={st.Mode} loopAct={st.LoopActivated} " +
-            $"timer={st.Timer:F2} idleDur={st.IdleDuration:F2} blendDur={st.BlendDuration:F2}");
         return st;
     }
 
@@ -120,7 +117,6 @@ public static class BlendClock
     {
         if (state.Mode != _mode)
         {
-            RSPlugin.log.LogInfo($"[RC][BlendClock.RestoreState] ABORT: state.Mode={state.Mode} != _mode={_mode}");
             return;
         }
 
@@ -128,7 +124,6 @@ public static class BlendClock
         {
             if (!state.LoopActivated)
             {
-                RSPlugin.log.LogInfo("[RC][BlendClock.RestoreState] ABORT: Loop pero LoopActivated=false");
                 return;
             }
         }
@@ -136,13 +131,11 @@ public static class BlendClock
         {
             if (!rainCycleEnded)
             {
-                RSPlugin.log.LogInfo("[RC][BlendClock.RestoreState] ABORT: EndCycle pero rainCycleEnded=false");
                 return;
             }
         }
         else
         {
-            RSPlugin.log.LogInfo($"[RC][BlendClock.RestoreState] ABORT: mode={state.Mode} (solo Loop/EndCycle restauran)");
             return;
         }
 
@@ -190,10 +183,6 @@ public static class BlendClock
 
         // Resincronizar StateA/StateB derivándolos del T restaurado + secuencia (posiblemente nueva).
         UpdateStatesFromT();
-
-        RSPlugin.log.LogInfo($"[RC][BlendClock.RestoreState] OK: T={T:F3} phase={CurrentPhase} " +
-            $"stateA={StateA} stateB={StateB} timer={_timer:F2} loopAct={_loopActivated} " +
-            $"seq={(_sequence != null ? string.Join(",", _sequence) : "null")}");
     }
 
     public static void Start(string regionCode, int initialState = 1, float rainTimer = 0f, int rainCycleLen = 1)
@@ -257,12 +246,6 @@ public static class BlendClock
         _lastEmittedSetting = -1;
         _lastEmittedIsIdle = false;
 
-        RSPlugin.log.LogInfo($"[RC][BlendClock.Start] region={regionCode} mode={_mode} " +
-            $"initialState={initialState} idleDur={_idleDuration:F2} blendDur={_blendDuration:F2} " +
-            $"trigger={(s != null ? s.Trigger.ToString() : "n/a")} " +
-            $"→ running={IsRunning} T={T:F3} phase={CurrentPhase} stateA={StateA} stateB={StateB} " +
-            $"loopAct={_loopActivated} seq={(_sequence != null ? string.Join(",", _sequence) : "null")}");
-
         if (IsRunning)
         {
             if (RainCyclesEventDispatcher.TransferApplied)
@@ -284,9 +267,6 @@ public static class BlendClock
     public static void Stop()
     {
         if (!IsRunning) return;
-
-        RSPlugin.log.LogInfo($"[RC][BlendClock.Stop] T era={T:F3} phase={CurrentPhase} " +
-            $"stateA={StateA} stateB={StateB} mode={_mode} → reseteando");
 
         _lastEmittedSetting = -1;
         _lastEmittedIsIdle = false;

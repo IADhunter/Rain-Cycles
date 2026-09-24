@@ -278,7 +278,6 @@ public static class TintManager
         if (isStatic && isOriginalColor && _hasLockedAtmosphere)
         {
             Color lockedColor = new Color(_lockedAtmosphere.x, _lockedAtmosphere.y, _lockedAtmosphere.z);
-            RSPlugin.log.LogDebug($"[RC][TintManager] REDIRECT atmosphere: room={roomName} orig=({value.r:F2},{value.g:F2},{value.b:F2}) -> locked=({lockedColor.r:F2},{lockedColor.g:F2},{lockedColor.b:F2})");
             orig(self, lockedColor);
             return;
         }
@@ -287,7 +286,6 @@ public static class TintManager
         {
             _lockedAtmosphere = new Vector4(value.r, value.g, value.b, 1f);
             _hasLockedAtmosphere = true;
-            RSPlugin.log.LogDebug($"[RC][TintManager] LOCK atmosphere: room={roomName} value=({value.r:F2},{value.g:F2},{value.b:F2})");
         }
         
         orig(self, value);
@@ -300,7 +298,6 @@ public static class TintManager
     {
         if (_inStaticRoom && nameID == _atmosphereColorID && _hasLockedAtmosphere)
         {
-            RSPlugin.log.LogDebug($"[RC][TintManager] REDIRECT global atmosphere: locked=({_lockedAtmosphere.x:F2},{_lockedAtmosphere.y:F2},{_lockedAtmosphere.z:F2}) was=({value.x:F2},{value.y:F2},{value.z:F2})");
             orig(nameID, _lockedAtmosphere);
             return;
         }
@@ -401,19 +398,12 @@ public static class TintManager
         bool roomChanged = (roomName != _lastRoomName);
         _lastRoomName = roomName;
 
-        if (roomChanged)
-        {
-            RSPlugin.log.LogDebug($"[RC][TintManager] RoomCameraUpdate: room={roomName} isStatic={isStatic} isBlend={isBlend} hasTint={hasTint} prevRoom={_lastRoomName}");
-        }
-
         if (isStatic && !_inStaticRoom && roomChanged)
         {
             _inStaticRoom = true;
             _currentStaticRoom = roomName;
             _hasLockedAtmosphere = false;
-            
-            RSPlugin.log.LogDebug($"[RC][TintManager] ENTERING STATIC ROOM: {roomName} hasTint={hasTint}");
-            
+
             if (hasTint)
             {
                 SettingsBlendController.ApplyStaticTints(self.room);
@@ -421,7 +411,6 @@ public static class TintManager
         }
         else if (!isStatic && _inStaticRoom && roomChanged)
         {
-            RSPlugin.log.LogDebug($"[RC][TintManager] LEAVING STATIC ROOM: {roomName}");
             _inStaticRoom = false;
             _hasLockedAtmosphere = false;
             _currentStaticRoom = null;
@@ -445,20 +434,12 @@ public static class TintManager
         }
         _wasStaticRoom = isStatic;
 
-        // Última defensa: si attach/reloj/flags no escribieron el tinte,
-        // re-aplicarlo aquí cada frame (patrón Region Kit / PausedUpdate).
         EnforceManagedTints(self.room);
     }
 
     // ============================================================
     // ENFORCE — ÚLTIMA DEFENSA DE TINTES MANAGED
     // ============================================================
-    // Independiente de: _inStaticRoom, _lastRoomWasManaged, fase del
-    // reloj, ni attach. Solo se retira si el blend engine ya gestiona
-    // ESTA sala (ApplyBlend es el dueño legítimo en ese caso).
-    // ============================================================
-    private static string _lastEnforceLogKey = null;
-
     public static void EnforceManagedTints(Room room)
     {
         if (room == null) return;
@@ -470,12 +451,9 @@ public static class TintManager
         if (!state.IsBlend && !state.IsStatic) return;
         if (!state.HasTint) return;
 
-        // Anti-pelea: attach OK para esta sala → ApplyIdleTints/ApplyBlend ya escribe.
         if (SettingsBlendController.IsActive && SettingsBlendController.ActiveRoom == room)
             return;
 
-        // EditMode: el RCPanel es dueño de los tintes (botón/slider).
-        // Enforce aquí pisaría el estado seleccionado con el del ciclo.
         if (BlendClock.EditMode) return;
 
         int cycleState = StateFileResolver.GetCurrentCycleState();
@@ -500,8 +478,6 @@ public static class TintManager
         if (snap == null) return;
         if (!snap.TintMultiply.HasValue && !snap.TintAtmosphere.HasValue) return;
 
-        // Static: refrescar el lock ANTES de escribir el global, o
-        // OnSetGlobalVector redirigiría al color bloqueado viejo.
         if (state.IsStatic)
         {
             _inStaticRoom = true;
@@ -515,7 +491,6 @@ public static class TintManager
             if (!Vector4Approx(Shader.GetGlobalVector(RainWorld.ShadPropMultiplyColor), desired))
             {
                 Shader.SetGlobalVector(RainWorld.ShadPropMultiplyColor, desired);
-                LogEnforce(roomName, "mult", c, resolveState, state.IsStatic);
             }
         }
 
@@ -530,10 +505,6 @@ public static class TintManager
                 _hasLockedAtmosphere = true;
             }
 
-            bool changed = false;
-
-            // Campo de la vista PRIMERO (setter pasa por OnSetAtmosphereColor
-            // y puede actualizar el lock), luego el global.
             for (int i = 0; i < room.updateList.Count; i++)
             {
                 if (room.updateList[i] is AboveCloudsView acv)
@@ -541,7 +512,6 @@ public static class TintManager
                     if (!Vector4Approx((Vector4)acv.atmosphereColor, desired))
                     {
                         acv.atmosphereColor = c;
-                        changed = true;
                     }
                     break;
                 }
@@ -550,28 +520,13 @@ public static class TintManager
             if (!Vector4Approx(Shader.GetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor), desired))
             {
                 Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, desired);
-                changed = true;
             }
-
-            if (changed)
-                LogEnforce(roomName, "atmo", c, resolveState, state.IsStatic);
         }
     }
 
     private static bool Vector4Approx(Vector4 a, Vector4 b)
     {
         return (a - b).sqrMagnitude < 1e-6f;
-    }
-
-    private static void LogEnforce(string roomName, string which, Color c, int state, bool isStatic)
-    {
-        // Solo loguea cuando (sala, canal, color, estado) cambia — sin spam por frame.
-        string key = $"{roomName}|{which}|{c.r:F3}|{c.g:F3}|{c.b:F3}|{state}";
-        if (key == _lastEnforceLogKey) return;
-        _lastEnforceLogKey = key;
-        RSPlugin.log.LogDebug(
-            $"[RC][TintManager] ENFORCE {which}: room={roomName} state={state} " +
-            $"static={isStatic} color=({c.r:F2},{c.g:F2},{c.b:F2})");
     }
 
     // ================================================================

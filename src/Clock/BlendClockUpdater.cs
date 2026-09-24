@@ -49,7 +49,6 @@ public static class BlendClockUpdater
 
     private static void OnOverWorldUpdate(On.OverWorld.orig_Update orig, OverWorld self)
     {
-        string regionBefore = self.activeWorld?.region?.name?.ToUpperInvariant();
         orig(self);
         string regionAfter = self.activeWorld?.region?.name?.ToUpperInvariant();
 
@@ -58,22 +57,14 @@ public static class BlendClockUpdater
 
         if (regionChanged)
         {
-            RSPlugin.log.LogInfo($"[RC][RegionChange] {regionBefore ?? "(null)"} → {regionAfter} | " +
-                $"clockRunning={BlendClock.IsRunning} gateActive={BlendSettingsLoader.IsGateActive} " +
-                $"active={(BlendSettingsLoader.Active != null ? BlendSettingsLoader.ActiveRegion : "null")}");
-
             if (BlendClock.IsRunning)
             {
                 _savedState = BlendClock.SaveState();
-                RSPlugin.log.LogInfo($"[RC][RegionChange] SaveState: T={_savedState.T:F3} phase={_savedState.CurrentPhase} " +
-                    $"stateA={_savedState.StateA} stateB={_savedState.StateB} mode={_savedState.Mode} " +
-                    $"loopAct={_savedState.LoopActivated} timer={_savedState.Timer:F2}");
                 BlendClock.Stop();
             }
             else
             {
                 _savedState = default;
-                RSPlugin.log.LogInfo("[RC][RegionChange] Clock no corría → _savedState = default (SIN transferencia)");
             }
 
             if (!string.IsNullOrEmpty(_lastRegion))
@@ -96,10 +87,6 @@ public static class BlendClockUpdater
             var settings = BlendSettingsLoader.Active;
             bool isClockEnabled = settings != null && settings.Clock;
             int initialState = ResolveInitial(settings);
-
-            RSPlugin.log.LogInfo($"[RC][RegionChange] LoadRegion({regionAfter}) → " +
-                $"active={BlendSettingsLoader.ActiveRegion} settingsNull={settings == null} " +
-                $"clock={isClockEnabled} mode={settings?.Mode} initialState={initialState}");
 
             RainCyclesEventDispatcher.DispatchRegionEnter(
                 regionAfter,
@@ -141,17 +128,11 @@ public static class BlendClockUpdater
                     rainLen = self.world.rainCycle.cycleLength;
                 }
 
-                RSPlugin.log.LogInfo($"[RC][Start] region={_lastRegion} active={BlendSettingsLoader.ActiveRegion} " +
-                    $"initialState={initialState} mode={s.Mode} savedState.IsRunning={_savedState.IsRunning} " +
-                    $"savedMode={_savedState.Mode} sMode={s.Mode} " +
-                    $"modeMatch={_savedState.Mode == s.Mode}");
-
                 BlendClock.Start(_lastRegion, initialState, rainTimer, rainLen);
 
                 if (!BlendClock.IsRunning)
                 {
                     _startFailed = true;
-                    RSPlugin.log.LogInfo("[RC][Start] FAILED — IsRunning=false tras Start");
                 }
                 else
                 {
@@ -159,30 +140,10 @@ public static class BlendClockUpdater
                     {
                         bool rainCycleEnded = self.world?.rainCycle != null
                             && self.world.rainCycle.timer >= self.world.rainCycle.cycleLength;
-                        RSPlugin.log.LogInfo($"[RC][RestoreState] → intentando restore T={_savedState.T:F3} " +
-                            $"phase={_savedState.CurrentPhase} stateA={_savedState.StateA} " +
-                            $"stateB={_savedState.StateB} loopAct={_savedState.LoopActivated} " +
-                            $"rainCycleEnded={rainCycleEnded}");
                         BlendClock.RestoreState(_savedState, rainCycleEnded);
-                        RSPlugin.log.LogInfo($"[RC][RestoreState] RESULTADO: T={BlendClock.T:F3} " +
-                            $"phase={BlendClock.CurrentPhase} stateA={BlendClock.StateA} " +
-                            $"stateB={BlendClock.StateB} running={BlendClock.IsRunning}");
-                    }
-                    else
-                    {
-                        RSPlugin.log.LogInfo($"[RC][RestoreState] SKIP: " +
-                            $"savedRunning={_savedState.IsRunning} " +
-                            $"modeMatch={_savedState.Mode == s.Mode} " +
-                            $"(saved={_savedState.Mode}, s={s.Mode})");
                     }
                     _savedState = default;
                 }
-            }
-            else
-            {
-                RSPlugin.log.LogInfo($"[RC][Start] SKIP start-block: " +
-                    $"s={(s == null ? "null" : "ok")} clock={(s != null ? s.Clock.ToString() : "n/a")} " +
-                    $"savedState.IsRunning={_savedState.IsRunning} (savedState NO consumido)");
             }
         }
 
@@ -273,33 +234,13 @@ public static class BlendClockUpdater
             // Gate rooms: cargar blend settings específicos de esta gate
             if (BlendSettingsLoader.IsGateRoom(room) && !BlendSettingsLoader.IsGateActive)
             {
-                RSPlugin.log.LogInfo($"[RC][Gate] ENTER {room} — cargando gate settings " +
-                    $"(prevActive={BlendSettingsLoader.ActiveRegion}) " +
-                    $"clock: running={BlendClock.IsRunning} T={BlendClock.T:F3} " +
-                    $"phase={BlendClock.CurrentPhase} stateA={BlendClock.StateA} stateB={BlendClock.StateB}");
                 BlendSettingsLoader.LoadGateSettings(room);
                 s = BlendSettingsLoader.Active;
-                RSPlugin.log.LogInfo($"[RC][Gate] ENTER {room} → active={BlendSettingsLoader.ActiveRegion} " +
-                    $"settingsNull={s == null} " +
-                    $"mode={(s != null ? s.Mode.ToString() : "n/a")} " +
-                    $"idleTime={(s != null ? s.IdleTime.ToString() : "n/a")} " +
-                    $"duration={(s != null ? s.Duration.ToString() : "n/a")} " +
-                    $"clock={(s != null ? s.Clock.ToString() : "n/a")} " +
-                    $"| clock tras load: running={BlendClock.IsRunning} T={BlendClock.T:F3}");
             }
-            // Salir de gate: restaurar settings de la región
             else if (!BlendSettingsLoader.IsGateRoom(room) && BlendSettingsLoader.IsGateActive)
             {
-                RSPlugin.log.LogInfo($"[RC][Gate] EXIT {room} — restaurando región {_lastRegion} " +
-                    $"(prevActive={BlendSettingsLoader.ActiveRegion}) " +
-                    $"clock: running={BlendClock.IsRunning} T={BlendClock.T:F3} " +
-                    $"phase={BlendClock.CurrentPhase} stateA={BlendClock.StateA} stateB={BlendClock.StateB}");
                 BlendSettingsLoader.LoadRegion(_lastRegion);
                 s = BlendSettingsLoader.Active;
-                RSPlugin.log.LogInfo($"[RC][Gate] EXIT {room} → active={BlendSettingsLoader.ActiveRegion} " +
-                    $"settingsNull={s == null} " +
-                    $"mode={(s != null ? s.Mode.ToString() : "n/a")} " +
-                    $"| clock tras load: running={BlendClock.IsRunning} T={BlendClock.T:F3}");
             }
 
             var state = RoomCameraExtensions.GetRoomBlendState(cam.room);
