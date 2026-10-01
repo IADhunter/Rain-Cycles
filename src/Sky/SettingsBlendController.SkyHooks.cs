@@ -84,15 +84,13 @@ public static partial class SettingsBlendController
         }
         else if (shouldCreateRTV && isStaticManaged)
         {
-            if (_rcSlotsStaticRTV == null)
+            if (!_staticSlots.TryGetValue(self, out var staticSet) || staticSet.blend == null || staticSet.blend.Count < 4)
             {
-                _rcSlotsStaticRTV = CreateStaticSlotsVanilla(self, room, SkyType.RTV);
+                staticSet = new SkySlotSet { blend = CreateStaticSlotsVanilla(self, room, SkyType.RTV) };
+                _staticSlots[self] = staticSet;
                 int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
                 if (state < 1) state = 1;
-                string file = regionSettings?.GetBkgFileForState(state, ViewType.RTV);
-                if (!string.IsNullOrEmpty(file))
-                    _rcSlotsStaticRTV[0].illustrationName = System.IO.Path.GetFileNameWithoutExtension(file);
-                _rcSlotsStaticRTV[0].alpha = 1f;
+                InitStaticSlotImages(staticSet.blend, room, ViewType.RTV, state, null, cam);
             }
             _rtvScene = self;
         }
@@ -138,10 +136,10 @@ public static partial class SettingsBlendController
             return;
         }
 
-        if (camIsHere && _rcSlotsStaticRTV != null && _rcSlotsStaticRTV.Count > 0
-            && _rcSlotsStaticRTV[0].illustrationName != "RC_Transparent")
+        if (camIsHere && _staticSlots.TryGetValue(self, out var staticRtv) && staticRtv.blend != null && staticRtv.blend.Count > 0
+            && staticRtv.blend[0].illustrationName != "RC_Transparent")
         {
-            RefreshSlotSprite(_rcSlotsStaticRTV[0], _rcSlotsStaticRTV[0].illustrationName, cam);
+            RefreshSlotSprite(staticRtv.blend[0], staticRtv.blend[0].illustrationName, cam);
         }
 
         orig(self, eu);
@@ -251,25 +249,33 @@ public static partial class SettingsBlendController
         }
         else if (targetSky != SkyType.None && isStaticManaged)
         {
-            if (targetSky == SkyType.ACV && _rcSlotsStaticACV == null)
+            if (targetSky == SkyType.ACV)
             {
-                _rcSlotsStaticACV = CreateStaticSlotsVanilla(self, room, SkyType.ACV);
-                int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
-                if (state < 1) state = 1;
-                string file = regionSettings?.GetBkgFileForState(state, ViewType.ACV);
-                if (!string.IsNullOrEmpty(file))
-                    _rcSlotsStaticACV[0].illustrationName = System.IO.Path.GetFileNameWithoutExtension(file);
-                _rcSlotsStaticACV[0].alpha = 1f;
+                if (!_staticSlots.TryGetValue(self, out var staticSet) || staticSet.blend == null || staticSet.blend.Count < 4)
+                {
+                    staticSet = new SkySlotSet { blend = CreateStaticSlotsVanilla(self, room, SkyType.ACV) };
+                    _staticSlots[self] = staticSet;
+                    int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
+                    if (state < 1) state = 1;
+                    InitStaticSlotImages(staticSet.blend, room, ViewType.ACV, state, null, cam);
+                }
             }
-            else if (targetSky == SkyType.PSV && _rcSlotsStaticPSV == null)
+            else if (targetSky == SkyType.PSV)
             {
-                _rcSlotsStaticPSV = CreateStaticSlotsVanilla(self, room, SkyType.PSV);
-                int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
-                if (state < 1) state = 1;
-                string file = regionSettings?.GetBkgFileForState(state, ViewType.PSV);
-                if (!string.IsNullOrEmpty(file))
-                    _rcSlotsStaticPSV[0].illustrationName = System.IO.Path.GetFileNameWithoutExtension(file);
-                _rcSlotsStaticPSV[0].alpha = 1f;
+                if (!_staticSlots.TryGetValue(self, out var staticSetPsv) || staticSetPsv.blend == null || staticSetPsv.blend.Count < 4)
+                {
+                    staticSetPsv = new SkySlotSet
+                    {
+                        blend = CreateStaticSlotsVanilla(self, room, SkyType.PSV),
+                        fog = CreateRcSlotsVanilla(self, room, SkyType.PSV),
+                        sun = CreateSunSlots(self, room, SkyType.PSV, false)
+                    };
+                    _staticSlots[self] = staticSetPsv;
+                    int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
+                    if (state < 1) state = 1;
+                    InitStaticSlotImages(staticSetPsv.blend, room, ViewType.PSV, state, null, cam);
+                    InitStaticPsvSlotImages(staticSetPsv, room, state, cam);
+                }
             }
         }
 
@@ -376,9 +382,7 @@ public static partial class SettingsBlendController
                 var skyType = GetViewFromLoadedSettings(self.room);
                 if (skyType != SkyType.None)
                 {
-                    var staticSlots = skyType == SkyType.ACV ? _rcSlotsStaticACV :
-                                      skyType == SkyType.RTV ? _rcSlotsStaticRTV :
-                                      skyType == SkyType.PSV ? _rcSlotsStaticPSV : _rcSlotsStaticORV;
+                    var staticSlots = ResolveStaticSlotsForRoom(self.room);
 
                     if (staticSlots != null && staticSlots.Count > 0)
                     {
@@ -430,6 +434,15 @@ public static partial class SettingsBlendController
                 if (el is BackgroundScene.AdditiveBackgroundIllustration abi && abi.illustrationName?.StartsWith("pnk_") == true)
                     abi.alpha = 0f;
             }
+        }
+
+        // PSV estático: forzar shader BackgroundAdditive en los slots de sun.
+        // InitiateSprites usa "Background"; en blend lo corrige UpdatePsvSlots,
+        // que en modo estático nunca se ejecuta.
+        if (isStaticManaged && isPsv2 && camIsHere &&
+            _staticSlots.TryGetValue(self, out var staticPsvSet) && staticPsvSet.sun != null)
+        {
+            ForceSunShader(staticPsvSet.sun, cam);
         }
     }
 
@@ -509,16 +522,13 @@ public static partial class SettingsBlendController
         else if (roomView == ViewType.ORV && isStaticManaged)
         {
             HideVanillaOuterRimSky(self);
-            if (_rcSlotsStaticORV == null)
+            if (!_staticSlots.TryGetValue(self, out var staticSetOrv) || staticSetOrv.blend == null || staticSetOrv.blend.Count < 4)
             {
-                _rcSlotsStaticORV = CreateStaticSlotsVanilla(self, room, SkyType.ORV);
+                staticSetOrv = new SkySlotSet { blend = CreateStaticSlotsVanilla(self, room, SkyType.ORV) };
+                _staticSlots[self] = staticSetOrv;
                 int state = StateFileResolver.GetStateFromPath(room.roomSettings?.filePath, roomName);
                 if (state < 1) state = 1;
-                string file = regionSettings?.GetBkgFileForState(state, ViewType.ORV);
-                _rcSlotsStaticORV[0].illustrationName = !string.IsNullOrEmpty(file)
-                    ? System.IO.Path.GetFileNameWithoutExtension(file)
-                    : "otr_sky";
-                _rcSlotsStaticORV[0].alpha = 1f;
+                InitStaticSlotImages(staticSetOrv.blend, room, ViewType.ORV, state, "otr_sky", cam);
             }
             _orvScene = self;
         }
@@ -562,10 +572,10 @@ public static partial class SettingsBlendController
             return;
         }
 
-        if (camIsHere && _rcSlotsStaticORV != null && _rcSlotsStaticORV.Count > 0
-            && _rcSlotsStaticORV[0].illustrationName != "RC_Transparent")
+        if (camIsHere && _staticSlots.TryGetValue(self, out var staticOrv) && staticOrv.blend != null && staticOrv.blend.Count > 0
+            && staticOrv.blend[0].illustrationName != "RC_Transparent")
         {
-            RefreshSlotSprite(_rcSlotsStaticORV[0], _rcSlotsStaticORV[0].illustrationName, cam);
+            RefreshSlotSprite(staticOrv.blend[0], staticOrv.blend[0].illustrationName, cam);
         }
 
         orig(self, eu);

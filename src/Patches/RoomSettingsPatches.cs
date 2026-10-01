@@ -52,6 +52,7 @@ public static class RoomSettingsPatches
         }
 
         _isSaving = true;
+
         orig(self);
         PreserveExtendedData(self);
         _isSaving = false;
@@ -295,6 +296,7 @@ public static class RoomSettingsPatches
             lines.RemoveAll(l => l.Trim().StartsWith("RainCycles:"));
 
             string newLine = BuildRainCyclesLine(self);
+
             if (!string.IsNullOrEmpty(newLine))
             {
                 while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[lines.Count - 1]))

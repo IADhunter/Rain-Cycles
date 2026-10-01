@@ -73,10 +73,8 @@ public static partial class SettingsBlendController
         _sceneSlots.Clear();
         _activeSlots = null;
 
-        _rcSlotsStaticACV = null;
-        _rcSlotsStaticRTV = null;
-        _rcSlotsStaticPSV = null;
-        _rcSlotsStaticORV = null;
+        // _staticSlots NO se limpia aquí (mismo motivo que ClearAllSlots):
+        // el clear mataba el registro inicial de la sala estática.
     }
 
     public static void ResetFullSoft()

@@ -404,6 +404,7 @@ public class RCPanel : Panel, IDevUISignals
         if (snap.TintAtmosphere.HasValue)
         {
             var c = snap.TintAtmosphere.Value;
+            TintManager.SetStaticLock(c);
             Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, new Vector4(c.r, c.g, c.b, 1f));
 
             for (int i = 0; i < owner.room.updateList.Count; i++)

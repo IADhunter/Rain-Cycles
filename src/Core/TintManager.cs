@@ -57,8 +57,8 @@ public static class TintManager
     private static string _currentStaticRoom = null;
     private static Vector4 _lockedAtmosphere;
     private static bool _hasLockedAtmosphere = false;
-    
-    private static ConditionalWeakTable<BackgroundScene, ViewOriginalState> _originalViewStates 
+
+    private static ConditionalWeakTable<BackgroundScene, ViewOriginalState> _originalViewStates
         = new ConditionalWeakTable<BackgroundScene, ViewOriginalState>();
     
     // ============================================================
@@ -89,7 +89,7 @@ public static class TintManager
                     new Action<Action<AboveCloudsView, Color>, AboveCloudsView, Color>(OnSetAtmosphereColor));
             }
         }
-        
+
         var acvUpdateMethod = acvType.GetMethod("Update", new Type[] { typeof(bool) });
         if (acvUpdateMethod != null)
         {
@@ -125,7 +125,7 @@ public static class TintManager
         On.Watcher.OuterRimView.ctor += OnOuterRimViewCtor;
 
         On.Watcher.AncientUrbanView.ctor += OnAncientUrbanViewCtor;
-        
+
         _initialized = true;
     }
     
@@ -136,7 +136,7 @@ public static class TintManager
         _hasLockedAtmosphere = false;
         _lockedAtmosphere = default;
     }
-    
+
     // ============================================================
     // GUARDAR ESTADO ORIGINAL DE UNA VISTA
     // ============================================================
@@ -274,7 +274,7 @@ public static class TintManager
                                Mathf.Approximately(value.r, originalState.atmosphereColor.r) &&
                                Mathf.Approximately(value.g, originalState.atmosphereColor.g) &&
                                Mathf.Approximately(value.b, originalState.atmosphereColor.b);
-        
+
         if (isStatic && isOriginalColor && _hasLockedAtmosphere)
         {
             Color lockedColor = new Color(_lockedAtmosphere.x, _lockedAtmosphere.y, _lockedAtmosphere.z);
@@ -303,6 +303,17 @@ public static class TintManager
         }
         
         orig(nameID, value);
+    }
+    
+    // ============================================================
+    // ACTUALIZAR LOCK DE ATMOS EXPLÍCITAMENTE (edición DevTools)
+    // ============================================================
+    public static void SetStaticLock(Color c)
+    {
+        if (!_inStaticRoom) return;
+        
+        _lockedAtmosphere = new Vector4(c.r, c.g, c.b, 1f);
+        _hasLockedAtmosphere = true;
     }
     
     // ============================================================

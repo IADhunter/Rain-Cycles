@@ -171,15 +171,12 @@ Setting: 0";
         // Mod destino elegido en Developer
         ModManager.Mod targetMod = SaveModResolver.GetTargetMod();
         if (targetMod != null)
-        {
-            string dir = Path.Combine(targetMod.path, "world", "gate-rooms", "raincycles");
-            return Path.Combine(dir, fileName);
-        }
+            return Path.Combine(targetMod.path, BlendSettingsLoader.GateRelativeDir, fileName);
 
-        // Primer mod que tenga la carpeta gate-rooms/raincycles
+        // Primer mod que tenga la carpeta gates/raincycles
         foreach (var mod in ModManager.ActiveMods)
         {
-            string candidate = Path.Combine(mod.path, "world", "gate-rooms", "raincycles", fileName);
+            string candidate = Path.Combine(mod.path, BlendSettingsLoader.GateRelativeDir, fileName);
             if (Directory.Exists(Path.GetDirectoryName(candidate)))
                 return candidate;
         }
@@ -188,7 +185,7 @@ Setting: 0";
         foreach (var mod in ModManager.ActiveMods)
         {
             if (mod.id != RSPlugin.ID) continue;
-            return Path.Combine(mod.path, "world", "gate-rooms", "raincycles", fileName);
+            return Path.Combine(mod.path, BlendSettingsLoader.GateRelativeDir, fileName);
         }
 
         return null;

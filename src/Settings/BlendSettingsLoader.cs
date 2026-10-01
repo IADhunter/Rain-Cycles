@@ -107,6 +107,9 @@ public static class BlendSettingsLoader
             && roomName.StartsWith("GATE_", System.StringComparison.OrdinalIgnoreCase);
     }
 
+    public static readonly string GateVanillaDir  = Path.Combine("world", "gates");
+    public static readonly string GateRelativeDir = Path.Combine(GateVanillaDir, "raincycles");
+
     /// <summary>
     /// Resuelve la ruta del blend settings para una gate room.
     /// Busca: gate_{roomLower}_blend_settings.txt (específico de esta gate).
@@ -117,7 +120,7 @@ public static class BlendSettingsLoader
 
         string lower = roomName.ToLowerInvariant();
         string fileName = lower + "_blend_settings.txt";
-        string dir = Path.Combine("world", "gate-rooms", "raincycles");
+        string dir = GateRelativeDir;
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {

@@ -431,8 +431,10 @@ public static class StateFileResolver
     
     private static string BuildDirectoryPath(string roomName)
     {
-        string regionCode   = roomName.Split('_')[0].ToLowerInvariant();
-        string regionFolder = Path.Combine("world", regionCode + "-rooms", "raincycles");
+        string regionCode = roomName.Split('_')[0].ToLowerInvariant();
+        string regionFolder = BlendSettingsLoader.IsGateRoom(roomName)
+            ? BlendSettingsLoader.GateRelativeDir
+            : Path.Combine("world", regionCode + "-rooms", "raincycles");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
@@ -450,7 +452,9 @@ public static class StateFileResolver
     {
         string regionCode = roomName.Split('_')[0].ToLowerInvariant();
         string fileName   = roomName.ToLowerInvariant() + "_settings.txt";
-        string vanillaDir = Path.Combine("world", regionCode + "-rooms");
+        string vanillaDir = BlendSettingsLoader.IsGateRoom(roomName)
+            ? BlendSettingsLoader.GateVanillaDir
+            : Path.Combine("world", regionCode + "-rooms");
 
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {

@@ -202,6 +202,10 @@ public static partial class SettingsBlendController
         {
             SyncFogSlotPosition(self);
         }
+        else if (isStaticRoom && TryResolveStaticFog(self.room, out var staticFogScene, out var staticFogSlots))
+        {
+            SyncFogSlotPosition(self, staticFogScene, staticFogSlots);
+        }
         else if (_psvScene == null && _cachedVanillaFog != null)
         {
             ClearCachedVanillaFog();

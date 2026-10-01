@@ -37,6 +37,9 @@ public static class SaveModResolver
         ModManager.Mod mod = GetTargetMod();
         if (mod == null) return null;
 
+        if (BlendSettingsLoader.IsGateRoom(roomName))
+            return Path.Combine(mod.path, BlendSettingsLoader.GateRelativeDir);
+
         string regionCode = ExtractRegionCode(roomName);
         if (regionCode == null) return null;
 

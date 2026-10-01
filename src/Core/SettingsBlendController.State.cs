@@ -55,10 +55,7 @@ public static partial class SettingsBlendController
     private static readonly Dictionary<BackgroundScene, SkySlotSet> _sceneSlots = new();
     private static SkySlotSet _activeSlots = null;
 
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticACV = null;
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticRTV = null;
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticPSV = null;
-    private static List<BackgroundScene.Simple2DBackgroundIllustration> _rcSlotsStaticORV = null;
+    private static readonly Dictionary<BackgroundScene, SkySlotSet> _staticSlots = new();
 
     private static TintLerpResult? _activeSnapshot = null;
 
@@ -311,6 +308,7 @@ public static partial class SettingsBlendController
         On.BackgroundScene.orig_Destroy orig, BackgroundScene self)
     {
         _sceneSlots.Remove(self);
+        _staticSlots.Remove(self);
 
         if (_activeSlots != null && self.elements != null)
         {

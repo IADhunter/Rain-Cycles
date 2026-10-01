@@ -102,13 +102,7 @@ public static partial class SettingsBlendController
     private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateStaticSlotsVanilla(
         BackgroundScene scene, Room room, SkyType sky)
     {
-        var slots = new List<BackgroundScene.Simple2DBackgroundIllustration>();
-        var slot = new BackgroundScene.Simple2DBackgroundIllustration(
-            scene, "RC_Transparent", new Vector2(683f, 384f));
-        slot.alpha = 0f;
-        scene.AddElement(slot);
-        slots.Add(slot);
-        return slots;
+        return CreateRcSlotsVanilla(scene, room, sky);
     }
 
     private static List<BackgroundScene.Simple2DBackgroundIllustration> CreateSunSlots(
@@ -420,15 +414,156 @@ public static partial class SettingsBlendController
     {
         if (room == null) return;
         var settings = BlendSettingsLoader.Active;
-        if (settings == null) return;
         string roomName = room.abstractRoom?.name;
-        if (roomName == null) return;
 
-        ResolveActiveSlotsForRoom(room);
         var skyType = GetViewFromLoadedSettings(room);
+        bool isStatic = IsStaticViewRoom(room);
+
+        if (settings == null) return;
+        if (roomName == null) return;
         if (skyType == SkyType.None) return;
 
+        if (isStatic)
+        {
+            ApplyStaticSkyForState(skyType, state, room);
+            return;
+        }
+
+        ResolveActiveSlotsForRoom(room);
         UpdateRcSlots(skyType, state, state, null, room);
+    }
+
+    // ============================================================
+    // RESOLVER SLOTS ESTÁTICOS POR SALA — lookup per-scene
+    // ============================================================
+    private static SkySlotSet ResolveStaticSlotSetForRoom(Room room)
+    {
+        if (room?.updateList == null) return null;
+        for (int i = 0; i < room.updateList.Count; i++)
+        {
+            if (room.updateList[i] is BackgroundScene scene && _staticSlots.TryGetValue(scene, out var set))
+                return set;
+        }
+        return null;
+    }
+
+    private static List<BackgroundScene.Simple2DBackgroundIllustration> ResolveStaticSlotsForRoom(Room room)
+    {
+        return ResolveStaticSlotSetForRoom(room)?.blend;
+    }
+
+    // ============================================================
+    // APPLY SKY FOR STATE — SALAS ESTÁTICAS (4 slots, sin blend)
+    // Los alphas se escriben SOLO aquí y en la creación: nunca los
+    // toca el motor de blend (aislamiento por storage, sin flags).
+    // ============================================================
+    private static void ApplyStaticSkyForState(SkyType sky, int state, Room room)
+    {
+        var set = ResolveStaticSlotSetForRoom(room);
+        if (set?.blend == null || set.blend.Count < 4) return;
+        if (state < 1 || state > 4) return;
+
+        ViewType view = sky == SkyType.ACV ? ViewType.ACV :
+                        sky == SkyType.RTV ? ViewType.RTV :
+                        sky == SkyType.PSV ? ViewType.PSV :
+                        ViewType.ORV;
+        string fallback = sky == SkyType.ORV ? "otr_sky" : null;
+
+        InitStaticSlotImages(set.blend, room, view, state, fallback, room.game?.cameras?[0]);
+
+        if (sky == SkyType.PSV)
+            InitStaticPsvSlotImages(set, room, state, room.game?.cameras?[0]);
+    }
+
+    // ============================================================
+    // INICIAR/ACTUALIZAR IMÁGENES DE SLOTS ESTÁTICOS (4 estados)
+    // Asigna illustrationName por estado y alpha: solo el slot del
+    // estado activo queda en 1. Con cam: RefreshSlotSprite (swap
+    // + atlas); sin cam (ctor, pre-initiate): asignación directa.
+    // ============================================================
+    private static void InitStaticSlotImages(
+        List<BackgroundScene.Simple2DBackgroundIllustration> slots,
+        Room room, ViewType view, int activeState, string fallbackName, RoomCamera cam)
+    {
+        if (slots == null || slots.Count < 4 || room == null) return;
+
+        // Región de la sala primero: en warps el ctor corre antes que nuestro
+        // bloque de región, así que Active aún apunta a la región anterior y
+        // los alias de la vista equivocada darían null -> RC_Transparent.
+        string regionCode = room.world?.region?.name?.ToUpperInvariant();
+        BlendSettings settings = string.IsNullOrEmpty(regionCode) ? null
+            : BlendSettingsLoader.GetForRegion(regionCode);
+        if (settings == null)
+            settings = BlendSettingsLoader.Active;
+
+        for (int state = 1; state <= 4; state++)
+        {
+            string file = settings?.GetBkgFileForState(state, view);
+            string imgName = !string.IsNullOrEmpty(file)
+                ? Path.GetFileNameWithoutExtension(file)
+                : fallbackName;
+
+            int idx = state - 1;
+            if (!string.IsNullOrEmpty(imgName) && slots[idx].illustrationName != imgName)
+            {
+                if (cam != null)
+                    RefreshSlotSprite(slots[idx], imgName, cam);
+                else
+                    slots[idx].illustrationName = imgName;
+            }
+            slots[idx].alpha = (state == activeState) ? 1f : 0f;
+        }
+    }
+
+    // ============================================================
+    // INICIAR/ACTUALIZAR IMÁGENES DE FOG/SUN ESTÁTICOS (PSV)
+    // Mismo patrón que InitStaticSlotImages: alias bkgNN_fog /
+    // bkgNN_sun por estado + alpha 0/1. Fog va en depth 195 (parallax
+    // del HorizonFog vanilla); sun queda en depth 22.5 (CreateSunSlots)
+    // con shader BackgroundAdditive forzado por OnAboveCloudsViewUpdate.
+    // ============================================================
+    private static void InitStaticPsvSlotImages(
+        SkySlotSet set, Room room, int activeState, RoomCamera cam)
+    {
+        if (set == null || room == null) return;
+
+        // Misma prioridad que InitStaticSlotImages: región de la sala primero.
+        string regionCode = room.world?.region?.name?.ToUpperInvariant();
+        BlendSettings settings = string.IsNullOrEmpty(regionCode) ? null
+            : BlendSettingsLoader.GetForRegion(regionCode);
+        if (settings == null)
+            settings = BlendSettingsLoader.Active;
+
+        InitStaticPsvGroup(set.fog, settings, activeState, cam, true);
+        InitStaticPsvGroup(set.sun, settings, activeState, cam, false);
+    }
+
+    private static void InitStaticPsvGroup(
+        List<BackgroundScene.Simple2DBackgroundIllustration> slots,
+        BlendSettings settings, int activeState, RoomCamera cam, bool isFog)
+    {
+        if (slots == null || slots.Count < 4) return;
+
+        for (int state = 1; state <= 4; state++)
+        {
+            string file = isFog ? settings?.GetBkgFogForState(state)
+                                : settings?.GetBkgSunForState(state);
+            string imgName = !string.IsNullOrEmpty(file)
+                ? Path.GetFileNameWithoutExtension(file)
+                : null;
+
+            int idx = state - 1;
+            if (isFog) slots[idx].depth = 195f;
+
+            if (!string.IsNullOrEmpty(imgName) && slots[idx].illustrationName != imgName)
+            {
+                if (cam != null)
+                    RefreshSlotSprite(slots[idx], imgName, cam);
+                else
+                    slots[idx].illustrationName = imgName;
+            }
+            slots[idx].alpha = (state == activeState) ? 1f : 0f;
+        }
     }
 
     // ============================================================
@@ -569,14 +704,44 @@ public static partial class SettingsBlendController
     }
 
     // ============================================================
+    // RESOLVER FOG ESTÁTICO PSV — escena ACV + slots de fog de la sala
+    // ============================================================
+    private static bool TryResolveStaticFog(Room room, out AboveCloudsView scene, out List<BackgroundScene.Simple2DBackgroundIllustration> fogSlots)
+    {
+        scene = null;
+        fogSlots = null;
+        if (room?.updateList == null) return false;
+
+        for (int i = 0; i < room.updateList.Count; i++)
+        {
+            if (room.updateList[i] is AboveCloudsView acv &&
+                _staticSlots.TryGetValue(acv, out var set) &&
+                set.fog != null && set.fog.Count > 0)
+            {
+                scene = acv;
+                fogSlots = set.fog;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ============================================================
     // SYNC FOG POSITION - Copia la posición X e Y del fog vanilla al slot RC
     // ============================================================
     private static void SyncFogSlotPosition(RoomCamera cam)
     {
-        if (_psvScene == null)
+        SyncFogSlotPosition(cam, _psvScene, GetFogSlotsForSky());
+    }
+
+    // Variante parametrizada: la usa el modo estático (fog per-scene en
+    // _staticSlots; _psvScene solo existe en salas blend porque
+    // CameraHooks.ChangeRoom lo anula al entrar en sala no-blend).
+    private static void SyncFogSlotPosition(RoomCamera cam, AboveCloudsView scene, List<BackgroundScene.Simple2DBackgroundIllustration> fogSlots)
+    {
+        if (scene == null)
             return;
 
-        var fogSlots = GetFogSlotsForSky();
         if (fogSlots == null || fogSlots.Count == 0)
             return;
 
@@ -585,7 +750,7 @@ public static partial class SettingsBlendController
 
         if (_cachedVanillaFog == null)
         {
-            foreach (var elem in _psvScene.elements)
+            foreach (var elem in scene.elements)
             {
                 if (elem is AboveCloudsView.HorizonFog fog)
                 {
@@ -643,11 +808,9 @@ public static partial class SettingsBlendController
         _psvScene = null;
         _orvScene = null;
 
-        _rcSlotsStaticACV = null;
-        _rcSlotsStaticRTV = null;
-        _rcSlotsStaticPSV = null;
-        _rcSlotsStaticORV = null;
-
+        // _staticSlots NO se limpia aquí: este clear corría tras el ctor de la
+        // sala inicial (OverWorld.Update) y mataba su registro → bkg estático
+        // no respondía. Limpieza: On.BackgroundScene.Destroy + ModResetter.
         _forceSkyRefresh = false;
         ClearCachedVanillaFog();
     }
@@ -665,38 +828,46 @@ public static partial class SettingsBlendController
     {
         orig(self, sLeaser, rCam, timeStacker, camPos);
 
+        // Blend: slots de _activeSlots vía _psvScene. Estático: se resuelve
+        // por la escena del propio fog vanilla (self.scene) → _staticSlots.
+        List<BackgroundScene.Simple2DBackgroundIllustration> fogSlots = null;
         if (_psvScene != null)
         {
-            var fogSlots = GetFogSlotsForSky();
-            if (fogSlots != null && fogSlots.Count > 0)
+            fogSlots = GetFogSlotsForSky();
+        }
+        else if (self.scene != null && _staticSlots.TryGetValue(self.scene, out var staticFogSet))
+        {
+            fogSlots = staticFogSet.fog;
+        }
+
+        if (fogSlots != null && fogSlots.Count > 0)
+        {
+            const float Y_OFFSET = 68f;
+            const float X_OFFSET = 0f;
+
+            if (sLeaser.sprites != null && sLeaser.sprites.Length > 0)
             {
-                const float Y_OFFSET = 68f;
-                const float X_OFFSET = 0f;
+                float vanillaX = sLeaser.sprites[0].x;
+                float vanillaY = sLeaser.sprites[0].y;
+                _cachedVanillaFog = self;
 
-                if (sLeaser.sprites != null && sLeaser.sprites.Length > 0)
+                for (int j = 0; j < fogSlots.Count; j++)
                 {
-                    float vanillaX = sLeaser.sprites[0].x;
-                    float vanillaY = sLeaser.sprites[0].y;
-                    _cachedVanillaFog = self;
+                    var slot = fogSlots[j];
+                    if (slot.alpha <= 0.01f)
+                        continue;
 
-                    for (int j = 0; j < fogSlots.Count; j++)
+                    for (int k = 0; k < rCam.spriteLeasers.Count; k++)
                     {
-                        var slot = fogSlots[j];
-                        if (slot.alpha <= 0.01f)
-                            continue;
-
-                        for (int k = 0; k < rCam.spriteLeasers.Count; k++)
+                        if (rCam.spriteLeasers[k].drawableObject == slot)
                         {
-                            if (rCam.spriteLeasers[k].drawableObject == slot)
+                            var sprites = rCam.spriteLeasers[k].sprites;
+                            if (sprites != null && sprites.Length > 0)
                             {
-                                var sprites = rCam.spriteLeasers[k].sprites;
-                                if (sprites != null && sprites.Length > 0)
-                                {
-                                    sprites[0].x = vanillaX + X_OFFSET;
-                                    sprites[0].y = vanillaY + Y_OFFSET;
-                                }
-                                break;
+                                sprites[0].x = vanillaX + X_OFFSET;
+                                sprites[0].y = vanillaY + Y_OFFSET;
                             }
+                            break;
                         }
                     }
                 }

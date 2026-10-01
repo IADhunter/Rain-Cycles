@@ -119,8 +119,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
             new Vector2(HEX_FIELD_X, HEX_FIELD_Y), HEX_FIELD_WIDTH,
             new Vector2(HSV_SLIDER_X, HSV_SLIDER_Y));
         _colorEditor.OnColorChanged = OnColorEditorChanged;
-        _colorEditor.OnDragEnd = OnColorDragEnd;
-        _colorEditor.OnCommit = OnTintCommitted;
         subNodes.Add(_colorEditor);
 
         _freeColorPicker = new FreeColorPicker(owner, "RC_FreeColorPicker", this,
@@ -169,7 +167,13 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         }
         else
         {
-            LoadCurrentColors();
+            // Refrescar AMBOS canales desde el archivo del estado nuevo: si solo
+            // se carga el activo, ApplyMemoryTintsToShaders vuelca el canal
+            // inactivo con el valor del estado anterior (fix 09/2026: con atmos
+            // activo, multi no seguía al cambio de estado; atmos sobrevivía solo
+            // porque el lock de static redirige su global).
+            LoadChannelFromSettings(0, updateCurrent: _activeTint == 0);
+            LoadChannelFromSettings(1, updateCurrent: _activeTint == 1);
             ApplyMemoryTintsToShaders();
         }
 
@@ -209,8 +213,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         UpdateViewTypeLabel();
         
         ParentPanel.CurrentRoom.roomSettings.SetViewType(_currentViewType);
-        if (IsStateFile())
-            ParentPanel.CurrentRoom.roomSettings.Save();
         var snap = SettingsSnapshot.FromFile(ParentPanel.CurrentRoom.roomSettings.filePath);
         SettingsBlendController.SetActiveSnapshot(snap);
         ParentPanel.ApplyTintsFromSnapshot(snap);
@@ -311,12 +313,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
             UpdateUIFromColor();
         }
 
-        // Persistir YA al archivo del estado: si no, cualquier Load posterior
-        // (cambio de estado) pierde los tintes y la UI queda en blanco aunque
-        // los shaders conserven el color (fix 08/2026).
-        if (IsStateFile())
-            roomSettings.Save();
-
         var snap = SettingsSnapshot.FromFile(roomSettings.filePath);
         SettingsBlendController.SetActiveSnapshot(snap);
         ParentPanel.ApplyTintsFromSnapshot(snap);
@@ -373,6 +369,12 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
                 _memAtmosphere = _currentColor;
                 _hasMemAtmosphere = true;
                 roomSettings.SetTintAtmosphere(_currentColor);
+
+                // En Static el lock debe actualizarse ANTES de escribir: si no,
+                // OnSetGlobalVector redirige el global al lock viejo y FORCE-FIELD
+                // revierte el campo de AboveCloudsView cada frame (edición "muda").
+                TintManager.SetStaticLock(_currentColor);
+
                 Shader.SetGlobalVector(RainWorld.ShadPropAboveCloudsAtmosphereColor, 
                     new Vector4(_currentColor.r, _currentColor.g, _currentColor.b, 1f));
                 
@@ -394,43 +396,11 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
     // ============================================================
     // PERSISTENCIA DE TINTES AL ARCHIVO DEL ESTADO
     // ============================================================
-    // Los tintes editados viven en ext data (RoomSettings) y en los shader
-    // globals, pero el motor (snapshots, blend, ApplyTintsFromSnapshot) lee
-    // del ARCHIVO. Sin Save(), cualquier roomSettings.Load() posterior
-    // (cambio de estado, re-entrada a sala) descarta los tintes y la UI
-    // muestra blanco mientras los shaders conservan el último color.
-    // Save() dispara OnSave -> PreserveExtendedData (escribe la linea
-    // RainCycles) + invalidacion de cache + reaplicacion fresca.
-    //
-    // Solo se persiste si el archivo es un state file real de RainCycles
-    // (carpeta .../RainCycles). En una sala sin estados creados el filePath
-    // apunta al template vanilla del juego: guardar ahi lo corromperia.
-    private bool IsStateFile()
-    {
-        string fp = ParentPanel.CurrentRoom?.roomSettings?.filePath;
-        if (string.IsNullOrEmpty(fp)) return false;
-        string dir = System.IO.Path.GetDirectoryName(fp);
-        return dir != null && dir.EndsWith("raincycles", System.StringComparison.OrdinalIgnoreCase);
-    }
-
-    private void SaveTintsToFile()
-    {
-        if (!BlendClock.EditMode) return;
-        if (!_tintEnabled) return;
-        if (!IsStateFile()) return;
-
-        ParentPanel.CurrentRoom.roomSettings.Save();
-    }
-
-    private void OnColorDragEnd()
-    {
-        SaveTintsToFile();
-    }
-
-    private void OnTintCommitted()
-    {
-        SaveTintsToFile();
-    }
+    // Sin auto-save: los tintes editados viven en ext data (RoomSettings) y en
+    // los shader globals. Para persistirlos se usa el botón Save de las
+    // DevTools vanilla (RoomSettings.Save() -> OnSave -> PreserveExtendedData
+    // escribe la línea RainCycles). Si no se guarda, cualquier Load posterior
+    // (cambio de estado, re-entrada a sala) revierte al último guardado.
 
     private void LoadCurrentColors()
     {
@@ -451,14 +421,25 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
             return;
         }
         
-        switch (_activeTint)
+        LoadChannelFromSettings(_activeTint, updateCurrent: true);
+    }
+
+    // Carga de un canal desde la ext-data del archivo (o mem de sesión como
+    // fallback) refrescando _mem*; updateCurrent alimenta además _currentColor,
+    // que solo debe moverse para el canal activo.
+    private void LoadChannelFromSettings(int tint, bool updateCurrent)
+    {
+        var roomSettings = ParentPanel.CurrentRoom?.roomSettings;
+        if (roomSettings == null) return;
+
+        switch (tint)
         {
             case 0:
                 if (roomSettings.GetTintMultiply().HasValue)
                 {
-                    _currentColor = roomSettings.GetTintMultiply().Value;
-                    _memMultiply = _currentColor;
+                    _memMultiply = roomSettings.GetTintMultiply().Value;
                     _hasMemMultiply = true;
+                    if (updateCurrent) _currentColor = _memMultiply;
                 }
                 else if (_hasMemMultiply)
                 {
@@ -466,31 +447,31 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
                     // conserva el color editado: restauarlo en vez de mostrar blanco,
                     // y resincronizarlo para que el toggle/save no lo descarte
                     // (fix 08/2026: indicadores en blanco al volver a un canal).
-                    _currentColor = _memMultiply;
                     roomSettings.SetTintMultiply(_memMultiply);
+                    if (updateCurrent) _currentColor = _memMultiply;
                 }
                 else
                 {
-                    _currentColor = Color.white;
                     _hasMemMultiply = false;
+                    if (updateCurrent) _currentColor = Color.white;
                 }
                 break;
             case 1:
                 if (roomSettings.GetTintAtmosphere().HasValue)
                 {
-                    _currentColor = roomSettings.GetTintAtmosphere().Value;
-                    _memAtmosphere = _currentColor;
+                    _memAtmosphere = roomSettings.GetTintAtmosphere().Value;
                     _hasMemAtmosphere = true;
+                    if (updateCurrent) _currentColor = _memAtmosphere;
                 }
                 else if (_hasMemAtmosphere)
                 {
-                    _currentColor = _memAtmosphere;
                     roomSettings.SetTintAtmosphere(_memAtmosphere);
+                    if (updateCurrent) _currentColor = _memAtmosphere;
                 }
                 else
                 {
-                    _currentColor = Color.white;
                     _hasMemAtmosphere = false;
+                    if (updateCurrent) _currentColor = Color.white;
                 }
                 break;
         }
@@ -527,7 +508,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         _colorEditor.SetColor(_currentColor);
         UpdateColorPreview();
         SaveCurrentColor();
-        SaveTintsToFile();
     }
 
     private void OnColorPickerClicked()
@@ -550,7 +530,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
             _freeColorPicker.SetColor(_currentColor);
             UpdateColorPreview();
             SaveCurrentColor();
-            SaveTintsToFile();
         });
     }
 
