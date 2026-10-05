@@ -151,6 +151,10 @@ public partial class SettingsSnapshot
                             if (hexes.Length >= 2) snap.TintAtmosphere = ParseHexColor(hexes[1]);
                         }
                         break;
+                    case "Mod":
+                        if (snap.HasView)
+                            snap.Bkg = BkgTag.Parse(value);
+                        break;
                 }
             }
             pos = end + 1;

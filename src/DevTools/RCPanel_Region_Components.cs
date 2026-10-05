@@ -13,9 +13,6 @@ namespace FilesSetting;
 // Port autocontenido del StringControl de RegionKit (que a su vez
 // usa ManagedStringControl de POM). Diferencias vs el original:
 //  - Sin signals: usa delegados OnSubmit/OnCancel/OnValueChanged
-//  - Escape cancela (RK no lo maneja)
-//  - Clipboard Ctrl+C/V preservado de nuestro campo anterior
-// Render: hereda de DevUILabel (anchor 0,0 + MoveLabel) -> texto nitido
 // ================================================================
 
 public class RCStringControl : DevUILabel
@@ -28,14 +25,10 @@ public class RCStringControl : DevUILabel
     /// <summary>Ultimo valor valido (el que se restaura al cancelar/commitar).</summary>
     protected string actualValue;
 
-    /// <summary>Delegado de validacion en vivo. True/false colorea verde/rojo.</summary>
     public Func<string, bool> isTextValid;
 
-    /// <summary>Disparado al hacer commit (Enter / click-fuera), con el ultimo valor valido.</summary>
     public Action<string> OnSubmit;
-    /// <summary>Disparado al cancelar con Escape (el texto se revierte).</summary>
     public Action OnCancel;
-    /// <summary>Disparado en vivo cuando el texto pasa a ser valido (newValue, oldValue).</summary>
     public Action<string, string> OnValueChanged;
 
     public RCStringControl(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos, float width, string text, Func<string, bool> validate)
@@ -68,7 +61,6 @@ public class RCStringControl : DevUILabel
             }
             else if (Active == this)
             {
-                // click sobre el mismo control -> commit y soltar foco
                 TrySetValue(Text, true);
                 Active = null;
                 SetLabelColor(Color.black);
@@ -83,7 +75,6 @@ public class RCStringControl : DevUILabel
 
         if (Active == this)
         {
-            // Clipboard (Ctrl+C copia, Ctrl+V reemplaza y valida en vivo)
             if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
             {
                 if (Input.GetKeyDown(KeyCode.C))
@@ -148,39 +139,18 @@ public class RCStringControl : DevUILabel
             fLabels[0].color = c;
     }
 
-    /// <summary>
-    /// Decide si un caracter puede anadirse al texto actual. El default
-    /// (fiel a RK/POM) permite todo y la validacion se muestra en rojo;
-    /// las subclases pueden restringirlo para bloquear entradas invalidas.
-    /// </summary>
     protected virtual bool ShouldAppendChar(char c, string newText) => true;
 
-    /// <summary>
-    /// Transforma el caracter antes de anadirse al texto. Default: sin
-    /// cambios. Las subclases pueden normalizarlo (ej. mayusculas en hex).
-    /// </summary>
     protected virtual char SanitizeChar(char c) => c;
 
-    /// <summary>
-    /// Decide si el control puede tomar el foco. Default: siempre.
-    /// Las subclases pueden restringirlo (ej. solo en EditMode).
-    /// </summary>
     protected virtual bool CanTakeFocus() => true;
 
-    /// <summary>
-    /// Aplica un pegado de portapapeles. Default (RK/POM): reemplaza el
-    /// texto y lo valida (rojo si invalido). Las subclases pueden sanearlo.
-    /// </summary>
     protected virtual void PasteText(string clipboard)
     {
         Text = clipboard;
         TrySetValue(Text, false);
     }
 
-    /// <summary>
-    /// Decide si puede borrarse el ultimo caracter. Default: siempre.
-    /// Las subclases pueden anclar prefijos (ej. '#' en el hex).
-    /// </summary>
     protected virtual bool CanDeleteChar() => true;
 
     /// <summary>
@@ -267,7 +237,6 @@ public class EditableFloatField : RCStringControl
 
     public float Value => _value;
 
-    /// <summary>Disparado al commitar con un valor parseable (ya clampado).</summary>
     public new Action<float> OnSubmit;
 
     public EditableFloatField(DevUI owner, string IDstring, DevUINode parentNode, Vector2 pos, float width, float defaultValue, float min = 0f, float max = 999f)
@@ -285,10 +254,6 @@ public class EditableFloatField : RCStringControl
 
     protected override bool CanTakeFocus() => BlendClock.EditMode;
 
-    /// <summary>
-    /// Solo digitos y un punto decimal; el resultado debe seguir siendo
-    /// un float parseable (o vacio). Bloquea letras, signos y puntos dobles.
-    /// </summary>
     protected override bool ShouldAppendChar(char c, string newText)
     {
         if (c != '.' && (c < '0' || c > '9'))
@@ -311,7 +276,6 @@ public class EditableFloatField : RCStringControl
             }
             else
             {
-                // texto vacio/invalido: revertir al ultimo valor
                 Text = Format(_value);
                 actualValue = Format(_value);
             }
@@ -333,13 +297,13 @@ public class ModSelectPanel : Panel, IDevUISignals
 {
     private const float ITEM_HEIGHT = 20f;
     private const float PANEL_WIDTH = 200f;
-    private const float PANEL_HEIGHT = 150f;
+    private const float PANEL_HEIGHT = 215f;
     
     private ModInfo[] _mods;
     private string _selectedModName;
     private int _scrollOffset;
     private int _visibleItems;
-    private RCPanel_RegionPage _parentPage;
+    private IDevUISignals _signalTarget;
     
     private struct ModInfo
     {
@@ -348,10 +312,10 @@ public class ModSelectPanel : Panel, IDevUISignals
         public string ModId;
     }
     
-    public ModSelectPanel(DevUI owner, string id, RCPanel_RegionPage parent, Vector2 pos, string[] modPaths, string selectedModName)
+    public ModSelectPanel(DevUI owner, string id, DevUINode parent, Vector2 pos, string[] modPaths, string selectedModName)
         : base(owner, id, parent, pos, new Vector2(PANEL_WIDTH, PANEL_HEIGHT), "Select Mod")
     {
-        _parentPage = parent;
+        _signalTarget = parent as IDevUISignals;
         _selectedModName = selectedModName;
         _visibleItems = (int)((PANEL_HEIGHT - 40f) / ITEM_HEIGHT);
         _scrollOffset = 0;
@@ -491,7 +455,7 @@ public class ModSelectPanel : Panel, IDevUISignals
         
         if (sender.IDstring == "RC_ModClear")
         {
-            _parentPage.Signal(DevUISignalType.ButtonClick, sender, "__CLEAR_MOD__");
+            _signalTarget?.Signal(DevUISignalType.ButtonClick, sender, "__CLEAR_MOD__");
             return;
         }
         
@@ -500,7 +464,7 @@ public class ModSelectPanel : Panel, IDevUISignals
             int idx = int.Parse(sender.IDstring.Substring("RC_ModSelect_".Length));
             if (idx >= 0 && idx < _mods.Length)
             {
-                _parentPage.Signal(DevUISignalType.ButtonClick, sender, _mods[idx].DisplayName);
+                _signalTarget?.Signal(DevUISignalType.ButtonClick, sender, _mods[idx].DisplayName);
             }
         }
     }
@@ -525,20 +489,20 @@ public class ModSelectPanel : Panel, IDevUISignals
 public class ImageSelectPanel : Panel, IDevUISignals
 {
     private const float ITEM_HEIGHT = 20f;
-    private const float PANEL_WIDTH = 250f;
-    private const float PANEL_HEIGHT = 200f;
+    private const float PANEL_WIDTH = 200f;
+    private const float PANEL_HEIGHT = 215f;
     
     private string[] _images;
     private string _selectedImage;
     private int _scrollOffset;
     private int _visibleItems;
-    private RCPanel_RegionPage _parentPage;
+    private IDevUISignals _signalTarget;
     private int _targetSlot;
     
-    public ImageSelectPanel(DevUI owner, string id, RCPanel_RegionPage parent, Vector2 pos, string[] images, string selectedImage, int targetSlot = -1)
+    public ImageSelectPanel(DevUI owner, string id, DevUINode parent, Vector2 pos, string[] images, string selectedImage, int targetSlot = -1)
         : base(owner, id, parent, pos, new Vector2(PANEL_WIDTH, PANEL_HEIGHT), "Select Image")
     {
-        _parentPage = parent;
+        _signalTarget = parent as IDevUISignals;
         _images = images;
         _selectedImage = selectedImage;
         _targetSlot = targetSlot;
@@ -623,9 +587,9 @@ public class ImageSelectPanel : Panel, IDevUISignals
         if (sender.IDstring == "RC_ImageNone")
         {
             if (_targetSlot >= 0)
-                _parentPage.Signal(DevUISignalType.ButtonClick, sender, $"__NONE__:{_targetSlot}");
+                _signalTarget?.Signal(DevUISignalType.ButtonClick, sender, $"__NONE__:{_targetSlot}");
             else
-                _parentPage.Signal(DevUISignalType.ButtonClick, sender, "");
+                _signalTarget?.Signal(DevUISignalType.ButtonClick, sender, "");
             return;
         }
         
@@ -634,9 +598,9 @@ public class ImageSelectPanel : Panel, IDevUISignals
             int idx = int.Parse(sender.IDstring.Substring("RC_ImageSelect_".Length));
             string selectedImage = _images[idx];
             if (_targetSlot >= 0)
-                _parentPage.Signal(DevUISignalType.ButtonClick, sender, $"{selectedImage}:{_targetSlot}");
+                _signalTarget?.Signal(DevUISignalType.ButtonClick, sender, $"{selectedImage}:{_targetSlot}");
             else
-                _parentPage.Signal(DevUISignalType.ButtonClick, sender, selectedImage);
+                _signalTarget?.Signal(DevUISignalType.ButtonClick, sender, selectedImage);
         }
     }
     

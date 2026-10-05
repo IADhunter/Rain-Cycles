@@ -124,26 +124,17 @@ public static partial class SettingsBlendController
 
     // ============================================================
     // ACTUALIZAR SLOTS RC - Asigna imágenes a los 4 slots
+    // bkg por sala×estado vía BkgResolver (tag <Mod:...> de cada
+    // settings_N.txt); sin dependencia del blend settings de región.
     // ============================================================
     private static void UpdateRcSlots(SkyType sky, int stateA, int stateB, RoomCamera forcedCam = null, Room targetRoom = null)
     {
         var slots = GetSlotsForSky(sky);
         if (slots == null || slots.Count < 4) return;
 
-        string regionCode = null;
-        if (targetRoom != null)
-            regionCode = targetRoom.world?.region?.name?.ToUpperInvariant();
-        else if (_room != null)
-            regionCode = _room.world?.region?.name?.ToUpperInvariant();
-        
-        BlendSettings effectiveSettings = BlendSettingsLoader.Active;
-        if (effectiveSettings == null && !string.IsNullOrEmpty(regionCode))
-            effectiveSettings = BlendSettingsLoader.GetForRegion(regionCode);
-        
-        if (effectiveSettings == null)
-        {
-            return;
-        }
+        var room = targetRoom ?? _room;
+        string roomName = room?.abstractRoom?.name;
+        if (string.IsNullOrEmpty(roomName)) return;
 
         var cam = forcedCam ?? _room?.game?.cameras?[0];
         if (cam == null && targetRoom != null)
@@ -154,20 +145,10 @@ public static partial class SettingsBlendController
             return;
         }
 
-        ViewType view = sky == SkyType.ACV ? ViewType.ACV :
-                        sky == SkyType.RTV ? ViewType.RTV :
-                        sky == SkyType.PSV ? ViewType.PSV : ViewType.ORV;
-
         for (int state = 1; state <= 4; state++)
         {
-            string file = effectiveSettings.GetBkgFileForState(state, view);
-            int slotIndex = state - 1;
-            
-            if (!string.IsNullOrEmpty(file) && slots[slotIndex].illustrationName != Path.GetFileNameWithoutExtension(file))
-            {
-                string imgName = Path.GetFileNameWithoutExtension(file);
-                RefreshSlotSprite(slots[slotIndex], imgName, cam);
-            }
+            var bkg = BkgResolver.Get(roomName, state);
+            ApplyBkgImage(slots[state - 1], bkg.Mod, bkg.Sky, null, cam);
         }
 
         bool isBlending = BlendClock.IsRunning && BlendClock.CurrentPhase == BlendClock.Phase.Blending;
@@ -177,7 +158,7 @@ public static partial class SettingsBlendController
 
         if (sky == SkyType.PSV)
         {
-            UpdatePsvSlots(stateA, stateB, cam);
+            UpdatePsvSlots(stateA, stateB, cam, roomName);
             ApplyPsvAlphas(t, isBlending, stateA, stateB);
         }
     }
@@ -259,24 +240,20 @@ public static partial class SettingsBlendController
 
     // ============================================================
     // ACTUALIZAR SLOTS PSV (fog y sun)
+    // Canales del tag <Mod:mod,sky,sun,fog> por sala×estado.
     // ============================================================
-    private static void UpdatePsvSlots(int stateA, int stateB, RoomCamera cam)
+    private static void UpdatePsvSlots(int stateA, int stateB, RoomCamera cam, string roomName)
     {
-        var settings = BlendSettingsLoader.Active;
-        if (settings == null) return;
+        if (string.IsNullOrEmpty(roomName)) return;
 
         var fogSlots = GetFogSlotsForSky();
         if (fogSlots != null && fogSlots.Count >= 4)
         {
             for (int state = 1; state <= 4; state++)
             {
-                string fog = settings.GetBkgFogForState(state);
-                int idx = state - 1;
-                if (!string.IsNullOrEmpty(fog) && fogSlots[idx].illustrationName != Path.GetFileNameWithoutExtension(fog))
-                {
-                    RefreshSlotSprite(fogSlots[idx], Path.GetFileNameWithoutExtension(fog), cam);
-                    fogSlots[idx].depth = 195f;
-                }
+                var bkg = BkgResolver.Get(roomName, state);
+                ApplyBkgImage(fogSlots[state - 1], bkg.Mod, bkg.Fog, null, cam);
+                fogSlots[state - 1].depth = 195f;
             }
         }
 
@@ -285,10 +262,8 @@ public static partial class SettingsBlendController
         {
             for (int state = 1; state <= 4; state++)
             {
-                string sun = settings.GetBkgSunForState(state);
-                int idx = state - 1;
-                if (!string.IsNullOrEmpty(sun) && sunSlots[idx].illustrationName != Path.GetFileNameWithoutExtension(sun))
-                    RefreshSlotSprite(sunSlots[idx], Path.GetFileNameWithoutExtension(sun), cam);
+                var bkg = BkgResolver.Get(roomName, state);
+                ApplyBkgImage(sunSlots[state - 1], bkg.Mod, bkg.Sun, null, cam);
             }
             ForceSunShader(sunSlots, cam);
         }
@@ -487,38 +462,22 @@ public static partial class SettingsBlendController
     {
         if (slots == null || slots.Count < 4 || room == null) return;
 
-        // Región de la sala primero: en warps el ctor corre antes que nuestro
-        // bloque de región, así que Active aún apunta a la región anterior y
-        // los alias de la vista equivocada darían null -> RC_Transparent.
-        string regionCode = room.world?.region?.name?.ToUpperInvariant();
-        BlendSettings settings = string.IsNullOrEmpty(regionCode) ? null
-            : BlendSettingsLoader.GetForRegion(regionCode);
-        if (settings == null)
-            settings = BlendSettingsLoader.Active;
+        string roomName = room.abstractRoom?.name;
+        if (string.IsNullOrEmpty(roomName)) return;
 
         for (int state = 1; state <= 4; state++)
         {
-            string file = settings?.GetBkgFileForState(state, view);
-            string imgName = !string.IsNullOrEmpty(file)
-                ? Path.GetFileNameWithoutExtension(file)
-                : fallbackName;
-
+            var bkg = BkgResolver.Get(roomName, state);
             int idx = state - 1;
-            if (!string.IsNullOrEmpty(imgName) && slots[idx].illustrationName != imgName)
-            {
-                if (cam != null)
-                    RefreshSlotSprite(slots[idx], imgName, cam);
-                else
-                    slots[idx].illustrationName = imgName;
-            }
+            ApplyBkgImage(slots[idx], bkg.Mod, bkg.Sky, fallbackName, cam);
             slots[idx].alpha = (state == activeState) ? 1f : 0f;
         }
     }
 
     // ============================================================
     // INICIAR/ACTUALIZAR IMÁGENES DE FOG/SUN ESTÁTICOS (PSV)
-    // Mismo patrón que InitStaticSlotImages: alias bkgNN_fog /
-    // bkgNN_sun por estado + alpha 0/1. Fog va en depth 195 (parallax
+    // Mismo patrón que InitStaticSlotImages: canales Fog/Sun del tag
+    // <Mod:...> por estado + alpha 0/1. Fog va en depth 195 (parallax
     // del HorizonFog vanilla); sun queda en depth 22.5 (CreateSunSlots)
     // con shader BackgroundAdditive forzado por OnAboveCloudsViewUpdate.
     // ============================================================
@@ -527,85 +486,112 @@ public static partial class SettingsBlendController
     {
         if (set == null || room == null) return;
 
-        // Misma prioridad que InitStaticSlotImages: región de la sala primero.
-        string regionCode = room.world?.region?.name?.ToUpperInvariant();
-        BlendSettings settings = string.IsNullOrEmpty(regionCode) ? null
-            : BlendSettingsLoader.GetForRegion(regionCode);
-        if (settings == null)
-            settings = BlendSettingsLoader.Active;
+        string roomName = room.abstractRoom?.name;
+        if (string.IsNullOrEmpty(roomName)) return;
 
-        InitStaticPsvGroup(set.fog, settings, activeState, cam, true);
-        InitStaticPsvGroup(set.sun, settings, activeState, cam, false);
+        InitStaticPsvGroup(set.fog, roomName, activeState, cam, true);
+        InitStaticPsvGroup(set.sun, roomName, activeState, cam, false);
     }
 
     private static void InitStaticPsvGroup(
         List<BackgroundScene.Simple2DBackgroundIllustration> slots,
-        BlendSettings settings, int activeState, RoomCamera cam, bool isFog)
+        string roomName, int activeState, RoomCamera cam, bool isFog)
     {
         if (slots == null || slots.Count < 4) return;
 
         for (int state = 1; state <= 4; state++)
         {
-            string file = isFog ? settings?.GetBkgFogForState(state)
-                                : settings?.GetBkgSunForState(state);
-            string imgName = !string.IsNullOrEmpty(file)
-                ? Path.GetFileNameWithoutExtension(file)
-                : null;
-
+            var bkg = BkgResolver.Get(roomName, state);
             int idx = state - 1;
             if (isFog) slots[idx].depth = 195f;
 
-            if (!string.IsNullOrEmpty(imgName) && slots[idx].illustrationName != imgName)
-            {
-                if (cam != null)
-                    RefreshSlotSprite(slots[idx], imgName, cam);
-                else
-                    slots[idx].illustrationName = imgName;
-            }
+            ApplyBkgImage(slots[idx], bkg.Mod, isFog ? bkg.Fog : bkg.Sun, null, cam);
             slots[idx].alpha = (state == activeState) ? 1f : 0f;
         }
     }
 
     // ============================================================
+    // BKG — helpers de aplicación por sala×estado
+    // ============================================================
+    // Nombre de atlas namespaced o null si no hay imagen válida.
+    private static string BkgAtlasOrNull(string mod, string file)
+    {
+        if (string.IsNullOrEmpty(mod) || string.IsNullOrEmpty(file)) return null;
+        return BkgResolver.AtlasName(mod, file);
+    }
+
+    // Garantiza que el atlas exista en Futile antes de usarlo como nombre
+    // de sprite (idempotente; sin tag/file solo valida el elemento actual).
+    private static bool EnsureBkgAtlas(string atlasName, string modName, string fileName)
+    {
+        if (string.IsNullOrEmpty(atlasName)) return false;
+        if (Futile.atlasManager.DoesContainElementWithName(atlasName)) return true;
+
+        if (string.IsNullOrEmpty(modName) || string.IsNullOrEmpty(fileName))
+            return false;
+
+        string path = ResolveIllustrationPath(modName, fileName);
+        if (path == null || !File.Exists(path))
+        {
+            RSPlugin.log.LogWarning($"[RC][SkyHelpers] IMAGE NOT FOUND \"{fileName}\" mod={modName} path={path ?? "null"}");
+            return false;
+        }
+
+        var tex = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+        AssetManager.SafeWWWLoadTexture(ref tex, "file:///" + path, true, true);
+        HeavyTexturesCache.LoadAndCacheAtlasFromTexture(atlasName, tex, false);
+        return Futile.atlasManager.DoesContainElementWithName(atlasName);
+    }
+
+    // Asigna la imagen del tag (o fallback / RC_Transparent) al slot.
+    // Con cam: swap de sprite vía RefreshSlotSprite. Sin cam (ctor, antes
+    // de InitiateSprites): solo el nombre, cargando el atlas igualmente
+    // para que la creación posterior del FSprite no falle.
+    private static void ApplyBkgImage(
+        BackgroundScene.Simple2DBackgroundIllustration slot,
+        string mod, string file, string fallbackName, RoomCamera cam)
+    {
+        string atlas = BkgAtlasOrNull(mod, file);
+        if (atlas == null)
+        {
+            mod = null;
+            file = null;
+            atlas = !string.IsNullOrEmpty(fallbackName) ? fallbackName : "RC_Transparent";
+        }
+        else
+        {
+            EnsureBkgAtlas(atlas, mod, file);
+        }
+
+        if (slot.illustrationName == atlas) return;
+
+        if (cam != null)
+            RefreshSlotSprite(slot, atlas, mod, file, cam);
+        else
+            slot.illustrationName = atlas;
+    }
+
+    // ============================================================
     // REFRESH SLOT SPRITE
+    // Carga el atlas con namespace rc_<mod>_<archivo> si falta y
+    // sustituye el FSprite del slot preservando pos, índice, alpha
+    // y shader (BackgroundAdditive para sun).
     // ============================================================
     private static bool RefreshSlotSprite(
         BackgroundScene.Simple2DBackgroundIllustration slot,
-        string newName, RoomCamera cam)
+        string atlasName, string modName, string fileName, RoomCamera cam)
     {
-        if (slot.illustrationName == newName) return true;
+        if (string.IsNullOrEmpty(atlasName)) return false;
+        if (slot.illustrationName == atlasName) return true;
 
         float currentAlpha = slot.alpha;
-        string oldName = slot.illustrationName;
-        
-        string finalName = newName;
+        string finalName = atlasName;
 
-        if (!Futile.atlasManager.DoesContainElementWithName(newName))
-        {
-            string modName = BlendSettingsLoader.ActiveModName;
-            if (!string.IsNullOrEmpty(modName))
-            {
-                string path = ResolveIllustrationPath(modName, newName);
-                if (path != null && File.Exists(path))
-                {
-                    var tex = new Texture2D(1, 1, TextureFormat.RGBA32, false);
-                    AssetManager.SafeWWWLoadTexture(ref tex, "file:///" + path, true, true);
-                    HeavyTexturesCache.LoadAndCacheAtlasFromTexture(newName, tex, false);
-                }
-                else
-                {
-                    RSPlugin.log.LogWarning($"[RC][SkyHelpers] RefreshSlotSprite: IMAGE NOT FOUND \"{newName}\" mod={modName} path={path ?? "null"}");
-                }
-            }
-            else
-            {
-                RSPlugin.log.LogWarning($"[RC][SkyHelpers] RefreshSlotSprite: NO MOD NAME for \"{newName}\"");
-            }
-        }
-        
+        EnsureBkgAtlas(finalName, modName, fileName);
+
         if (!Futile.atlasManager.DoesContainElementWithName(finalName))
         {
-            RSPlugin.log.LogWarning($"[RC][SkyHelpers] RefreshSlotSprite: FALLBACK to RC_Transparent for \"{newName}\" (atlas not loaded)");
+            RSPlugin.log.LogWarning($"[RC][SkyHelpers] RefreshSlotSprite: FALLBACK to RC_Transparent for \"{atlasName}\" (atlas not loaded)");
             finalName = "RC_Transparent";
         }
         

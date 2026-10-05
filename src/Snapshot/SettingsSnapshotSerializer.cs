@@ -102,6 +102,13 @@ public partial class SettingsSnapshot
             }
         }
 
+        if (HasBkg)
+        {
+            string bkgVal = BkgTag.Format(Bkg);
+            if (!string.IsNullOrEmpty(bkgVal))
+                parts.Add($"Mod:{bkgVal}");
+        }
+
         return $"RainCycles: <{string.Join("><", parts)}>";
     }
 

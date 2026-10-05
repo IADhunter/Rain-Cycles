@@ -1,9 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
-using DevInterface;
 using UnityEngine;
 using RainCycles.Settings;
 using RainCycles.Core;
@@ -21,20 +18,6 @@ public class RegionLogic
     public LoopTrigger CurrentTrigger { get; set; } = LoopTrigger.None;
     public float WaitTimeValue { get; set; } = 0f;
     public int SettingValue { get; set; } = 0;
-    public ViewType CurrentViewType { get; set; } = ViewType.ACV;
-    
-    public string[] BkgValues { get; private set; }
-    public string[] FogValues { get; private set; }
-    public string[] SunValues { get; private set; }
-    
-    public string SelectedModName { get; set; } = "";
-    public string SavedModName { get; set; } = "";
-    
-    private Dictionary<ViewType, string[]> _allBackgrounds = new Dictionary<ViewType, string[]>();
-    private Dictionary<ViewType, string[]> _allFogs = new Dictionary<ViewType, string[]>();
-    private Dictionary<ViewType, string[]> _allSuns = new Dictionary<ViewType, string[]>();
-    private readonly ViewType[] _viewTypes = { ViewType.ACV, ViewType.RTV, ViewType.PSV, ViewType.ORV };
-    private int _viewTypeIndex = 0;
     
     public float BlendValue
     {
@@ -45,15 +28,6 @@ public class RegionLogic
     public RegionLogic(RCPanel_RegionPage page)
     {
         _page = page;
-        BkgValues = new string[4];
-        FogValues = new string[4];
-        SunValues = new string[4];
-        for (int i = 0; i < 4; i++)
-        {
-            BkgValues[i] = "";
-            FogValues[i] = "";
-            SunValues[i] = "";
-        }
     }
 
     public System.Action OnSaved;
@@ -89,149 +63,8 @@ public class RegionLogic
     }
     
     // ============================================================
-    // OBTENER NOMBRE DEL MOD DESDE MODINFO.JSON
-    // ============================================================
-    private string GetModNameFromModInfo(string modPath)
-    {
-        try
-        {
-            string modInfoPath = Path.Combine(modPath, "modinfo.json");
-            if (!File.Exists(modInfoPath)) return null;
-
-            string json = File.ReadAllText(modInfoPath);
-            
-            int nameIndex = json.IndexOf("\"name\"", StringComparison.OrdinalIgnoreCase);
-            if (nameIndex < 0) return null;
-
-            int colonIndex = json.IndexOf(':', nameIndex);
-            if (colonIndex < 0) return null;
-
-            int startQuote = json.IndexOf('"', colonIndex + 1);
-            if (startQuote < 0) return null;
-
-            int endQuote = json.IndexOf('"', startQuote + 1);
-            if (endQuote < 0) return null;
-
-            return json.Substring(startQuote + 1, endQuote - startQuote - 1);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-    
-    // ============================================================
-    // RESOLVER RUTA DEL MOD POR NOMBRE
-    // ============================================================
-    private string ResolveModPathFromName(string modName)
-    {
-        if (string.IsNullOrEmpty(modName)) return null;
-        
-        foreach (var mod in ModManager.ActiveMods)
-        {
-            string realName = GetModNameFromModInfo(mod.path);
-            if (string.Equals(realName, modName, StringComparison.OrdinalIgnoreCase))
-            {
-                return mod.path;
-            }
-        }
-        return null;
-    }
-
-    // ============================================================
-    // VIEW DICTIONARY
-    // ============================================================
-    private void SaveCurrentViewToDictionary()
-    {
-        if (!_allBackgrounds.ContainsKey(CurrentViewType))
-            _allBackgrounds[CurrentViewType] = new string[4];
-        if (!_allFogs.ContainsKey(CurrentViewType))
-            _allFogs[CurrentViewType] = new string[4];
-        if (!_allSuns.ContainsKey(CurrentViewType))
-            _allSuns[CurrentViewType] = new string[4];
-        
-        for (int i = 0; i < 4; i++)
-        {
-            _allBackgrounds[CurrentViewType][i] = BkgValues[i] ?? "";
-            if (CurrentViewType == ViewType.PSV)
-            {
-                _allFogs[CurrentViewType][i] = FogValues[i] ?? "";
-                _allSuns[CurrentViewType][i] = SunValues[i] ?? "";
-            }
-        }
-    }
-    
-    private void LoadCurrentViewFromDictionary()
-    {
-        if (_allBackgrounds.ContainsKey(CurrentViewType))
-        {
-            var values = _allBackgrounds[CurrentViewType];
-            for (int i = 0; i < 4; i++)
-                BkgValues[i] = values[i] ?? "";
-        }
-        else
-        {
-            for (int i = 0; i < 4; i++)
-                BkgValues[i] = "";
-        }
-        
-        if (CurrentViewType == ViewType.PSV)
-        {
-            if (_allFogs.ContainsKey(CurrentViewType))
-            {
-                var fogValues = _allFogs[CurrentViewType];
-                for (int i = 0; i < 4; i++)
-                    FogValues[i] = fogValues[i] ?? "";
-            }
-            else
-            {
-                for (int i = 0; i < 4; i++)
-                    FogValues[i] = "";
-            }
-            
-            if (_allSuns.ContainsKey(CurrentViewType))
-            {
-                var sunValues = _allSuns[CurrentViewType];
-                for (int i = 0; i < 4; i++)
-                    SunValues[i] = sunValues[i] ?? "";
-            }
-            else
-            {
-                for (int i = 0; i < 4; i++)
-                    SunValues[i] = "";
-            }
-        }
-    }
-    
-    public void ClearAllBackgrounds()
-    {
-        _allBackgrounds.Clear();
-        _allFogs.Clear();
-        _allSuns.Clear();
-        for (int i = 0; i < 4; i++)
-        {
-            BkgValues[i] = "";
-            FogValues[i] = "";
-            SunValues[i] = "";
-        }
-    }
-
-    // ============================================================
     // PUBLIC API
     // ============================================================
-    public void CycleViewType(int delta)
-    {
-        SaveCurrentViewToDictionary();
-        SaveToBlendSettings();
-        
-        _viewTypeIndex += delta;
-        if (_viewTypeIndex < 0) _viewTypeIndex = _viewTypes.Length - 1;
-        if (_viewTypeIndex >= _viewTypes.Length) _viewTypeIndex = 0;
-        CurrentViewType = _viewTypes[_viewTypeIndex];
-        
-        LoadCurrentViewFromDictionary();
-    }
-    
     private static readonly BlendMode[] _modes = { BlendMode.Loop, BlendMode.Cycle, BlendMode.EndCycle };
     // En arena solo Loop y Cycle son válidos (EndCycle se fuerza a Loop en runtime).
     private static readonly BlendMode[] _arenaModes = { BlendMode.Loop, BlendMode.Cycle };
@@ -302,11 +135,6 @@ public class RegionLogic
         };
     }
 
-    public void LoadImagesForCurrentView()
-    {
-        LoadCurrentViewFromDictionary();
-    }
-    
     // ============================================================
     // LOAD FROM FILE
     // ============================================================
@@ -321,27 +149,10 @@ public class RegionLogic
         
         string content = File.ReadAllText(path, Encoding.UTF8);
         
-        for (int i = 0; i < 4; i++)
-        {
-            BkgValues[i] = "";
-            FogValues[i] = "";
-            SunValues[i] = "";
-        }
-        _allBackgrounds.Clear();
-        _allFogs.Clear();
-        _allSuns.Clear();
-        
-        ViewType currentView = ViewType.None;
-        
         foreach (string line in content.Split('\n'))
         {
             string trimmed = line.Trim();
             if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#")) continue;
-            
-            if (trimmed == "Acv") { currentView = ViewType.ACV; continue; }
-            if (trimmed == "Rtv") { currentView = ViewType.RTV; continue; }
-            if (trimmed == "Psv") { currentView = ViewType.PSV; continue; }
-            if (trimmed == "Orv") { currentView = ViewType.ORV; continue; }
             
             int sep = trimmed.IndexOf(':');
             if (sep > 0)
@@ -380,52 +191,10 @@ public class RegionLogic
                     case "setting":
                         if (int.TryParse(val, out int set)) SettingValue = set;
                         break;
-                    case "mod":
-                        SelectedModName = val;
-                        SavedModName = val;
-                        break;
-                    default:
-                        if (key.StartsWith("bkg") && currentView != ViewType.None)
-                        {
-                            int state = ParseStateFromKey(key);
-                            if (state >= 1 && state <= 4)
-                            {
-                                if (val.StartsWith("<") && val.EndsWith(">"))
-                                {
-                                    string inner = val.Substring(1, val.Length - 2);
-                                    string[] parts = inner.Split(new[] { "><" }, StringSplitOptions.None);
-                                    
-                                    if (currentView == ViewType.PSV)
-                                    {
-                                        if (!_allBackgrounds.ContainsKey(ViewType.PSV))
-                                            _allBackgrounds[ViewType.PSV] = new string[4];
-                                        if (!_allFogs.ContainsKey(ViewType.PSV))
-                                            _allFogs[ViewType.PSV] = new string[4];
-                                        if (!_allSuns.ContainsKey(ViewType.PSV))
-                                            _allSuns[ViewType.PSV] = new string[4];
-                                        
-                                        if (parts.Length >= 1) _allBackgrounds[ViewType.PSV][state - 1] = StripExt(parts[0]);
-                                        if (parts.Length >= 2) _allFogs[ViewType.PSV][state - 1] = StripExt(parts[1]);
-                                        if (parts.Length >= 3) _allSuns[ViewType.PSV][state - 1] = StripExt(parts[2]);
-                                    }
-                                    else
-                                    {
-                                        if (!_allBackgrounds.ContainsKey(currentView))
-                                            _allBackgrounds[currentView] = new string[4];
-                                        if (parts.Length >= 1) _allBackgrounds[currentView][state - 1] = StripExt(parts[0]);
-                                    }
-                                }
-                            }
-                        }
-                        break;
                 }
             }
         }
         
-        CurrentViewType = DetermineCurrentViewType();
-        _viewTypeIndex = Array.IndexOf(_viewTypes, CurrentViewType);
-        if (_viewTypeIndex < 0) _viewTypeIndex = 0;
-
         // Coerciones arena (mismo criterio que ArenaBlendController.LoadBlendSettings):
         // EndCycle -> Loop, triggers -> none, Setting -> 0.
         if (IsArena)
@@ -448,8 +217,6 @@ public class RegionLogic
         
         _triggerIndex = Array.IndexOf(Triggers, CurrentTrigger);
         if (_triggerIndex < 0) _triggerIndex = 0;
-        
-        LoadCurrentViewFromDictionary();
     }
     
     private BlendMode ParseModeFromString(string val)
@@ -462,52 +229,6 @@ public class RegionLogic
         }
     }
     
-    private int ParseStateFromKey(string key)
-    {
-        if (key.Length >= 5 && int.TryParse(key.Substring(3), out int state))
-            return state;
-        return -1;
-    }
-    
-    private string StripExt(string name)
-    {
-        if (string.IsNullOrEmpty(name)) return name;
-        int dot = name.LastIndexOf('.');
-        return dot > 0 ? name.Substring(0, dot) : name;
-    }
-    
-    private ViewType DetermineCurrentViewType()
-    {
-        if (_allBackgrounds.ContainsKey(ViewType.ACV) && HasAnyImage(_allBackgrounds[ViewType.ACV]))
-            return ViewType.ACV;
-        if (_allBackgrounds.ContainsKey(ViewType.RTV) && HasAnyImage(_allBackgrounds[ViewType.RTV]))
-            return ViewType.RTV;
-        if (_allBackgrounds.ContainsKey(ViewType.PSV) && HasAnyImage(_allBackgrounds[ViewType.PSV]))
-            return ViewType.PSV;
-        return ViewType.ACV;
-    }
-    
-    private bool HasAnyImage(string[] arr)
-    {
-        for (int i = 0; i < arr.Length; i++)
-            if (!string.IsNullOrEmpty(arr[i])) return true;
-        return false;
-    }
-    
-    private bool HasAnyPsvContent()
-    {
-        if (!_allBackgrounds.ContainsKey(ViewType.PSV)) return false;
-        for (int i = 0; i < 4; i++)
-        {
-            string sky = _allBackgrounds[ViewType.PSV][i] ?? "";
-            string fog = _allFogs.ContainsKey(ViewType.PSV) ? (_allFogs[ViewType.PSV][i] ?? "") : "";
-            string sun = _allSuns.ContainsKey(ViewType.PSV) ? (_allSuns[ViewType.PSV][i] ?? "") : "";
-            if (!string.IsNullOrEmpty(sky) || !string.IsNullOrEmpty(fog) || !string.IsNullOrEmpty(sun))
-                return true;
-        }
-        return false;
-    }
-    
     private void SetDefaultValues()
     {
         CurrentMode = BlendMode.Loop;
@@ -517,21 +238,8 @@ public class RegionLogic
         CurrentTrigger = LoopTrigger.None;
         WaitTimeValue = 0f;
         SettingValue = 0;
-        CurrentViewType = ViewType.ACV;
-        _viewTypeIndex = 0;
         _modeIndex = 0;
         _triggerIndex = 0;
-        _allBackgrounds.Clear();
-        _allFogs.Clear();
-        _allSuns.Clear();
-        for (int i = 0; i < 4; i++)
-        {
-            BkgValues[i] = "";
-            FogValues[i] = "";
-            SunValues[i] = "";
-        }
-        SelectedModName = "";
-        SavedModName = "";
     }
 
     // ============================================================
@@ -539,8 +247,6 @@ public class RegionLogic
     // ============================================================
     public void SaveToBlendSettings()
     {
-        SaveCurrentViewToDictionary();
-        
         string path = BlendSettingsPath;
         if (string.IsNullOrEmpty(path))
         {
@@ -568,65 +274,12 @@ public class RegionLogic
         sb.AppendLine($"wait_time: {WaitTimeValue:F1}");
         sb.AppendLine($"Setting: {SettingValue}");
         
-        if (!string.IsNullOrEmpty(SavedModName))
-            sb.AppendLine($"Mod: {SavedModName}");
-
-        if (_allBackgrounds.ContainsKey(ViewType.ACV) && HasAnyImage(_allBackgrounds[ViewType.ACV]))
-        {
-            sb.AppendLine("Acv");
-            for (int i = 0; i < 4; i++)
-            {
-                string img = _allBackgrounds[ViewType.ACV][i] ?? "";
-                if (!string.IsNullOrEmpty(img))
-                    sb.AppendLine($"bkg{(i + 1):00}: <{img}>");
-            }
-        }
-        
-        if (_allBackgrounds.ContainsKey(ViewType.RTV) && HasAnyImage(_allBackgrounds[ViewType.RTV]))
-        {
-            sb.AppendLine("Rtv");
-            for (int i = 0; i < 4; i++)
-            {
-                string img = _allBackgrounds[ViewType.RTV][i] ?? "";
-                if (!string.IsNullOrEmpty(img))
-                    sb.AppendLine($"bkg{(i + 1):00}: <{img}>");
-            }
-        }
-        
-        if (_allBackgrounds.ContainsKey(ViewType.ORV) && HasAnyImage(_allBackgrounds[ViewType.ORV]))
-        {
-            sb.AppendLine("Orv");
-            for (int i = 0; i < 4; i++)
-            {
-                string img = _allBackgrounds[ViewType.ORV][i] ?? "";
-                if (!string.IsNullOrEmpty(img))
-                    sb.AppendLine($"bkg{(i + 1):00}: <{img}>");
-            }
-        }
-        
-        if (HasAnyPsvContent())
-        {
-            sb.AppendLine("Psv");
-            for (int i = 0; i < 4; i++)
-            {
-                string sky = _allBackgrounds.ContainsKey(ViewType.PSV) ? (_allBackgrounds[ViewType.PSV][i] ?? "") : "";
-                string fog = _allFogs.ContainsKey(ViewType.PSV) ? (_allFogs[ViewType.PSV][i] ?? "") : "";
-                string sun = _allSuns.ContainsKey(ViewType.PSV) ? (_allSuns[ViewType.PSV][i] ?? "") : "";
-                
-                if (string.IsNullOrEmpty(sky) && string.IsNullOrEmpty(fog) && string.IsNullOrEmpty(sun))
-                    continue;
-                
-                sb.AppendLine($"bkg{(i + 1):00}: <{sky}><{fog}><{sun}>");
-            }
-        }
-        
         try
         {
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
 
             if (IsArena)
             {
-                // Recarga el blend per-level (con coerciones arena) como Active.
                 ArenaBlendController.LoadBlendSettings(_page.ParentPanel.CurrentRoomName);
             }
             else

@@ -11,39 +11,39 @@ namespace FilesSetting;
 // RCPanel_ViewPage
 // ================================================================
 
-public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
+public partial class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 {
     private const float VIEWTYPE_ARROW_X = 5f;
     private const float VIEWTYPE_LABEL_X = 26f;
     private const float VIEWTYPE_ARROW2_X = 61f;
-    private const float VIEWTYPE_Y = 119f;
+    private const float VIEWTYPE_Y = 145f;
 
-    private const float TINT_BTN_Y = 29f;
-    private const float TINT_BTN_WIDTH = 35f;
-    private const float TINT_BTN_SPACING = 5f;
-    private const float TINT_MULTIPLY_X = 5f;
-    private const float TINT_ATMOSPHERE_X = TINT_MULTIPLY_X + TINT_BTN_WIDTH + TINT_BTN_SPACING;
+    private const float TINT_ROW_Y = 59f;
+    private const float TINT_ARROW_X = 5f;
+    private const float TINT_LABEL_X = 26f;
+    private const float TINT_LABEL_WIDTH = 30f;
+    private const float TINT_ARROW2_X = 61f;
 
     private const float TINT_TOGGLE_WIDTH = 30f;
     private const float TINT_TOGGLE_X = 116f - 5f - TINT_TOGGLE_WIDTH;
 
     private const float HSV_SLIDER_X = 5f;
-    private const float HSV_SLIDER_Y = 56f;
+    private const float HSV_SLIDER_Y = 82f;
 
     private const float HEX_FIELD_X = 154f;
-    private const float HEX_FIELD_Y = 120f;
+    private const float HEX_FIELD_Y = 146f;
     private const float HEX_FIELD_WIDTH = 56f;
 
     private const float FREE_COLOR_PICKER_X = 155f;
-    private const float FREE_COLOR_PICKER_Y = 57f;
+    private const float FREE_COLOR_PICKER_Y = 83f;
     private const float FREE_COLOR_PICKER_SIZE = 56f;
 
     private const float COLOR_PICKER_X = 116f;
-    private const float COLOR_PICKER_Y = 119f;
+    private const float COLOR_PICKER_Y = 145f;
     private const float COLOR_PICKER_SIZE = 16f;
 
     private const float COLOR_PREVIEW_X = 137f;
-    private const float COLOR_PREVIEW_Y = 119f;
+    private const float COLOR_PREVIEW_Y = 145f;
     private const float COLOR_PREVIEW_SIZE = 18f;
 
     private static readonly Color COLOR_TINT_ON = new Color(0.2f, 0.7f, 0.3f);
@@ -59,8 +59,9 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
     private int _viewTypeIndex = 0;
 
     private int _activeTint = 0;
-    private Button _multiplyBtn;
-    private Button _atmosphereBtn;
+    private ArrowButton _tintPrevArrow;
+    private ArrowButton _tintNextArrow;
+    private DevUILabel _tintLabel;
     private Color _currentColor = Color.white;
 
     private Button _tintToggleBtn;
@@ -105,15 +106,18 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
             new Vector2(TINT_TOGGLE_X, COLOR_PICKER_Y), TINT_TOGGLE_WIDTH, "Tint");
         subNodes.Add(_tintToggleBtn);
 
-        _multiplyBtn = new Button(owner, "RC_Tint_Multiply", this,
-            new Vector2(TINT_MULTIPLY_X, TINT_BTN_Y), TINT_BTN_WIDTH, "Multi");
-        _atmosphereBtn = new Button(owner, "RC_Tint_Atmosphere", this,
-            new Vector2(TINT_ATMOSPHERE_X, TINT_BTN_Y), TINT_BTN_WIDTH, "Atmos");
-        
-        subNodes.Add(_multiplyBtn);
-        subNodes.Add(_atmosphereBtn);
-        
-        UpdateTintButtonsHighlight();
+        _tintPrevArrow = new ArrowButton(owner, "RC_Tint_Prev", this,
+            new Vector2(TINT_ARROW_X, TINT_ROW_Y), 270f);
+        _tintNextArrow = new ArrowButton(owner, "RC_Tint_Next", this,
+            new Vector2(TINT_ARROW2_X, TINT_ROW_Y), 90f);
+        _tintLabel = new DevUILabel(owner, "RC_Tint_Label", this,
+            new Vector2(TINT_LABEL_X, TINT_ROW_Y), TINT_LABEL_WIDTH, "Multi");
+
+        subNodes.Add(_tintPrevArrow);
+        subNodes.Add(_tintNextArrow);
+        subNodes.Add(_tintLabel);
+
+        UpdateTintSelector();
 
         _colorEditor = new ColorEditor(owner, this,
             new Vector2(HEX_FIELD_X, HEX_FIELD_Y), HEX_FIELD_WIDTH,
@@ -136,6 +140,8 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         
         UpdateColorPreview();
         UpdateTintToggleVisual();
+
+        CreateBkgRow();
     }
 
     // ============================================================
@@ -179,7 +185,13 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
 
         UpdateUIFromColor();
         UpdateTintToggleVisual();
-        UpdateTintButtonsHighlight();
+        UpdateTintSelector();
+
+        // La fila bkg lee el estado seleccionado (y descarta el buffer local
+        // de mod pendiente: al cambiar de estado deja de ser válido).
+        CloseBkgPickers();
+        _pendingMod = null;
+        RefreshBkgRow();
     }
 
     private void LoadCurrentViewType()
@@ -193,6 +205,12 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         _viewTypeIndex = Array.IndexOf(_viewTypes, _currentViewType);
         if (_viewTypeIndex < 0) _viewTypeIndex = 0;
         UpdateViewTypeLabel();
+
+        // Si la view de la sala deja el canal seleccionado inerte, saltar al
+        // otro. El recargo de color lo hace el llamador (ctor → LoadCurrentColors,
+        // refresh → UpdateUIFromColor), no aquí: en CreateContent el editor aún
+        // no existe.
+        EnsureValidActiveTint();
     }
 
     private void UpdateViewTypeLabel()
@@ -211,7 +229,13 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         
         _currentViewType = _viewTypes[_viewTypeIndex];
         UpdateViewTypeLabel();
-        
+
+        if (EnsureValidActiveTint())
+        {
+            LoadCurrentColors();
+            UpdateUIFromColor();
+        }
+
         ParentPanel.CurrentRoom.roomSettings.SetViewType(_currentViewType);
         var snap = SettingsSnapshot.FromFile(ParentPanel.CurrentRoom.roomSettings.filePath);
         SettingsBlendController.SetActiveSnapshot(snap);
@@ -396,11 +420,6 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
     // ============================================================
     // PERSISTENCIA DE TINTES AL ARCHIVO DEL ESTADO
     // ============================================================
-    // Sin auto-save: los tintes editados viven en ext data (RoomSettings) y en
-    // los shader globals. Para persistirlos se usa el botón Save de las
-    // DevTools vanilla (RoomSettings.Save() -> OnSave -> PreserveExtendedData
-    // escribe la línea RainCycles). Si no se guarda, cualquier Load posterior
-    // (cambio de estado, re-entrada a sala) revierte al último guardado.
 
     private void LoadCurrentColors()
     {
@@ -533,19 +552,52 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
         });
     }
 
-    private void UpdateTintButtonsHighlight()
+    // ============================================================
+    // SELECTOR DE CANAL (Multi / Atmos)
+    // ============================================================
+
+    // Multi es inerte en ORV (ningún shader consume el global) y Atmos es
+    // inerte en RTV/AUV: en esos casos el canal no debe poder seleccionarse.
+    private bool IsTintValid(int tint)
     {
-        Color normalColor = new Color(1f, 1f, 1f);
-        Color activeColor = new Color(0.2f, 0.7f, 0.3f);
-        
-        _multiplyBtn.colorA = _activeTint == 0 ? activeColor : normalColor;
-        _atmosphereBtn.colorA = _activeTint == 1 ? activeColor : normalColor;
+        if (tint == 0) return _currentViewType != ViewType.ORV;
+        return _currentViewType != ViewType.RTV && _currentViewType != ViewType.AUV;
+    }
+
+    private bool EnsureValidActiveTint()
+    {
+        if (IsTintValid(_activeTint)) return false;
+        _activeTint = _activeTint == 0 ? 1 : 0;
+        UpdateTintSelector();
+        return true;
+    }
+
+    private void CycleActiveTint(int delta)
+    {
+        // Solo hay 2 canales y la misma view nunca los indefine a los dos a la
+        // vez, pero el bucle evita quedarse sin salida si eso cambia en el futuro.
+        int tint = _activeTint;
+        for (int i = 0; i < 2; i++)
+        {
+            tint = (tint + delta + 2) % 2;
+            if (IsTintValid(tint))
+            {
+                SetActiveTint(tint);
+                return;
+            }
+        }
+    }
+
+    private void UpdateTintSelector()
+    {
+        if (_tintLabel == null) return;
+        _tintLabel.Text = _activeTint == 0 ? "Multi" : "Atmos";
     }
 
     private void SetActiveTint(int tint)
     {
         _activeTint = tint;
-        UpdateTintButtonsHighlight();
+        UpdateTintSelector();
         LoadCurrentColors();
         UpdateUIFromColor();
     }
@@ -554,7 +606,9 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
     {
         if (type != DevUISignalType.ButtonClick) return;
         if (!BlendClock.EditMode) return;
-        
+
+        if (HandleBkgSignal(sender, message)) return;
+
         if (sender.IDstring == "RC_ViewType_Prev")
         {
             SetViewType(-1);
@@ -573,18 +627,14 @@ public class RCPanel_ViewPage : RectangularDevUINode, IDevUISignals
             return;
         }
         
-        if (sender.IDstring == "RC_Tint_Multiply")
+        if (sender.IDstring == "RC_Tint_Prev")
         {
-            // Multi es inerte en ORV (ningun shader consume el global): no permitir seleccionarlo
-            if (_currentViewType == ViewType.ORV) return;
-            SetActiveTint(0);
+            CycleActiveTint(-1);
             return;
         }
-        if (sender.IDstring == "RC_Tint_Atmosphere")
+        if (sender.IDstring == "RC_Tint_Next")
         {
-            // Atmos es inerte en RTV/AUV (ningun elemento consume el global): no permitir seleccionarlo
-            if (_currentViewType == ViewType.RTV || _currentViewType == ViewType.AUV) return;
-            SetActiveTint(1);
+            CycleActiveTint(1);
             return;
         }
         

@@ -154,26 +154,51 @@ public static partial class RoomCameraExtensions
         RoomSettings.RoomEffect.Type.SkyBloom,
     };
 
-    public static void ApplyScalarEffects(this Room room, SettingsSnapshot a, SettingsSnapshot b, float t)
+    // Tipos de efecto que ApplyScalarEffects muta. Fuente única de verdad
+    // para SaveGuard (baseline de amounts al cargar). Si se añade un tipo
+    // aquí, añadirlo también en ApplyScalarEffects. Ver docs/SETTINGS_SAVE_GUARD.md.
+    internal static readonly RoomSettings.RoomEffect.Type[] ScalarEffectTypes =
     {
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Darkness,         LerpScalarEffect(a.EffectDarkness,         b.EffectDarkness,         t));
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Brightness,       LerpScalarEffect(a.EffectBrightness,       b.EffectBrightness,       t));
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Contrast,         LerpScalarEffect(a.EffectContrast,         b.EffectContrast,         t));
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Desaturation,     LerpScalarEffect(a.EffectDesaturation,     b.EffectDesaturation,     t));
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Hue,              LerpScalarEffect(a.EffectHue,              b.EffectHue,              t));
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.DarkenLights,     LerpScalarEffect(a.EffectDarkenLights,     b.EffectDarkenLights,     t));
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Fog,              LerpScalarEffect(a.EffectFog,              b.EffectFog,              t));
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.SkyBloom,         LerpScalarEffect(a.EffectSkyBloom,         b.EffectSkyBloom,         t));
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.SkyAndLightBloom, LerpScalarEffect(a.EffectSkyAndLightBloom, b.EffectSkyAndLightBloom, t));
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.LightBurn,        LerpScalarEffect(a.EffectLightBurn,        b.EffectLightBurn,        t));
-        ApplyEffect(room, RoomSettings.RoomEffect.Type.Bloom,            LerpScalarEffect(a.EffectBloom,            b.EffectBloom,            t));
+        RoomSettings.RoomEffect.Type.Darkness,
+        RoomSettings.RoomEffect.Type.Brightness,
+        RoomSettings.RoomEffect.Type.Contrast,
+        RoomSettings.RoomEffect.Type.Desaturation,
+        RoomSettings.RoomEffect.Type.Hue,
+        RoomSettings.RoomEffect.Type.DarkenLights,
+        RoomSettings.RoomEffect.Type.Fog,
+        RoomSettings.RoomEffect.Type.SkyBloom,
+        RoomSettings.RoomEffect.Type.SkyAndLightBloom,
+        RoomSettings.RoomEffect.Type.LightBurn,
+        RoomSettings.RoomEffect.Type.Bloom,
+        new RoomSettings.RoomEffect.Type("SurfaceSandstorm"),
+        SnowLightController.SnowLightEffect,
+        SnowLightController.SnowSparkleEffect,
+    };
+
+    // claim=true (blend/manual T): cada escritura reclama la propiedad en
+    // SaveGuard → al guardar se escribe el baseline, no el valor transitorio.
+    // claim=false (sync post-save): no reclamar (freshSnap no es del blend)
+    // y no pisar campos que el blend posee. Ver docs/SETTINGS_SAVE_GUARD.md.
+    public static void ApplyScalarEffects(this Room room, SettingsSnapshot a, SettingsSnapshot b, float t, bool claim = true)
+    {
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Darkness,         LerpScalarEffect(a.EffectDarkness,         b.EffectDarkness,         t), claim);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Brightness,       LerpScalarEffect(a.EffectBrightness,       b.EffectBrightness,       t), claim);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Contrast,         LerpScalarEffect(a.EffectContrast,         b.EffectContrast,         t), claim);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Desaturation,     LerpScalarEffect(a.EffectDesaturation,     b.EffectDesaturation,     t), claim);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Hue,              LerpScalarEffect(a.EffectHue,              b.EffectHue,              t), claim);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.DarkenLights,     LerpScalarEffect(a.EffectDarkenLights,     b.EffectDarkenLights,     t), claim);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Fog,              LerpScalarEffect(a.EffectFog,              b.EffectFog,              t), claim);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.SkyBloom,         LerpScalarEffect(a.EffectSkyBloom,         b.EffectSkyBloom,         t), claim);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.SkyAndLightBloom, LerpScalarEffect(a.EffectSkyAndLightBloom, b.EffectSkyAndLightBloom, t), claim);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.LightBurn,        LerpScalarEffect(a.EffectLightBurn,        b.EffectLightBurn,        t), claim);
+        ApplyEffect(room, RoomSettings.RoomEffect.Type.Bloom,            LerpScalarEffect(a.EffectBloom,            b.EffectBloom,            t), claim);
 
         float sandstorm = LerpScalarEffect(a.EffectSurfaceSandstorm, b.EffectSurfaceSandstorm, t);
         if (sandstorm >= 0f)
-            ApplyEffect(room, new RoomSettings.RoomEffect.Type("SurfaceSandstorm"), sandstorm);
+            ApplyEffect(room, new RoomSettings.RoomEffect.Type("SurfaceSandstorm"), sandstorm, claim);
 
-        ApplyEffect(room, SnowLightController.SnowLightEffect,   LerpScalarEffect(a.EffectSnowLight,   b.EffectSnowLight,   t, 0.5f));
-        ApplyEffect(room, SnowLightController.SnowSparkleEffect, LerpScalarEffect(a.EffectSnowSparkle, b.EffectSnowSparkle, t));
+        ApplyEffect(room, SnowLightController.SnowLightEffect,   LerpScalarEffect(a.EffectSnowLight,   b.EffectSnowLight,   t, 0.5f), claim);
+        ApplyEffect(room, SnowLightController.SnowSparkleEffect, LerpScalarEffect(a.EffectSnowSparkle, b.EffectSnowSparkle, t), claim);
     }
 
     private static float LerpScalarEffect(float va, float vb, float t, float fallback = 0f)
@@ -195,18 +220,31 @@ public static partial class RoomCameraExtensions
         return false;
     }
 
-    private static void ApplyEffect(Room room, RoomSettings.RoomEffect.Type type, float amount)
+    private static void ApplyEffect(Room room, RoomSettings.RoomEffect.Type type, float amount, bool claim)
     {
+        var rs = room.roomSettings;
+
+        // Sync post-save (claim=false): freshSnap contiene el baseline de
+        // campos que el blend posee → no pisar su estado vivo.
+        if (!claim && SaveGuard.IsBlendOwned(rs, type)) return;
+
         if (amount <= 0f)
         {
-            var existing = room.roomSettings.GetEffect(type);
-            if (existing != null) existing.amount = 0f;
+            var existing = rs.GetEffect(type);
+            if (existing != null)
+            {
+                existing.amount = 0f;
+                if (claim) SaveGuard.NoteBlendEffect(rs, existing, 0f);
+            }
             return;
         }
-        if (IsOverriddenByHigherPriority(room.roomSettings, type)) return;
-        var effect = room.roomSettings.GetEffect(type);
+        if (IsOverriddenByHigherPriority(rs, type)) return;
+        var effect = rs.GetEffect(type);
         if (effect != null)
+        {
             effect.amount = amount;
+            if (claim) SaveGuard.NoteBlendEffect(rs, effect, amount);
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════

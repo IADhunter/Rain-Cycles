@@ -67,14 +67,10 @@ public static class BlendClockUpdater
                 _savedState = default;
             }
 
-            if (!string.IsNullOrEmpty(_lastRegion))
-            {
-                BlendSkyAtlasCache.UnloadRegion(_lastRegion);
-            }
-
             SettingsBlendController.ClearAllSlots();
             SettingsSnapshot.InvalidateAllCache();
-            BlendSkyAtlasCache.PreloadRegion(regionAfter);
+            // Sin precarga de atlas por región: las imágenes de fondo se cargan
+            // on-demand (RefreshSlotSprite/EnsureBkgAtlas, patrón vanilla).
             SettingsSnapshot.PreloadRegionTemplates(regionAfter);
             BlendSettingsLoader.LoadRegion(regionAfter);
 

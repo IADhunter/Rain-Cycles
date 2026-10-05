@@ -9,9 +9,6 @@ namespace FilesSetting;
 // RC INPUT GUARD
 // Bloquea el input del juego mientras un RCStringControl tiene foco,
 // copia exacta del guard de POM/RegionKit (Pom.InputHooks.cs):
-//  - Hooks: Input.GetKey / GetKeyDown / GetKeyUp (string y KeyCode)
-//  - Mientras hay foco, SOLO pasa Escape (idem POM)
-//  - El foco se limpia solo si se cierra el devUI
 // ================================================================
 
 public static class RCInputGuard

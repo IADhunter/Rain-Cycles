@@ -6,6 +6,7 @@ using RainCycles.Sky;
 using RainCycles.Clock;
 using RainCycles.Core;
 using RainCycles.Blend;
+using Watcher;
 
 namespace RainCycles.Core;
 
@@ -96,7 +97,13 @@ public static partial class SettingsBlendController
                 if (self.room == newRoom)
                 {
                     float t = BlendClock.SubPhaseLocalT;
-                    AttachWithExternalT(newRoom, pathA, pathB);
+                    // isAuto: true — este attach es el blend automático del
+                    // ciclo (BlendClock.IsRunning && Blending). Con el default
+                    // false, UpdateCameras no lo re-marea (needsAttach solo
+                    // compara rutas) y el flag quedaba como "manual":
+                    // UpdateSliders dejaba de seguir el reloj y SwitchTab
+                    // lo trataba como blend manual de usuario.
+                    AttachWithExternalT(newRoom, pathA, pathB, isAuto: true);
                     SetExternalT(t);
                 }
                 else
@@ -195,7 +202,18 @@ public static partial class SettingsBlendController
         if ((isBlendRoom || isStaticRoom) && hasView)
         {
             _lastManagedRoomName = roomName;
-            ForceHideVanillaSlots(self.room, rcState);
+
+            // Ocultar vanilla solo si la regla lo pide: (1) algún estado
+            // Blend con <Mod>, o (2) el estado activo con <Mod>. Sin <Mod>
+            // → restaurar para que el cielo vanilla se vea al instante.
+            bool hideVanilla = BkgResolver.ShouldHideVanilla(roomName, ActiveHideState());
+            ToggleVanillaSlots(self, rcState.View, hideVanilla);
+        }
+        else
+        {
+            // Sala sin view/tipo activo → el juego dibuja vanilla: devolver
+            // lo que se hubiera ocultado en una visita previa.
+            RestoreVanillaAlpha();
         }
 
         if (_psvScene != null && _activeSlots?.fog != null && _activeSlots.fog.Count > 0)
@@ -243,36 +261,154 @@ public static partial class SettingsBlendController
     }
 
     // ============================================================
-    // FORCE HIDE VANILLA SLOTS - SOLO SI EL VIEW ESTÁ DECLARADO
+    // TOGGLE VANILLA SLOTS - OCULTAR/RESTAURAR SEGÚN <Mod> ACTIVO
+    //
+    // Guarda el alfa previo la primera vez que oculta: vanilla solo
+    // reescribe daySky/duskSky en transiciones (AboveCloudsView.cs:373,
+    // RoofTopView.cs:136) y nightSky jamás → en estado estable el campo
+    // queda congelado y hay que restaurar el valor guardado, no "dejar
+    // de tocar". Se recorre por frame (mismo coste que el ForceHide
+    // anterior) para reaplicar ante reescrituras puntuales de vanilla.
     // ============================================================
-    private static void ForceHideVanillaSlots(Room room, RoomCameraExtensions.RoomBlendState state)
-    {
-        if (room == null) return;
-        if (!state.HasView) return;
+    private static Dictionary<BackgroundScene.Simple2DBackgroundIllustration, float> _savedVanillaAlpha = new();
+    private static Dictionary<FSprite, float> _savedVanillaSpriteAlpha = new();
+    private static string _hiddenRoom;
 
-        ViewType view = state.View;
+    // Estado activo para decidir ocultación: en EditMode manda la
+    // selección del panel (ManualStateA, sincronizada con
+    // RCPanel.ButtonSelectedA); fuera, el reloj.
+    private static int ActiveHideState()
+        => BlendClock.EditMode ? ManualStateA : BlendClock.StateA;
+
+    private static void ToggleVanillaSlots(RoomCamera cam, ViewType view, bool hide)
+    {
+        var room = cam?.room;
+        if (room == null)
+        {
+            RestoreVanillaAlpha();
+            return;
+        }
+
+        string roomName = room.abstractRoom?.name;
+
+        // Cambio de sala: lo ocultado en la anterior ya no aplica.
+        if (_hiddenRoom != null &&
+            !string.Equals(_hiddenRoom, roomName, System.StringComparison.OrdinalIgnoreCase))
+            RestoreVanillaAlpha();
+
+        if (!hide)
+        {
+            RestoreVanillaAlpha();
+            return;
+        }
 
         for (int i = 0; i < room.updateList.Count; i++)
         {
             if (room.updateList[i] is AboveCloudsView acv)
             {
-                if (view == ViewType.PSV || view == ViewType.ACV)
+                if (view == ViewType.ACV || view == ViewType.PSV)
                 {
-                    acv.daySky.alpha = 0f;
-                    acv.duskSky.alpha = 0f;
-                    acv.nightSky.alpha = 0f;
+                    HideVanillaAlpha(acv.daySky);
+                    HideVanillaAlpha(acv.duskSky);
+                    HideVanillaAlpha(acv.nightSky);
+
+                    // PSV: también el abi pnk_ (HorizonFog va por leasers).
+                    if (view == ViewType.PSV)
+                    {
+                        foreach (var el in acv.elements)
+                        {
+                            if (el is BackgroundScene.AdditiveBackgroundIllustration abi &&
+                                abi.illustrationName?.StartsWith("pnk_") == true)
+                                HideVanillaAlpha(abi);
+                        }
+                    }
                 }
             }
             else if (room.updateList[i] is RoofTopView rtv)
             {
                 if (view == ViewType.RTV)
                 {
-                    rtv.daySky.alpha = 0f;
-                    rtv.duskSky.alpha = 0f;
-                    rtv.nightSky.alpha = 0f;
+                    HideVanillaAlpha(rtv.daySky);
+                    HideVanillaAlpha(rtv.duskSky);
+                    HideVanillaAlpha(rtv.nightSky);
+                }
+            }
+            else if (room.updateList[i] is OuterRimView orv)
+            {
+                if (view == ViewType.ORV)
+                {
+                    foreach (var el in orv.elements)
+                    {
+                        if (el is BackgroundScene.Simple2DBackgroundIllustration ill &&
+                            ill.illustrationName == "otr_sky")
+                        {
+                            HideVanillaAlpha(ill);
+                            break;
+                        }
+                    }
                 }
             }
         }
+
+        // Sprites: HorizonFog pnk_* (solo PSV) y DistantCloud de alto
+        // depth (PinkSky). Solo alpha: DistantCloud.DrawSprites reescribe
+        // isVisible por frame por altitud (AboveCloudsView.cs:682).
+        if (cam.spriteLeasers != null)
+        {
+            foreach (var sl in cam.spriteLeasers)
+            {
+                if (sl?.sprites == null || sl.drawableObject == null) continue;
+
+                if (view == ViewType.PSV &&
+                    sl.drawableObject is AboveCloudsView.HorizonFog hf &&
+                    hf.illustrationName?.StartsWith("pnk_") == true)
+                {
+                    foreach (var sp in sl.sprites)
+                        if (sp != null) HideVanillaSpriteAlpha(sp);
+                }
+                else if (sl.drawableObject is AboveCloudsView.DistantCloud dc &&
+                         dc.depth >= 195f &&
+                         dc.AboveCloudsScene != null && dc.AboveCloudsScene.PinkSky)
+                {
+                    foreach (var sp in sl.sprites)
+                        if (sp != null) HideVanillaSpriteAlpha(sp);
+                }
+            }
+        }
+
+        _hiddenRoom = roomName;
+    }
+
+    private static void HideVanillaAlpha(BackgroundScene.Simple2DBackgroundIllustration ill)
+    {
+        if (ill == null) return;
+        if (!_savedVanillaAlpha.ContainsKey(ill))
+            _savedVanillaAlpha[ill] = ill.alpha;
+        ill.alpha = 0f;
+    }
+
+    private static void HideVanillaSpriteAlpha(FSprite sprite)
+    {
+        if (!_savedVanillaSpriteAlpha.ContainsKey(sprite))
+            _savedVanillaSpriteAlpha[sprite] = sprite.alpha;
+        sprite.alpha = 0f;
+    }
+
+    private static void RestoreVanillaAlpha()
+    {
+        if (_savedVanillaAlpha.Count > 0)
+        {
+            foreach (var kv in _savedVanillaAlpha)
+                kv.Key.alpha = kv.Value;
+            _savedVanillaAlpha.Clear();
+        }
+        if (_savedVanillaSpriteAlpha.Count > 0)
+        {
+            foreach (var kv in _savedVanillaSpriteAlpha)
+                kv.Key.alpha = kv.Value;
+            _savedVanillaSpriteAlpha.Clear();
+        }
+        _hiddenRoom = null;
     }
 
     private static List<BackgroundScene.Simple2DBackgroundIllustration> GetRcSlotsForRoom(Room room)

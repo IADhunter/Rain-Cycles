@@ -26,7 +26,7 @@ public static class ModResetter
         typeof(StateFileResolver),
         typeof(BlendSettingsLoader),
         typeof(RoomCameraExtensions),
-        typeof(BlendSkyAtlasCache),
+        typeof(BkgResolver),
         typeof(RainCyclesEventDispatcher),
         typeof(CycleStateResolver),
         typeof(AncestorResolver),
@@ -62,7 +62,6 @@ public static class ModResetter
             string regionCode = self.world.region.name.ToUpperInvariant();
             
             BlendSettingsLoader.LoadRegion(regionCode);
-            AncestorResolver.EnsureAncestorFilesExist(regionCode);
             
             int cycle = self.GetStorySession?.saveState?.cycleNumber ?? 0;
             int state = CycleStateResolver.ResolveState(cycle);
@@ -183,7 +182,6 @@ public static class ModResetter
         {
             CleanupSettingsBlendController();
             CleanupRoomCameraExtensions();
-            CleanupBlendSkyAtlasCache();
         }
         catch (Exception ex)
         {
@@ -226,12 +224,6 @@ public static class ModResetter
         ClearCollectionField(type, "_stateCache");
         SetFieldValue(type, "_preloadHooksInitialized", false);
         SetFieldValue(type, "_lightsInitialized", false);
-    }
-    
-    private static void CleanupBlendSkyAtlasCache()
-    {
-        var type = typeof(BlendSkyAtlasCache);
-        ClearCollectionField(type, "_cache");
     }
     
     // ============================================================

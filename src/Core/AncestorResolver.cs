@@ -13,8 +13,11 @@ namespace RainCycles.Core;
 // Cadena de herencia cuando una sala no declara un campo:
 //   Sala → ancestor regional (nuestro) → DefaultRoomSettings.ancestor (vanilla)
 //
-// Los archivos ancestor_X.txt se guardan en World/<REGION>/raincycles/
-// y se crean automáticamente con valores vanilla si no existen.
+// Los archivos ancestor_X.txt se guardan en world/<region>/raincycles/
+// siguiendo nuestras reglas de guardado: mod destino (pestaña Developer)
+// si está elegido; si no, el mod dueño de la región; si no, vanilla.
+// Se crean bajo demanda (botón DevTools → Region); CreateDirectory crea
+// las carpetas que falten.
 //
 // Se aplica SOLO a salas cuyo parent es DefaultRoomSettings.ancestor
 // (Template: NONE o sin template), igual que el ancestor vanilla.
@@ -61,7 +64,8 @@ public static class AncestorResolver
     }
 
     /// <summary>
-    /// Asegura que existan los archivos ancestor_X.txt para una región.
+    /// Asegura que existan los archivos ancestor_X.txt para una región
+    /// (en el mod destino; crea el directorio si falta).
     /// Los crea con valores vanilla si no existen.
     /// </summary>
     public static void EnsureAncestorFilesExist(string regionName)
@@ -69,16 +73,18 @@ public static class AncestorResolver
         if (string.IsNullOrEmpty(regionName)) return;
 
         string dir = GetAncestorDirectory(regionName);
+        if (dir == null) return;
+
         if (!Directory.Exists(dir))
             Directory.CreateDirectory(dir);
 
         for (int i = 1; i <= MAX_STATES; i++)
         {
             string path = GetAncestorPath(regionName, i);
-            if (!File.Exists(path))
+            if (path != null && !File.Exists(path))
             {
                 File.WriteAllText(path, BuildVanillaAncestorContent(), Encoding.UTF8);
-                RSPlugin.log.LogDebug($"[AncestorResolver] Creado {Path.GetFileName(path)} en {regionName}");
+                RSPlugin.log.LogDebug($"[AncestorResolver] Creado {path}");
             }
         }
     }
@@ -112,7 +118,7 @@ public static class AncestorResolver
         if (array[idx] != null) return array[idx];
 
         string path = GetAncestorPath(regionName, state);
-        if (!File.Exists(path)) return null;
+        if (path == null || !File.Exists(path)) return null;
 
         try
         {
@@ -215,19 +221,31 @@ public static class AncestorResolver
     }
 
     // ============================================================
-    // RUTAS
+    // RUTAS — directorio único (lectura y escritura), mismas reglas
+    // de guardado que el resto del mod (SaveModResolver)
     // ============================================================
 
+    // 1. Mod destino (pestaña Developer) si está elegido: SIEMPRE ahí,
+    //    creando las carpetas que falten.
+    // 2. Sin destino: primer mod (prioridad de carga) que tenga
+    //    world/<region> — el mod dueño de la región.
+    // 3. Si ningún mod tiene la región: vanilla (StreamingAssets).
     private static string GetAncestorDirectory(string regionName)
     {
-        string regionCode = regionName.ToUpperInvariant();
+        string regionCode = regionName.ToLowerInvariant();
         string relativePath = Path.Combine("world", regionCode, "raincycles");
 
+        ModManager.Mod target = SaveModResolver.GetTargetMod();
+        if (target != null)
+            return Path.Combine(target.path, relativePath);
+
+        string regionRoot = Path.Combine("world", regionCode);
         for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
         {
-            string candidate = Path.Combine(ModManager.ActiveMods[i].path, relativePath);
-            if (Directory.Exists(candidate))
-                return candidate;
+            ModManager.Mod mod = ModManager.ActiveMods[i];
+            if (mod == null) continue;
+            if (Directory.Exists(Path.Combine(mod.path, regionRoot)))
+                return Path.Combine(mod.path, relativePath);
         }
 
         return Path.Combine(Application.streamingAssetsPath, relativePath);
@@ -236,6 +254,7 @@ public static class AncestorResolver
     private static string GetAncestorPath(string regionName, int state)
     {
         string dir = GetAncestorDirectory(regionName);
+        if (dir == null) return null;
         return Path.Combine(dir, $"ancestor_{state}.txt");
     }
 

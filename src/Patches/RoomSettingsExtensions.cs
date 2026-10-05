@@ -5,6 +5,16 @@ using RainCycles.Snapshot;
 
 namespace RainCycles.Patches;
 
+// Orden relativo de <Mod> y <Tint> dentro de la línea RainCycles:.
+// El segmento definido PRIMERO (edición en DevTools o en el archivo a mano)
+// se emite primero al guardar; el segundo va detrás.
+public enum RcSegmentOrder
+{
+    Unset = 0,
+    ModFirst = 1,
+    TintFirst = 2
+}
+
 public static class RoomSettingsExtensions
 {
     private static readonly ConditionalWeakTable<RoomSettings, ExtData> _table
@@ -16,6 +26,8 @@ public static class RoomSettingsExtensions
         public ViewType ViewType = ViewType.None;
         public Color? TintMultiply = null;
         public Color? TintAtmosphere = null;
+        public BkgTag.Data Bkg = default;
+        public RcSegmentOrder SegmentOrder = RcSegmentOrder.Unset;
         public bool Loaded = false;
     }
 
@@ -44,6 +56,8 @@ public static class RoomSettingsExtensions
             data.ViewType = ViewType.None;
             data.TintMultiply = null;
             data.TintAtmosphere = null;
+            data.Bkg = default;
+            data.SegmentOrder = RcSegmentOrder.Unset;
         }
     }
 
@@ -69,8 +83,12 @@ public static class RoomSettingsExtensions
         data.ViewType = value;
         if (data.ViewType == ViewType.None)
         {
+            // Sin view no hay tinte NI bkg: <Mod> exige <View> para saber
+            // si la imagen es acv/psv (regla del sistema, 10/2026).
             data.TintMultiply = null;
             data.TintAtmosphere = null;
+            data.Bkg = default;
+            data.SegmentOrder = RcSegmentOrder.Unset;
         }
     }
 
@@ -88,7 +106,10 @@ public static class RoomSettingsExtensions
     public static void SetTintMultiply(this RoomSettings settings, Color? value)
     {
         if (!HasView(settings)) return;
-        GetOrCreate(settings).TintMultiply = value;
+        var data = GetOrCreate(settings);
+        if (value.HasValue)
+            MarkSegmentOrder(data, preferIfBothAbsent: RcSegmentOrder.TintFirst);
+        data.TintMultiply = value;
     }
 
     public static Color? GetTintAtmosphere(this RoomSettings settings)
@@ -99,7 +120,10 @@ public static class RoomSettingsExtensions
     public static void SetTintAtmosphere(this RoomSettings settings, Color? value)
     {
         if (!HasView(settings)) return;
-        GetOrCreate(settings).TintAtmosphere = value;
+        var data = GetOrCreate(settings);
+        if (value.HasValue)
+            MarkSegmentOrder(data, preferIfBothAbsent: RcSegmentOrder.TintFirst);
+        data.TintAtmosphere = value;
     }
 
     public static bool HasTint(this RoomSettings settings)
@@ -121,6 +145,56 @@ public static class RoomSettingsExtensions
         data.ViewType = ViewType.None;
         data.TintMultiply = null;
         data.TintAtmosphere = null;
+        data.Bkg = default;
+        data.SegmentOrder = RcSegmentOrder.Unset;
+    }
+
+    public static BkgTag.Data GetBkg(this RoomSettings settings)
+    {
+        return GetOrCreate(settings).Bkg;
+    }
+
+    public static void SetBkg(this RoomSettings settings, BkgTag.Data value)
+    {
+        // <Mod> exige <View>: sin view no se sabe si la imagen es acv/psv.
+        if (!HasView(settings)) return;
+        var data = GetOrCreate(settings);
+        if (value.IsValid)
+            MarkSegmentOrder(data, preferIfBothAbsent: RcSegmentOrder.ModFirst);
+        data.Bkg = value.IsValid ? value : default;
+    }
+
+    // Marca quién llegó primero (solo la primera vez; luego el orden se
+    // preserva aunque se borre y reponga un segmento — orden estable).
+    private static void MarkSegmentOrder(ExtData data, RcSegmentOrder preferIfBothAbsent)
+    {
+        if (data.SegmentOrder != RcSegmentOrder.Unset) return;
+        bool otherPresent = preferIfBothAbsent == RcSegmentOrder.ModFirst
+            ? data.TintMultiply.HasValue || data.TintAtmosphere.HasValue
+            : data.Bkg.IsValid;
+        data.SegmentOrder = otherPresent
+            ? (preferIfBothAbsent == RcSegmentOrder.ModFirst ? RcSegmentOrder.TintFirst : RcSegmentOrder.ModFirst)
+            : preferIfBothAbsent;
+    }
+
+    public static RcSegmentOrder GetSegmentOrder(this RoomSettings settings)
+    {
+        return GetOrCreate(settings).SegmentOrder;
+    }
+
+    public static void SetSegmentOrder(this RoomSettings settings, RcSegmentOrder order)
+    {
+        GetOrCreate(settings).SegmentOrder = order;
+    }
+
+    public static bool HasBkg(this RoomSettings settings)
+    {
+        return GetOrCreate(settings).Bkg.IsValid;
+    }
+
+    public static void ClearBkg(this RoomSettings settings)
+    {
+        GetOrCreate(settings).Bkg = default;
     }
 
     public static void ClearExtendedData(this RoomSettings settings)
@@ -131,5 +205,7 @@ public static class RoomSettingsExtensions
         data.ViewType = ViewType.None;
         data.TintMultiply = null;
         data.TintAtmosphere = null;
+        data.Bkg = default;
+        data.SegmentOrder = RcSegmentOrder.Unset;
     }
 }

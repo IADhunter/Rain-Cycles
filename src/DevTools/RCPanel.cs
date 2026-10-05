@@ -73,6 +73,10 @@ public class RCPanel : Panel, IDevUISignals
         int currentState = StateFileResolver.GetStateFromPath(currentFilePath, CurrentRoomName);
         ButtonSelectedA = currentState >= 1 ? currentState : 1;
 
+        // ManualStateA (estado que usa la ocultación de vanilla en EditMode)
+        // debe partir sincronizado con el botón seleccionado.
+        SettingsBlendController.UpdateManualStates(ButtonSelectedA, ButtonSelectedA);
+
         CreateCommonElements();
         SwitchTab(0);
     }
@@ -199,7 +203,7 @@ public class RCPanel : Panel, IDevUISignals
 
     private void UpdateSliderVisibility()
     {
-        bool hasFullStates = StateFileResolver.HasFullStates(CurrentRoomName);
+        bool hasFullStates = _currentTab == 0 && StateFileResolver.HasFullStates(CurrentRoomName);
 
         if (hasFullStates && _blendSlider == null)
         {
@@ -265,6 +269,8 @@ public class RCPanel : Panel, IDevUISignals
         if (newTab < 0) newTab = 2;
         if (newTab > 2) newTab = 0;
 
+        bool tabChanged = newTab != _currentTab;
+
         _currentTab = newTab;
         ClearContent();
 
@@ -294,6 +300,15 @@ public class RCPanel : Panel, IDevUISignals
         {
             _currentContent.IDstring = "RC_PageContent";
             subNodes.Add(_currentContent);
+        }
+
+        // external/manual es obligatoria: sin ella, Detach() cortaría el
+        // blend automático del ciclo (IsAutoBlend) en mitad de una transición.
+        if (tabChanged &&
+            SettingsBlendController.IsExternalT &&
+            !SettingsBlendController.IsAutoBlend)
+        {
+            ClearBlendOnly();
         }
 
         UpdateTitle();
@@ -710,6 +725,9 @@ public class RCPanel : Panel, IDevUISignals
                 if (path != null && File.Exists(path))
                 {
                     File.Delete(path);
+                    // La ruta de ese estado desaparece: refrescar la caché de
+                    // rutas que usa BkgResolver.ShouldHideVanilla.
+                    BkgResolver.InvalidatePaths(CurrentRoomName);
                 }
 
                 if (ButtonSelectedA == highestState)
@@ -728,7 +746,6 @@ public class RCPanel : Panel, IDevUISignals
 
     // ============================================================
     // REFRESH ROOM OBJECTS (LightBeams + CustomDecals)
-    // Destruye los existentes y recrea desde placedObjects actuales.
     // Solo para preview de devtools — no toca blend.
     // ============================================================
     private void RefreshRoomObjects()
@@ -797,8 +814,6 @@ public class RCPanel : Panel, IDevUISignals
         var lightSources = room.lightSources;
 
         // ── FASE 1: Destruir light sources huérfanos ──
-        // Un light source es huérfano si no tiene placed object correspondiente
-        // en el estado actual (su placed object fue eliminado al cambiar de estado).
         var orphans = new List<LightSource>();
         for (int i = lightSources.Count - 1; i >= 0; i--)
         {
@@ -821,7 +836,6 @@ public class RCPanel : Panel, IDevUISignals
                 orphans.Add(light);
                 light.Destroy();
 
-                // Limpiar sprites inmediatamente
                 var rCam = room.game.cameras[0];
                 if (rCam != null)
                 {
@@ -835,7 +849,6 @@ public class RCPanel : Panel, IDevUISignals
                     }
                 }
 
-                // Remover de todas las listas de la sala
                 room.updateList.Remove(light);
                 room.drawableObjects.Remove(light);
                 room.lightSources.Remove(light);

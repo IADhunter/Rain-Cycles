@@ -1,132 +1,13 @@
-using System;
 using DevInterface;
 using UnityEngine;
-using MonoMod.RuntimeDetour;
-using RWCustom;
 
 namespace FilesSetting;
-
-// ================================================================
-// CLASE: INPUT BLOCKER
-// (Se mantiene para EditableFloatField, que aun lo usa)
-// ================================================================
-
-public static class InputBlocker
-{
-    private static bool _isBlocked = false;
-    private static Hook _getKeyHook;
-    private static Hook _getKeyDownHook;
-    private static Hook _getKeyStringHook;
-    private static Hook _getKeyDownStringHook;
-    private static bool _hooksInitialized = false;
-    
-    public static bool IsBlocked => _isBlocked;
-    
-    public static void Block()
-    {
-        if (_isBlocked) return;
-        _isBlocked = true;
-        
-        InitializeHooks();
-    }
-    
-    private static void InitializeHooks()
-    {
-        if (_hooksInitialized) return;
-        _hooksInitialized = true;
-        
-        try
-        {
-            _getKeyHook = new Hook(
-                typeof(Input).GetMethod("GetKey", new Type[] { typeof(KeyCode) }),
-                new Func<Func<KeyCode, bool>, KeyCode, bool>(InputGetKeyOverride));
-            
-            _getKeyDownHook = new Hook(
-                typeof(Input).GetMethod("GetKeyDown", new Type[] { typeof(KeyCode) }),
-                new Func<Func<KeyCode, bool>, KeyCode, bool>(InputGetKeyOverride));
-            
-            _getKeyStringHook = new Hook(
-                typeof(Input).GetMethod("GetKey", new Type[] { typeof(string) }),
-                new Func<Func<string, bool>, string, bool>(InputGetKeyStringOverride));
-            
-            _getKeyDownStringHook = new Hook(
-                typeof(Input).GetMethod("GetKeyDown", new Type[] { typeof(string) }),
-                new Func<Func<string, bool>, string, bool>(InputGetKeyStringOverride));
-            
-            On.RainWorldGame.RawUpdate += OnRainWorldGameRawUpdate;
-        }
-        catch
-        {
-        }
-    }
-    
-    private static bool InputGetKeyOverride(Func<KeyCode, bool> orig, KeyCode key)
-    {
-        if (_isBlocked)
-        {
-            if (key == KeyCode.Return || key == KeyCode.KeypadEnter || 
-                key == KeyCode.Escape || key == KeyCode.Backspace ||
-                key == KeyCode.LeftArrow || key == KeyCode.RightArrow ||
-                key == KeyCode.LeftControl || key == KeyCode.RightControl ||
-                key == KeyCode.C || key == KeyCode.V)
-                return orig(key);
-            return false;
-        }
-        return orig(key);
-    }
-    
-    private static bool InputGetKeyStringOverride(Func<string, bool> orig, string name)
-    {
-        if (_isBlocked)
-        {
-            string lower = name.ToLower();
-            if (lower == "return" || lower == "enter" || lower == "escape" || 
-                lower == "backspace" || lower == "left" || lower == "right" ||
-                lower == "left ctrl" || lower == "right ctrl")
-                return orig(name);
-            return false;
-        }
-        return orig(name);
-    }
-    
-    private static void OnRainWorldGameRawUpdate(On.RainWorldGame.orig_RawUpdate orig, RainWorldGame self, float dt)
-    {
-        orig(self, dt);
-        if (self.devUI == null && _isBlocked)
-        {
-            Unblock();
-        }
-    }
-    
-    public static void Unblock()
-    {
-        if (!_isBlocked) return;
-        _isBlocked = false;
-    }
-    
-    public static void Dispose()
-    {
-        Unblock();
-        _getKeyHook?.Dispose();
-        _getKeyDownHook?.Dispose();
-        _getKeyStringHook?.Dispose();
-        _getKeyDownStringHook?.Dispose();
-        On.RainWorldGame.RawUpdate -= OnRainWorldGameRawUpdate;
-        _getKeyHook = null;
-        _getKeyDownHook = null;
-        _getKeyStringHook = null;
-        _getKeyDownStringHook = null;
-        _hooksInitialized = false;
-    }
-}
 
 // ================================================================
 // CLASE: HEX TEXT FIELD
 // Campo de texto hex basado en el nuevo RCStringControl (port del
 // StringControl de RegionKit/POM). Misma API que el campo antiguo
 // (OnSubmit/OnCancel/Text) para que ColorEditor no cambie.
-// Sin cursor: se escribe directamente (Input.inputString), Backspace
-// borra, Enter/click-fuera commitea, Escape cancela.
 // ================================================================
 
 public class HexTextField : RCStringControl
@@ -153,9 +34,6 @@ public class HexTextField : RCStringControl
         return true;
     }
 
-    /// <summary>
-    /// Todo lo escrito pasa a mayusculas al instante (a-f -> A-F).
-    /// </summary>
     protected override char SanitizeChar(char c) => char.ToUpper(c);
 
     /// <summary>

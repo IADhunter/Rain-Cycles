@@ -102,10 +102,12 @@ public partial class SettingsSnapshot
     public ViewType ViewType = ViewType.None;
     public Color? TintMultiply = null;
     public Color? TintAtmosphere = null;
+    public BkgTag.Data Bkg = default;
 
     public bool HasRcType => RcType != RcType.None;
     public bool HasView => HasRcType && ViewType != ViewType.None;
     public bool HasTint => HasView && (TintMultiply.HasValue || TintAtmosphere.HasValue);
+    public bool HasBkg => Bkg.IsValid;
 
     // ============================================================
     // CACHE API

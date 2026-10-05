@@ -136,11 +136,8 @@ public static partial class SettingsBlendController
             return;
         }
 
-        if (camIsHere && _staticSlots.TryGetValue(self, out var staticRtv) && staticRtv.blend != null && staticRtv.blend.Count > 0
-            && staticRtv.blend[0].illustrationName != "RC_Transparent")
-        {
-            RefreshSlotSprite(staticRtv.blend[0], staticRtv.blend[0].illustrationName, cam);
-        }
+        // Sin repair path aquí: InitStaticSlotImages (OnRoomCameraUpdate)
+        // aplica el bkg por-sala con el tag del estado.
 
         orig(self, eu);
     }
@@ -388,17 +385,17 @@ public static partial class SettingsBlendController
                     {
                         if (staticSlots[0].illustrationName == "RC_Transparent")
                         {
-                            var settings = BlendSettingsLoader.Active;
                             int state = StateFileResolver.GetStateFromPath(self.room.roomSettings?.filePath, roomName);
-                            if (state > 0 && settings != null)
+                            if (state > 0)
                             {
-                                var view = skyType == SkyType.ACV ? ViewType.ACV : (skyType == SkyType.RTV ? ViewType.RTV : (skyType == SkyType.PSV ? ViewType.PSV : ViewType.ORV));
-                                string file = settings.GetBkgFileForState(state, view);
-                                if (!string.IsNullOrEmpty(file))
-                                    staticSlots[0].illustrationName = System.IO.Path.GetFileNameWithoutExtension(file);
+                                // bkg por sala×estado (tag <Mod:...>); con sprite ya
+                                // iniciado hace el swap real, si no solo setea el nombre
+                                var bkg = BkgResolver.Get(roomName, state);
+                                string atlas = BkgAtlasOrNull(bkg.Mod, bkg.Sky);
+                                if (atlas != null)
+                                    RefreshSlotSprite(staticSlots[0], atlas, bkg.Mod, bkg.Sky, cam);
                             }
                         }
-                        RefreshSlotSprite(staticSlots[0], staticSlots[0].illustrationName, cam);
                     }
                 }
             }
@@ -416,25 +413,9 @@ public static partial class SettingsBlendController
         var snapLocal2 = SettingsSnapshot.GetCached(self.room.roomSettings?.filePath, self.room.abstractRoom?.name);
         bool isPsv2 = snapLocal2 != null && snapLocal2.HasView && snapLocal2.ViewType == ViewType.PSV;
 
-        if (isPsv2)
-        {
-            foreach (var el in self.elements)
-            {
-                if (el is AboveCloudsView.HorizonFog hf && hf.illustrationName?.StartsWith("pnk_") == true)
-                {
-                    foreach (var sl in cam.spriteLeasers)
-                    {
-                        if (sl.drawableObject == hf && sl.sprites != null && sl.sprites.Length > 0)
-                        {
-                            sl.sprites[0].alpha = 0f;
-                            sl.sprites[0].isVisible = false;
-                        }
-                    }
-                }
-                if (el is BackgroundScene.AdditiveBackgroundIllustration abi && abi.illustrationName?.StartsWith("pnk_") == true)
-                    abi.alpha = 0f;
-            }
-        }
+        // Ocultación pnk_ (HorizonFog + abi) movida a ToggleVanillaSlots
+        // (OnRoomCameraUpdate): ahora depende de tener <Mod> (regla 10/2026),
+        // no solo de la view.
 
         // PSV estático: forzar shader BackgroundAdditive en los slots de sun.
         // InitiateSprites usa "Background"; en blend lo corrige UpdatePsvSlots,
@@ -499,7 +480,6 @@ public static partial class SettingsBlendController
 
         if (roomView == ViewType.ORV && isBlendManaged)
         {
-            HideVanillaOuterRimSky(self);
             if (!_sceneSlots.TryGetValue(self, out var existing))
             {
                 existing = new SkySlotSet { blend = CreateRcSlotsVanilla(self, room, SkyType.ORV) };
@@ -521,7 +501,6 @@ public static partial class SettingsBlendController
         }
         else if (roomView == ViewType.ORV && isStaticManaged)
         {
-            HideVanillaOuterRimSky(self);
             if (!_staticSlots.TryGetValue(self, out var staticSetOrv) || staticSetOrv.blend == null || staticSetOrv.blend.Count < 4)
             {
                 staticSetOrv = new SkySlotSet { blend = CreateStaticSlotsVanilla(self, room, SkyType.ORV) };
@@ -549,7 +528,6 @@ public static partial class SettingsBlendController
 
         if (isBlendManaged && snap.ViewType == ViewType.ORV && !_sceneSlots.TryGetValue(self, out _))
         {
-            HideVanillaOuterRimSky(self);
             var slotSet = new SkySlotSet { blend = CreateRcSlotsVanilla(self, self.room, SkyType.ORV) };
             _sceneSlots[self] = slotSet;
             _activeSlots = slotSet;
@@ -572,11 +550,8 @@ public static partial class SettingsBlendController
             return;
         }
 
-        if (camIsHere && _staticSlots.TryGetValue(self, out var staticOrv) && staticOrv.blend != null && staticOrv.blend.Count > 0
-            && staticOrv.blend[0].illustrationName != "RC_Transparent")
-        {
-            RefreshSlotSprite(staticOrv.blend[0], staticOrv.blend[0].illustrationName, cam);
-        }
+        // Sin repair path aquí: InitStaticSlotImages (OnRoomCameraUpdate)
+        // aplica el bkg por-sala con el tag del estado.
 
         orig(self, eu);
     }
@@ -585,19 +560,8 @@ public static partial class SettingsBlendController
     // HELPERS OUTERRIMVIEW
     // ============================================================
 
-    private static void HideVanillaOuterRimSky(OuterRimView scene)
-    {
-        if (scene?.elements == null) return;
-        foreach (var el in scene.elements)
-        {
-            if (el is BackgroundScene.Simple2DBackgroundIllustration ill
-                && ill.illustrationName == "otr_sky")
-            {
-                ill.alpha = 0f;
-                break;
-            }
-        }
-    }
+    // Ocultación de otr_sky movida a ToggleVanillaSlots (OnRoomCameraUpdate):
+    // ahora depende de tener <Mod> (regla 10/2026), no solo de la view.
 
     private static void DefaultOrvSlotsToVanillaSky(
         List<BackgroundScene.Simple2DBackgroundIllustration> slots)
@@ -649,7 +613,10 @@ public static partial class SettingsBlendController
     }
 
     // ============================================================
-    // HOOK: Ocultar DistantCloud con depth >= 195f en PSV (solo una vez)
+    // HOOK: DistantCloud alto en PSV (solo una vez, al initiar sprites)
+    // Oculta con save/restore SOLO si la regla lo pide (tener <Mod>);
+    // si no, el cielo vanilla queda visible. ToggleVanillaSlots re-aplica
+    // por frame después (DrawSprites reescribe isVisible por altitud).
     // ============================================================
     private static void OnDistantCloudInitiateSprites(
         On.AboveCloudsView.DistantCloud.orig_InitiateSprites orig,
@@ -659,14 +626,17 @@ public static partial class SettingsBlendController
     {
         orig(self, sLeaser, rCam);
 
-        if (self.AboveCloudsScene.PinkSky && self.depth >= 195f)
+        if (self.AboveCloudsScene != null &&
+            self.AboveCloudsScene.PinkSky && self.depth >= 195f)
         {
-            foreach (var sprite in sLeaser.sprites)
+            string roomName = rCam?.room?.abstractRoom?.name;
+            if (!string.IsNullOrEmpty(roomName) &&
+                BkgResolver.ShouldHideVanilla(roomName, ActiveHideState()))
             {
-                if (sprite != null)
+                foreach (var sprite in sLeaser.sprites)
                 {
-                    sprite.isVisible = false;
-                    sprite.alpha = 0f;
+                    if (sprite != null)
+                        HideVanillaSpriteAlpha(sprite);
                 }
             }
         }

@@ -16,8 +16,6 @@ public static class BlendSettingsLoader
     public static BlendSettings Active => _activeSettings;
     public static string ActiveRegion => _activeRegion;
     public static bool IsGateActive => _isGateActive;
-    
-    public static string ActiveModName => _activeSettings?.SelectedModName ?? "";
 
     public static void Init()
     {
@@ -157,18 +155,11 @@ public static class BlendSettingsLoader
     private static BlendSettings ParseContent(string content)
     {
         var settings = new BlendSettings();
-        ViewType currentView = ViewType.None;
         
         foreach (string line in content.Split('\n'))
         {
             string trimmed = line.Trim();
             if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#")) continue;
-            
-            if (trimmed == "Acv") { currentView = ViewType.ACV; continue; }
-            if (trimmed == "Rtv") { currentView = ViewType.RTV; continue; }
-            if (trimmed == "Psv") { currentView = ViewType.PSV; continue; }
-            if (trimmed == "Auv") { currentView = ViewType.AUV; continue; }
-            if (trimmed == "Orv") { currentView = ViewType.ORV; continue; }
             
             int sep = trimmed.IndexOf(':');
             if (sep > 0)
@@ -207,49 +198,6 @@ public static class BlendSettingsLoader
                     case "setting":
                         if (int.TryParse(val, out int set) && set >= 0 && set <= 4) settings.Setting = set;
                         break;
-                    case "mod":
-                        settings.SelectedModName = val.Trim();
-                        break;
-                    default:
-                        if (key.StartsWith("bkg") && currentView != ViewType.None)
-                        {
-                            int state = ParseStateFromKey(key);
-                            if (state >= 1 && state <= 4)
-                            {
-                                if (val.StartsWith("<") && val.EndsWith(">"))
-                                {
-                                    string inner = val.Substring(1, val.Length - 2);
-                                    string[] parts = inner.Split(new[] { "><" }, System.StringSplitOptions.None);
-                                    
-                                    settings.HasBackgroundsSection = true;
-                                    
-                                    if (!settings.BackgroundAliases.ContainsKey(currentView))
-                                        settings.BackgroundAliases[currentView] = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
-                                    
-                                    string alias = key;
-                                    
-                                    if (currentView == ViewType.PSV)
-                                    {
-                                        if (parts.Length >= 1 && !string.IsNullOrEmpty(parts[0]))
-                                            settings.BackgroundAliases[currentView][alias] = parts[0];
-                                        if (parts.Length >= 2 && !string.IsNullOrEmpty(parts[1]))
-                                            settings.BackgroundAliases[currentView][alias + "_fog"] = parts[1];
-                                        if (parts.Length >= 3 && !string.IsNullOrEmpty(parts[2]))
-                                            settings.BackgroundAliases[currentView][alias + "_sun"] = parts[2];
-                                    }
-                                    else
-                                    {
-                                        if (parts.Length >= 1 && !string.IsNullOrEmpty(parts[0]))
-                                            settings.BackgroundAliases[currentView][alias] = parts[0];
-                                    }
-                                }
-                                else
-                                {
-                                    RSPlugin.log.LogWarning($"[RC][BlendSettings] ParseContent: INVALID BKG FORMAT key={key} val=\"{val}\" (expected <...>)");
-                                }
-                            }
-                        }
-                        break;
                 }
             }
         }
@@ -265,13 +213,6 @@ public static class BlendSettingsLoader
             case "endcycle": return BlendMode.EndCycle;
             default: return BlendMode.Loop;
         }
-    }
-    
-    private static int ParseStateFromKey(string key)
-    {
-        if (key.Length >= 5 && int.TryParse(key.Substring(3), out int state))
-            return state;
-        return -1;
     }
 
     public static string ResolvePath(string regionCode)

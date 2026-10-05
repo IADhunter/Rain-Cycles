@@ -6,7 +6,7 @@ using RainCycles.Patches;
 
 namespace FilesSetting;
 
-public class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
+public partial class RCPanel_RoomPage : RectangularDevUINode, IDevUISignals
 {
     private const float RC_TYPE_BTN_W = 35f;
     private const float BUTTON_SPACING = 5f;
