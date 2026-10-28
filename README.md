@@ -31,10 +31,11 @@ There are three sub-modes available:
 
 * **Loop:** A continuous cycle of transitions that repeats infinitely.
   * It can start immediately or wait for a specific trigger.
-* **Cycle:** A one-way linear transition that starts once a given percentage of the rain cycle has elapsed.
+* **Cycle:** A one-way linear transition that starts once a given percentage of the cycle has elapsed.
   * Traverses three states starting from the current initial state (e.g. starting from state 4: 4 → 1 → 2) and then stops.
 * **Rain:** Triggers when the deadly rain begins.
   * Smooth transition towards the final state.
+  * Also traverses three states starting from the current initial state
   * Useful for atmospheric changes during the storm.
 
 > *All modes work regardless of whether it is raining in the region or not.*
@@ -51,6 +52,8 @@ wait_time: 80.0        # Meaning depends on Trigger (value is fully configurable
 ```
 
 ### Trigger: none (default)
+
+The loop begins with a wait, then proceeds as normal, and repeats.
 
 ```
 Entry → Idle (Idle_time) → Blend (Duration) → Idle → Blend → ...
@@ -201,7 +204,7 @@ A base file **without** `<State>` is invisible to Rain Cycles: its tags are not 
 
 ## Per Region (`{region}_blend_settings.txt`)
 
-**Location:** `world/{region}-rooms/raincycles/{region}_blend_settings.txt` (the file is created automatically when the Dev UI is opened).
+**Location:** `world/{region}/raincycles/{region}_blend_settings.txt` (the file is created automatically when the Dev UI is opened). State files (`settings_N.txt`) stay in `world/{region}-rooms/raincycles/`.
 
 Controls the global behavior of the region. Only these keys are recognized; anything else in the file is ignored:
 
@@ -256,7 +259,7 @@ Room → ancestor_N.txt (state N) → vanilla root ancestor
 Arena matches blend room states per round, per level.
 
 * Configuration lives in `{level}_blend_settings.txt` inside `levels/raincycles/` of any active mod or `StreamingAssets` (searched recursively). The same `settings_N.txt` state files (up to 4) are resolved per level from the same location.
-* Arena uses only `loop` and `cycle`: `rain` is forced to `loop` and triggers are forced to `none`.
+* Only `loop` and `cycle` are available in arena.
 * Arena levels also have a **base file**: `Levels/{level}_settings.txt` (vanilla `StreamingAssets/Levels/`, or a mod's `Levels/`). It can be assigned as a state with `RainCycles: <State:N>`.
 
 ---
@@ -349,8 +352,8 @@ Rain Cycles provides a public API for external mods to communicate with the syst
 
 ### Events
 
-* `OnRegionEnter(Action<RainCyclesRegionEventArgs>)` - Triggered when entering a managed region.
-* `OnStateChanged(Action<RainCyclesStateEventArgs>)` - Triggered when the active state changes or when transitioning between Idle/Blending.
+* `OnRegionEnter(Action<RainCyclesRegionEventArgs>)` - Triggered on every region change. In a region without a blend setting it arrives with `Mode` = `null` and `IsClockEnabled` = `false`.
+* `OnStateChanged(Action<RainCyclesStateEventArgs>)` - Triggered when the active state changes or when transitioning between Idle/Blending. A single blend can trigger it more than once: once per state it crosses, plus one when it settles.
 
 ### Event Args (`RainCyclesRegionEventArgs`)
 
@@ -375,11 +378,11 @@ Rain Cycles provides a public API for external mods to communicate with the syst
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `CurrentState` | `int` | Active state (1-4) |
-| `NextState` | `int` | Target state during blending |
-| `CurrentProgress` | `float` | Real-time blend progress (0-1) |
-| `IsIdle` | `bool` | `true` if in Idle phase |
-| `CurrentGlobalT` | `float` | Global cycle time (0-1) |
+| `CurrentState` | `int` | Active state (1-4), or `0` if the clock is not running |
+| `NextState` | `int` | Target state during blending, or `0` if the clock is not running |
+| `CurrentProgress` | `float` | Real-time blend progress (0-1), `0` if not blending |
+| `IsIdle` | `bool` | `true` if in Idle phase or the clock is not running |
+| `CurrentGlobalT` | `float` | Global cycle time (0-1), or `0` if the clock is not running |
 | `CurrentRegion` | `string` | Current region code |
 | `IsClockEnabled` | `bool` | `true` if clock is active |
 | `CurrentMode` | `BlendMode?` | Current blend mode or `null` |

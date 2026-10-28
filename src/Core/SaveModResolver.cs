@@ -37,7 +37,7 @@ public static class SaveModResolver
         if (mod == null) return null;
 
         string lower = regionCode.ToLowerInvariant();
-        return Path.Combine(mod.path, "world", lower + "-rooms", "raincycles", lower + "_blend_settings.txt");
+        return Path.Combine(mod.path, "world", lower, "raincycles", lower + "_blend_settings.txt");
     }
 
     public static string DirectoryForRegion(string regionCode)
