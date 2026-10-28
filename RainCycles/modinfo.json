@@ -1,0 +1,12 @@
+{
+  "id": "raincycles",
+  "name": "Rain Cycles",
+  "version": "1.8.0",
+  "authors": "IADhunter, Seko",
+  "description": "Loading and administration for dynamic room states",
+  "requirements": [],
+  "requirements_names": [],
+  "tags": [
+    "Dependency"
+  ]
+}
