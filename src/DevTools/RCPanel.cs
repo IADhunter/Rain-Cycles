@@ -75,7 +75,10 @@ public class RCPanel : Panel, IDevUISignals
         int currentState = StateFileResolver.GetStateFromPath(currentFilePath, CurrentRoomName);
         ButtonSelectedA = currentState >= 1 ? currentState : 1;
 
-        SettingsBlendController.UpdateManualStates(ButtonSelectedA, ButtonSelectedA);
+        if (!SettingsBlendController.IsActive || !SettingsBlendController.IsAutoBlend)
+        {
+            SettingsBlendController.UpdateManualStates(ButtonSelectedA, ButtonSelectedA);
+        }
 
         CreateCommonElements();
         SwitchTab(0);
