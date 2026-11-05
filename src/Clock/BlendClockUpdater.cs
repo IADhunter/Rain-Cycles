@@ -425,6 +425,7 @@ public static class BlendClockUpdater
         orig(self);
         StateFileResolver.SetBlockLoad(false);
         _startFailed = false;
+        _winHandledThisSession = false; // Guard al cerrar la partida.
         RoomCameraExtensions.InvalidateAllRoomCaches();
         StateFileResolver.InvalidatePathCache();
     }

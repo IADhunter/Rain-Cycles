@@ -468,9 +468,9 @@ Batch-generates state files for a region: every `settings` file in the region's 
 
 ---
 
-## Known Limitations
+## Extras
 
-* Compatibility with `Forecast` has not been tested.
+* Compatible with `Forecast`
 
 ---
 
