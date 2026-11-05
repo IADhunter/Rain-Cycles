@@ -22,7 +22,7 @@ public class RSPlugin : BaseUnityPlugin
 {
     public const string ID   = "raincycles";
     public const string NAME = "Rain Cycles";
-    public const string VER  = "1.8.1";
+    public const string VER  = "1.8.2";
 
     public static ManualLogSource log;
 
